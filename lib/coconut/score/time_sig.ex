@@ -1,0 +1,40 @@
+defmodule Coconut.Score.TimeSig do
+  @moduledoc "Domain model for time signature."
+
+  alias Coconut.Score.Record
+
+  # Simple meters
+  @type standard ::
+          {numerator :: pos_integer(), denominator :: pos_integer()}
+          | {:standard, numerator :: pos_integer(), denominator :: pos_integer()}
+
+  # Compound meters and irregular meters
+  @type compound :: {:compound, groupings :: [pos_integer()], denominator :: pos_integer()}
+
+  # 散拍子 (free meter)
+  @type free :: :san
+
+  @typedoc "Number of bars"
+  @type bar :: pos_integer()
+
+  @typedoc "Time signature"
+  @type t :: standard() | compound() | free()
+
+  @typedoc "Event with time signature update"
+  @type time_sig_event :: {bar(), t()}
+
+  @type time_sig_events :: [time_sig_event()] | {[time_sig_event()], Record.end_position()}
+
+  @doc "Returns the total tick length within a specific bar."
+  def ticks_per_bar({num, den}, tpqn) when is_integer(num) and is_integer(den),
+    do: ticks_per_bar({:standard, num, den}, tpqn)
+
+  def ticks_per_bar({:standard, num, den}, tpqn), do: div(total_notes(num, tpqn), den)
+
+  def ticks_per_bar({:compound, groupings, den}, tpqn),
+    do: div(total_notes(Enum.sum(groupings), tpqn), den)
+
+  def ticks_per_bar(:san, _tpqn), do: nil
+
+  defp total_notes(num, tpqn), do: tpqn * 4 * num
+end
