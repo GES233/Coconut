@@ -25,6 +25,13 @@ defmodule Coconut.MixProject do
   end
 
   defp deps do
-    []
+    [
+      # Rebase support
+      {:tamale, path: "../tamale"}
+      # {:tamale, github: "SynapticStrings/Tamal"}
+
+      # Compute Agent
+      #  add orchid or blabla
+    ]
   end
 end
