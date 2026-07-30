@@ -29,7 +29,7 @@ defmodule Coconut.Util.Model do
     id_prefix = Keyword.get(opts, :id_prefix)
 
     quote do
-      import Coconut.Helpers, only: [normalize_attrs: 2]
+      import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
       @behaviour Coconut.Util.Model
 
@@ -52,7 +52,7 @@ defmodule Coconut.Util.Model do
 
       @doc "Modify the properties of an existing struct (modifying the id is not allowed)."
       def update(model, attrs) do
-        with {:ok, normalized} <- normalize_attrs(attrs, @keys),
+        with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
              :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok),
              new_model = struct(model, normalized) do
           validate(new_model)

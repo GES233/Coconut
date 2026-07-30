@@ -43,7 +43,7 @@ defmodule Coconut.Helpers do
   end
 
   @doc """
-  Ensures all attributes keys are declared in `fields`.
+  Normalize and ensures all attributes keys are declared in `fields`.
 
   Returns `{:ok, normalized_result}` when every key in `attrs` is allowed;
   otherwise returns `{:error, {:extra_attrs, extra_keys}}`.
@@ -52,7 +52,7 @@ defmodule Coconut.Helpers do
 
   ### Examples
 
-      iex> Coconut.Helpers.ensure_no_extra_attrs(
+      iex> Coconut.Helpers.strictly_normalize_attrs(
       ...> [name: "初音ミク", platform: {:yamaha, :vocaloid}], [:name, :platform, extra: ""])
       {:ok,
       %{
@@ -60,15 +60,15 @@ defmodule Coconut.Helpers do
         platform: {:yamaha, :vocaloid}
       }}
 
-      iex> Coconut.Helpers.ensure_no_extra_attrs(
+      iex> Coconut.Helpers.strictly_normalize_attrs(
       ...> [name: "Miku", unexpected: "x"], [:name])
       {:error, {:extra_attrs, [:unexpected]}}
 
-      iex> Coconut.Helpers.ensure_no_extra_attrs(%{foo: "a"}, 1)
+      iex> Coconut.Helpers.strictly_normalize_attrs(%{foo: "a"}, 1)
       {:error, {:invalid_fields, 1}}
   """
-  @spec ensure_no_extra_attrs(any(), any()) :: {:ok, map()} | {:error, term()}
-  def ensure_no_extra_attrs(attrs, fields) do
+  @spec strictly_normalize_attrs(any(), any()) :: {:ok, map()} | {:error, term()}
+  def strictly_normalize_attrs(attrs, fields) do
     with {:ok, allowed_set} <- build_allowed_set(fields),
          {:ok, pairs} <- to_pairs(attrs) do
       {extras, normalized} =

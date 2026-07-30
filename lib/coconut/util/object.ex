@@ -18,7 +18,7 @@ defmodule Coconut.Util.Object do
     keys = Keyword.fetch!(opts, :keys)
 
     quote do
-      import Coconut.Helpers, only: [normalize_attrs: 2]
+      import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
       @keys unquote(keys)
       defstruct @keys
@@ -36,7 +36,7 @@ defmodule Coconut.Util.Object do
 
       @doc "Modify the property of an existing VO."
       def update(obj, attrs) do
-        with {:ok, normalized} <- normalize_attrs(attrs, @keys),
+        with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
              new_obj = struct(obj, normalized),
              {:ok, new_obj} <- validate(new_obj) do
           {:ok, new_obj}
