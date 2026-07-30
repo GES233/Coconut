@@ -1,9 +1,14 @@
 defmodule Coconut.Workspace do
   @moduledoc """
   Aggregate for edit.
+
+  The workspace is a single-writer serialisation point. Every track write
+  goes through `apply_batch/5`, which atomically updates the Space, bumps
+  the version, and syncs the side tables.
   """
 
   alias Coconut.Util.{ID, Model, Object}
+  alias Coconut.Score.{Tempo, TempoMap}
 
   defmodule Side do
     @moduledoc """
@@ -18,11 +23,12 @@ defmodule Coconut.Workspace do
 
     @type t :: %__MODULE__{
             tempos_by_version: %{Tamale.version() => TempoMap.t()},
-            spans_by_version: %{Tamale.version() => span()},
+            spans_by_version: %{Coconut.Operate.track_id() => %{Tamale.version() => span()}},
             elements_by_id: %{Tamale.id() => item()},
-            patches: [Tamale.Patch.t()]
+            patches: [Coconut.Patch.t()]
           }
-    use Object, keys: [:tempos_by_version, :spans_by_version, :elements_by_id, :patches]
+    use Object,
+      keys: [tempos_by_version: %{}, spans_by_version: %{}, elements_by_id: %{}, patches: []]
   end
 
   @type t :: %__MODULE__{
@@ -35,4 +41,249 @@ defmodule Coconut.Workspace do
   use Model,
     keys: [:id, :edit_version, :tempo_space, :tracks, :side],
     id_prefix: "WSpc_"
+
+  # ---- Apply ----
+
+  @doc """
+  Apply an op batch to a track, syncing side tables.
+
+  `expected_version` is the optimistic-lock check: the caller must pass
+  the workspace version it read before lowering. If the workspace has
+  moved on, `{:error, :version_conflict}` is returned.
+
+  `ops` and `side_changes` are the output of `Coconut.Operate.lower/3`.
+  """
+  @spec apply_batch(
+          t(),
+          Coconut.Operate.track_id(),
+          expected_version :: Tamale.version(),
+          [Tamale.Op.t()],
+          Coconut.Operate.side_changes()
+        ) :: {:ok, t()} | {:error, term()}
+  def apply_batch(ws, :tempo, expected_version, ops, side_changes) do
+    with :ok <- check_version(ws, expected_version),
+         %Tamale.Space{} = space <- ws.tempo_space,
+         {:ok, space} <- Tamale.Space.apply_batch(space, ops),
+         side <- sync_side(ws.side, :tempo, space.version, side_changes) do
+      {:ok,
+       %{
+         ws
+         | tempo_space: space,
+           side: side,
+           edit_version: ws.edit_version + 1
+       }}
+    else
+      nil -> {:error, :no_tempo_track}
+      {:error, _} = err -> err
+    end
+  end
+
+  def apply_batch(ws, track_id, expected_version, ops, side_changes) do
+    with :ok <- check_version(ws, expected_version),
+         {:ok, space} <- Map.fetch(ws.tracks, track_id),
+         {:ok, space} <- Tamale.Space.apply_batch(space, ops),
+         side <- sync_side(ws.side, track_id, space.version, side_changes) do
+      {:ok,
+       %{
+         ws
+         | tracks: Map.put(ws.tracks, track_id, space),
+           side: side,
+           edit_version: ws.edit_version + 1
+       }}
+    end
+  end
+
+  # ---- Transport ----
+
+  @doc """
+  Transport every patch's anchor along the track's op log.
+
+  Returns `{:ok, survivors, dead}` where survivors have updated anchors.
+  `warp_provider` is required for `Tamale.Anchor.Metric` patches; pass `nil`
+  for Ordinal/Relative-only v1.
+
+  Dead patches are `{patch, result}` tuples — the caller decides whether to
+  garbage-collect, notify, or retry.
+  """
+  @spec transport_patches(
+          t(),
+          Coconut.Operate.track_id(),
+          warp_provider :: (Tamale.Anchor.Metric.t(), Tamale.Space.t() -> Tamale.Warp.t()) | nil
+        ) :: {:ok, survivors :: [Coconut.Patch.t()], dead :: [term()]}
+  def transport_patches(ws, track_id, warp_provider \\ nil)
+
+  def transport_patches(ws, :tempo, warp_provider) do
+    space = ws.tempo_space || raise "no tempo track"
+
+    {survivors, dead} =
+      Enum.reduce(ws.side.patches, {[], []}, fn cp, {surv, dead} ->
+        if cp.track_id == :tempo do
+          case transport_one(cp, space, warp_provider) do
+            {:ok, new_anchor} -> {[%{cp | anchor: new_anchor} | surv], dead}
+            result -> {surv, [{cp, result} | dead]}
+          end
+        else
+          {[cp | surv], dead}
+        end
+      end)
+
+    {:ok, Enum.reverse(survivors), Enum.reverse(dead)}
+  end
+
+  def transport_patches(ws, track_id, warp_provider) do
+    space = Map.fetch!(ws.tracks, track_id)
+
+    {survivors, dead} =
+      Enum.reduce(ws.side.patches, {[], []}, fn cp, {surv, dead} ->
+        if cp.track_id == track_id do
+          case transport_one(cp, space, warp_provider) do
+            {:ok, new_anchor} -> {[%{cp | anchor: new_anchor} | surv], dead}
+            result -> {surv, [{cp, result} | dead]}
+          end
+        else
+          {[cp | surv], dead}
+        end
+      end)
+
+    {:ok, Enum.reverse(survivors), Enum.reverse(dead)}
+  end
+
+  # ---- Side sync (private) ----
+
+  defp sync_side(side, track_id, new_version, changes) do
+    side
+    |> sync_elements(changes.elements)
+    |> sync_spans(track_id, new_version, changes.span_snapshot)
+    |> sync_patches(changes.patches_add, changes.patches_remove)
+  end
+
+  defp sync_elements(side, elements) when map_size(elements) == 0, do: side
+
+  defp sync_elements(side, elements) do
+    {upserts, tombstones} =
+      Enum.split_with(elements, fn {_id, v} -> v != :delete end)
+
+    new_elements =
+      side.elements_by_id
+      |> Map.merge(Map.new(upserts))
+
+    new_elements =
+      Enum.reduce(tombstones, new_elements, fn {id, _}, acc ->
+        Map.delete(acc, id)
+      end)
+
+    %{side | elements_by_id: new_elements}
+  end
+
+  defp sync_spans(side, _track_id, _new_version, span_changes) when map_size(span_changes) == 0,
+    do: side
+
+  defp sync_spans(side, track_id, new_version, span_changes) do
+    track_spans = Map.get(side.spans_by_version, track_id, %{})
+    prev = latest_spans(track_spans)
+    new = apply_span_deltas(prev, span_changes)
+    %{side | spans_by_version: Map.put(side.spans_by_version, track_id, Map.put(track_spans, new_version, new))}
+  end
+
+  defp latest_spans(track_spans) do
+    case Enum.max(Map.keys(track_spans), fn -> nil end) do
+      nil -> %{}
+      v -> Map.get(track_spans, v, %{})
+    end
+  end
+
+  defp apply_span_deltas(prev, deltas) do
+    {upserts, tombstones} =
+      Enum.split_with(deltas, fn {_id, v} ->
+        v != :delete and v != :pending and v != :touch
+      end)
+
+    result = Map.merge(prev, Map.new(upserts))
+
+    Enum.reduce(tombstones, result, fn
+      {id, :delete}, acc -> Map.delete(acc, id)
+      {_id, _other}, acc -> acc
+    end)
+  end
+
+  defp sync_patches(side, adds, removes) do
+    cond do
+      adds == [] and removes == [] -> side
+      true -> %{side | patches: (side.patches ++ adds) -- removes}
+    end
+  end
+
+  # ---- Transport helpers ----
+
+  # Ordinal & Relative travel by identity (transport/2).
+  # Metric travels by warp (transport/3). Dispatch on anchor type.
+  defp transport_one(cp, space, nil) do
+    case cp.anchor do
+      %Tamale.Anchor.Metric{} -> {:error, :warp_provider_required}
+      anchor -> Tamale.Transport.transport(anchor, space)
+    end
+  end
+
+  defp transport_one(cp, space, warp_provider) do
+    case cp.anchor do
+      %Tamale.Anchor.Metric{} ->
+        Tamale.Transport.transport(cp.anchor, space, warp_provider)
+
+      anchor ->
+        Tamale.Transport.transport(anchor, space)
+    end
+  end
+
+  # ---- Other helpers ----
+
+  defp check_version(ws, expected) do
+    if ws.edit_version == expected do
+      :ok
+    else
+      {:error, {:version_conflict, expected: expected, actual: ws.edit_version}}
+    end
+  end
+
+  @doc """
+  Returns the span table for a specific track, for passing to `WarpProvider.tick/1`.
+  """
+  @spec track_spans(t(), Coconut.Operate.track_id()) :: %{Tamale.version() => %{Tamale.id() => {non_neg_integer(), non_neg_integer()}}}
+  def track_spans(ws, track_id) do
+    Map.get(ws.side.spans_by_version, track_id, %{})
+  end
+
+  @doc """
+  Builds a compiled `TempoMap` from the current tempo Space.
+  """
+  @spec tempo_map(t(), keyword()) :: {:ok, TempoMap.t()} | {:error, term()}
+  def tempo_map(ws, opts \\ []) do
+    case ws.tempo_space do
+      nil ->
+        {:error, :no_tempo_track}
+
+      space ->
+        track_spans = track_spans(ws, :tempo)
+        latest_spans = latest_spans(track_spans)
+        elements = ws.side.elements_by_id
+
+        events =
+          space.ids
+          |> Enum.reduce({0, []}, fn id, {cursor, acc} ->
+            case Map.get(latest_spans, id) do
+              {start, _end_tick} when start >= cursor ->
+                bpm_milli = Map.get(elements, id, %{}) |> Map.get(:bpm)
+                event = {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: bpm_milli / 1000}}}
+                {start, [event | acc]}
+
+              _ ->
+                {cursor, acc}
+            end
+          end)
+          |> elem(1)
+          |> Enum.reverse()
+
+        tpqn = Keyword.get(opts, :tpqn, 480)
+        TempoMap.compile(events, tpqn: tpqn)
+    end
+  end
 end
