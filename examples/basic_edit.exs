@@ -107,8 +107,8 @@ n1_span = ws.side.spans_by_version[track]
           |> Map.get("n1")
 IO.puts("\n=== TempoMap ===")
 if n1_span do
-  _sec_start = Coconut.Score.TempoMap.tick_to_sec(tm, elem(n1_span, 0), 480)
-  IO.puts("n1 at tick #{elem(n1_span, 0)} = #{Float.round(_sec_start, 4)} sec")
+  sec_start = Coconut.Score.TempoMap.tick_to_sec(tm, elem(n1_span, 0), 480)
+  IO.puts("n1 at tick #{elem(n1_span, 0)} = #{Float.round(sec_start, 4)} sec")
 end
 
 IO.puts("\nDone.")
