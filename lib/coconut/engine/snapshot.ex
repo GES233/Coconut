@@ -1,0 +1,3 @@
+defmodule Coconut.Engine.Snapshot do
+  # ...
+end

@@ -1,7 +1,7 @@
 # Spike: multi-track edit pipeline
 # Two sub-tracks share overlapping tick spans without conflict.
 
-alias Coconut.{Operate, Patch, WarpProvider, Workspace, MockEngine}
+alias Coconut.{Operate, Patch, WarpProvider, Workspace, Engine.MockEngine}
 alias Coconut.Util.ID
 
 cfg = %Operate.Config{}
@@ -43,7 +43,7 @@ IO.inspect(MockEngine.render(ws), label: "render (flat)")
   anchor: %Tamale.Anchor.Ordinal{refs: ["a1"], at_version: ws.tracks[track_a].version},
   patch: %Tamale.Patch{base_digest: "aaa", payload: %{}}
 })
-ws = put_in(ws.side.patches, [cp_a])
+ws = Workspace.attach_patch(ws, cp_a)
 
 # ---- Drag a1 (overlaps b1) ----
 {:ok, ops, ch} =

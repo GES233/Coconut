@@ -1,10 +1,16 @@
-defmodule Coconut.MockEngine do
+defmodule Coconut.Engine.MockEngine do
   @moduledoc """
   Minimal engine stub for exercising the edit pipeline end-to-end.
 
   check/1  — always passes (no engine to validate against yet).
   render/1 — collects elements_by_id with spans from all tracks.
   """
+
+  def info(_),
+    do: %{
+      name: "Mock Engine",
+      version: "dev"
+    }
 
   @doc "Always ok in mock mode."
   def check(_ws), do: :ok
@@ -28,6 +34,7 @@ defmodule Coconut.MockEngine do
           nil -> %{}
           v -> Map.get(track_spans, v, %{})
         end
+
       Map.merge(acc, latest)
     end)
   end

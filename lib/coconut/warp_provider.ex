@@ -8,10 +8,10 @@ defmodule Coconut.WarpProvider do
   deleted. All transport in `:tick` space is identity. Content changes
   are the responsibility of `Patch.resolve`, not warp.
 
-  | op                   | global :tick warp |
-  |----------------------|-------------------|
-  | Retime / Delete / …  | identity          |
-  | Insert / Move / …    | identity          |
+  | op                   | global `:tick` warp |
+  |----------------------|---------------------|
+  | Retime / Delete / …  | identity            |
+  | Insert / Move / …    | identity            |
 
   ## Caveats
 

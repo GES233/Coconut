@@ -3,7 +3,7 @@
 # Creates a workspace with a note track and tempo track, inserts notes,
 # attaches patches, edits, and transports.
 
-alias Coconut.{Operate, Patch, WarpProvider, Workspace, MockEngine}
+alias Coconut.{Operate, Patch, WarpProvider, Workspace, Engine.MockEngine}
 alias Coconut.Util.ID
 
 cfg = %Operate.Config{}
@@ -60,7 +60,7 @@ IO.inspect(MockEngine.render(ws), label: "render")
   patch: %Tamale.Patch{base_digest: "ba5eba11", payload: %{breathiness: 0.3}}
 })
 
-ws = %{ws | side: %{ws.side | patches: [cp1, cp2, cp3]}}
+ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
 # ---- 5. Edit: drag n1 (Move + Retime) ----
 {:ok, ops, ch} =
@@ -92,9 +92,7 @@ end)
 # ---- 7. Project relative to Metric ----
 survivor_rel = Enum.find(survivors, fn cp -> match?(%Tamale.Anchor.Relative{}, cp.anchor) end)
 if survivor_rel do
-  track_vers = Workspace.track_spans(ws, track)
-  latest = Enum.max(Map.keys(track_vers))
-  span_fn = fn id -> Map.get(track_vers[latest], id) end
+  span_fn = &Workspace.latest_span(ws, track, &1)
   {:ok, metric} = Tamale.Anchor.project(survivor_rel.anchor, :tick, span_fn)
   IO.puts("\n=== Relative -> Metric projection ===")
   IO.inspect(metric, label: "projected")
@@ -102,9 +100,7 @@ end
 
 # ---- 8. TempoMap: tick to seconds ----
 {:ok, tm} = Workspace.tempo_map(ws)
-n1_span = ws.side.spans_by_version[track]
-          |> Map.get(ws.tracks[track].version, %{})
-          |> Map.get("n1")
+n1_span = Workspace.latest_span(ws, track, "n1")
 IO.puts("\n=== TempoMap ===")
 if n1_span do
   sec_start = Coconut.Score.TempoMap.tick_to_sec(tm, elem(n1_span, 0), 480)

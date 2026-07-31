@@ -8,7 +8,9 @@ defmodule Coconut.Operate do
   - `validate/2` checks legality against current workspace state (pure, read-only).
   - `lower/3` produces `{:ok, ops, side_changes}` for a *validated* request.
   - Caller captures `old_span` at drag-start and passes it in — Retime stays
-    self-contained; lowering never back-reads `spans_by_version`.
+    self-contained; lowering never back-reads `spans_by_version` for warp
+    ingredients. Split/Merge do read the latest span snapshot, but only for
+    pure geometry — both are identity-shaped ops with no warp.
   - lowering does NOT apply anything; `Workspace.apply_batch/2` is the writer.
   """
 
@@ -56,8 +58,10 @@ defmodule Coconut.Operate do
           {:insert_note, track_id, Tamale.id(), Tamale.id() | :head, span(), attrs :: map()}
           | {:delete_note, track_id, Tamale.id()}
           | {:move_note, track_id, Tamale.id(), Tamale.id() | :head}
-          | {:drag_note, track_id, Tamale.id(), Tamale.id() | :head, old_span :: span(), new_span :: span()}
-          | {:split_note, track_id, Tamale.id(), at_tick :: non_neg_integer(), new_id :: Tamale.id()}
+          | {:drag_note, track_id, Tamale.id(), Tamale.id() | :head, old_span :: span(),
+             new_span :: span()}
+          | {:split_note, track_id, Tamale.id(), at_tick :: non_neg_integer(),
+             new_id :: Tamale.id()}
           | {:merge_notes, track_id, ids :: [Tamale.id(), ...]}
           | {:edit_note, track_id, Tamale.id(), changes :: map()}
 
@@ -146,7 +150,7 @@ defmodule Coconut.Operate do
          :ok <- id_live?(side, id),
          :ok <- id_in_space?(space, id),
          :ok <- id_fresh?(space, new_id),
-         :ok <- within_span?(side, id, at_tick) do
+         :ok <- within_span?(ws, track, id, at_tick) do
       :ok
     end
   end
@@ -171,29 +175,35 @@ defmodule Coconut.Operate do
   @doc """
   Lower a *validated* request into ops + side_changes.
 
-  Never reads `spans_by_version` — all span data comes from the request itself,
-  keeping `Retime` self-contained. Returns `{:error, :unreachable}` for requests
-  that should have been caught by `validate/2`.
+  Reads `spans_by_version` only for Split/Merge geometry — both are
+  identity-shaped ops with no warp, so this never feeds warp construction.
+  `Retime` stays self-contained: all its span data comes from the request
+  itself. Returns `{:error, :unreachable}` for requests that should have
+  been caught by `validate/2`.
   """
   @spec lower(request(), Coconut.Workspace.t(), Config.t()) ::
           {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
   def lower({:insert_note, _track, id, after_id, span, attrs}, _ws, _cfg) do
     ops = [%Insert{id: id, after_id: after_id}]
+
     changes = %{
       @empty_side_changes
       | elements: %{id => attrs},
         span_snapshot: %{id => span}
     }
+
     {:ok, ops, changes}
   end
 
   def lower({:delete_note, _track, id}, _ws, _cfg) do
     ops = [%Delete{id: id}]
+
     changes = %{
       @empty_side_changes
       | elements: %{id => :delete},
         span_snapshot: %{id => :delete}
     }
+
     {:ok, ops, changes}
   end
 
@@ -217,39 +227,52 @@ defmodule Coconut.Operate do
     {:ok, ops, changes}
   end
 
-  def lower({:split_note, _track, id, _at_tick, new_id}, _ws, _cfg) do
+  def lower({:split_note, track, id, at_tick, new_id}, ws, _cfg) do
     ops = [%Split{id: id, children: [id, new_id]}]
 
-    # span_split reads the old span from workspace state — this is NOT the
-    # same as back-reading for Retime. Split is identity-shaped (no warp),
-    # so the span split is a pure geometric cut, not a warp ingredient.
-    changes = %{
-      @empty_side_changes
-      | elements: %{new_id => %{}},
-        span_snapshot: %{new_id => :pending}
-    }
+    # Split reads the old span from workspace state — this is NOT the same
+    # as back-reading for Retime. Split is identity-shaped (no warp), so
+    # the span cut is pure geometry, not a warp ingredient.
+    case Coconut.Workspace.latest_span(ws, track, id) do
+      {s, e} when s < at_tick and at_tick < e ->
+        # The right half inherits the parent's payload; lyric/tuning policy
+        # after a split is the caller's business (see :edit_note).
+        changes = %{
+          @empty_side_changes
+          | elements: %{new_id => Map.get(ws.side.elements_by_id, id, %{})},
+            span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
+        }
 
-    {:ok, ops, changes}
+        {:ok, ops, changes}
+
+      _ ->
+        {:error, :unreachable}
+    end
   end
 
-  def lower({:merge_notes, _track, ids}, _ws, _cfg) do
+  def lower({:merge_notes, track, ids}, ws, _cfg) do
     [into | rest] = ids
     ops = [%Merge{ids: ids, into: into}]
-    # Elements & spans: merge logic is domain-specific; lowering only
-    # marks the tombstoned ids. The apply layer or Caller fills in the
-    # merged payload and composite span.
-    deletable =
-      rest
-      |> Enum.map(&{&1, :delete})
-      |> Map.new()
 
-    changes = %{
-      @empty_side_changes
-      | span_snapshot: deletable,
-        elements: deletable
-    }
+    spans = Enum.map(ids, &Coconut.Workspace.latest_span(ws, track, &1))
 
-    {:ok, ops, changes}
+    if Enum.any?(spans, &is_nil/1) do
+      {:error, :unreachable}
+    else
+      # Composite span runs from the earliest start to the latest end.
+      # `into` keeps its own element payload — merging content (lyrics
+      # etc.) is domain policy, see `Coconut.Score.Note.merge/4`.
+      {starts, ends} = Enum.unzip(spans)
+      deletable = Map.new(rest, &{&1, :delete})
+
+      changes = %{
+        @empty_side_changes
+        | elements: deletable,
+          span_snapshot: Map.put(deletable, into, {Enum.min(starts), Enum.max(ends)})
+      }
+
+      {:ok, ops, changes}
+    end
   end
 
   def lower({:edit_note, _track, id, _changes}, _ws, _cfg) do
@@ -326,20 +349,18 @@ defmodule Coconut.Operate do
     end
   end
 
-  defp span_valid?(start_t, end_t) when is_integer(start_t) and is_integer(end_t)
-                                     and start_t >= 0 and end_t > start_t,
+  defp span_valid?(start_t, end_t)
+       when is_integer(start_t) and is_integer(end_t) and
+              start_t >= 0 and end_t > start_t,
        do: :ok
 
   defp span_valid?(start_t, end_t),
-       do: {:error, {:invalid_span, {start_t, end_t}}}
+    do: {:error, {:invalid_span, {start_t, end_t}}}
 
-  defp within_span?(side, id, at_tick) do
-    # reads the current span snapshot's HEAD version to check split point
-    # is inside the element. This is the only place Operate back-reads
-    # span data, and only for the Split identity case (no warp involved).
-    max_ver = Enum.max(Map.keys(side.spans_by_version), fn -> -1 end)
-
-    case get_in(side.spans_by_version, [max_ver, id]) do
+  defp within_span?(ws, track, id, at_tick) do
+    # Split is the only validate that back-reads span data, and only for the
+    # Split identity case (no warp involved).
+    case Coconut.Workspace.latest_span(ws, track, id) do
       {s, e} when at_tick > s and at_tick < e -> :ok
       {s, e} -> {:error, {:split_out_of_bounds, {s, e, at_tick}}}
       nil -> {:error, {:no_span_for_id, id}}
@@ -373,7 +394,9 @@ defmodule Coconut.Operate do
     if Enum.any?(idxs, &is_nil/1) do
       {:error, {:ids_not_in_space, ids}}
     else
-      consecutive? = idxs |> Enum.chunk_every(2, 1, :discard) |> Enum.all?(fn [a, b] -> b == a + 1 end)
+      consecutive? =
+        idxs |> Enum.chunk_every(2, 1, :discard) |> Enum.all?(fn [a, b] -> b == a + 1 end)
+
       if consecutive?, do: :ok, else: {:error, {:ids_not_adjacent, ids}}
     end
   end

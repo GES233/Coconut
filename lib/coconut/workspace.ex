@@ -27,6 +27,10 @@ defmodule Coconut.Workspace do
             elements_by_id: %{Tamale.id() => item()},
             patches: [Coconut.Patch.t()]
           }
+    # tempos_by_version is reserved for the variable-tempo plan: once tempo
+    # changes are committed into the Space, versioned TempoMap snapshots will
+    # be written here to anchor transport across tempo edits. Nothing writes
+    # it yet — `Workspace.tempo_map/2` compiles on demand from latest spans.
     use Object,
       keys: [tempos_by_version: %{}, spans_by_version: %{}, elements_by_id: %{}, patches: []]
   end
@@ -182,7 +186,12 @@ defmodule Coconut.Workspace do
     track_spans = Map.get(side.spans_by_version, track_id, %{})
     prev = latest_spans(track_spans)
     new = apply_span_deltas(prev, span_changes)
-    %{side | spans_by_version: Map.put(side.spans_by_version, track_id, Map.put(track_spans, new_version, new))}
+
+    %{
+      side
+      | spans_by_version:
+          Map.put(side.spans_by_version, track_id, Map.put(track_spans, new_version, new))
+    }
   end
 
   defp latest_spans(track_spans) do
@@ -247,9 +256,53 @@ defmodule Coconut.Workspace do
   @doc """
   Returns the span table for a specific track, for passing to `WarpProvider.tick/1`.
   """
-  @spec track_spans(t(), Coconut.Operate.track_id()) :: %{Tamale.version() => %{Tamale.id() => {non_neg_integer(), non_neg_integer()}}}
+  @spec track_spans(t(), Coconut.Operate.track_id()) :: %{
+          Tamale.version() => %{Tamale.id() => {non_neg_integer(), non_neg_integer()}}
+        }
   def track_spans(ws, track_id) do
     Map.get(ws.side.spans_by_version, track_id, %{})
+  end
+
+  @doc """
+  Returns the latest recorded span table for a track.
+
+  "Latest recorded" means the newest version that actually has a snapshot —
+  Move-only batches write no span snapshot, so this may lag behind the
+  Space's head version. Prefer this over reading `spans_by_version` at
+  `space.version` directly.
+  """
+  @spec latest_spans(t(), Coconut.Operate.track_id()) :: %{
+          Tamale.id() => {non_neg_integer(), non_neg_integer()}
+        }
+  def latest_spans(ws, track_id) do
+    ws |> track_spans(track_id) |> latest_spans()
+  end
+
+  @doc """
+  Returns the latest recorded span for a single element, or `nil`.
+  See `latest_spans/2`.
+  """
+  @spec latest_span(t(), Coconut.Operate.track_id(), Tamale.id()) ::
+          {non_neg_integer(), non_neg_integer()} | nil
+  def latest_span(ws, track_id, id) do
+    ws |> latest_spans(track_id) |> Map.get(id)
+  end
+
+  @doc """
+  Appends a patch to the side table.
+
+  No validation is performed — legality (track exists, anchor well-formed)
+  is the caller's job, same as the lowering path.
+  """
+  @spec attach_patch(t(), Coconut.Patch.t()) :: t()
+  def attach_patch(ws, %Coconut.Patch{} = patch) do
+    %{ws | side: %{ws.side | patches: ws.side.patches ++ [patch]}}
+  end
+
+  @doc "Appends a list of patches. See `attach_patch/2`."
+  @spec attach_patches(t(), [Coconut.Patch.t()]) :: t()
+  def attach_patches(ws, patches) when is_list(patches) do
+    %{ws | side: %{ws.side | patches: ws.side.patches ++ patches}}
   end
 
   @doc """
@@ -262,17 +315,19 @@ defmodule Coconut.Workspace do
         {:error, :no_tempo_track}
 
       space ->
-        track_spans = track_spans(ws, :tempo)
-        latest_spans = latest_spans(track_spans)
+        latest = latest_spans(ws, :tempo)
         elements = ws.side.elements_by_id
 
         events =
           space.ids
           |> Enum.reduce({0, []}, fn id, {cursor, acc} ->
-            case Map.get(latest_spans, id) do
+            case Map.get(latest, id) do
               {start, _end_tick} when start >= cursor ->
                 bpm_milli = Map.get(elements, id, %{}) |> Map.get(:bpm)
-                event = {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: bpm_milli / 1000}}}
+
+                event =
+                  {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: bpm_milli / 1000}}}
+
                 {start, [event | acc]}
 
               _ ->
