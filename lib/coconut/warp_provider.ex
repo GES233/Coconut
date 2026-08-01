@@ -15,7 +15,7 @@ defmodule Coconut.WarpProvider do
 
   ## Caveats
 
-  - RewarpProvider is a thin factory now. Ripple mode (v2) and
+  - WarpProvider is a thin factory now. Ripple mode (v2) and
     frame-space warp will add non-identity logic.
   - The closure returns `Tamale.Warp.t()` directly (no error tuple).
     Callers for non-:tick coords should guard before invoking.

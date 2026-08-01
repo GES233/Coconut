@@ -73,6 +73,10 @@ defmodule Coconut.Score.TempoMap do
   end
 
   @spec slice(t(), Tick.numeric_tick(), Tick.numeric_tick()) :: [compiled_event()]
+  def slice(_compiled_tuple, start_tick, end_tick)
+      when is_numeric_tick(start_tick) and is_numeric_tick(end_tick) and start_tick >= end_tick,
+      do: []
+
   def slice(compiled_tuple, start_tick, end_tick)
       when is_numeric_tick(start_tick) and is_numeric_tick(end_tick) do
     size = tuple_size(compiled_tuple)

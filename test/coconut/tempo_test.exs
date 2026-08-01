@@ -212,5 +212,49 @@ defmodule Coconut.TempoTest do
       sec = Score.TempoMap.tick_to_sec(tm, tick, 480)
       assert_in_delta sec, 3.5, 0.01
     end
+
+    test "tempo_map keeps every event after a Move permutes tempo ids", %{ws: ws} do
+      ws =
+        [
+          {"t0", :head, {0, 1920}, 120_000},
+          {"t1", "t0", {1920, 3840}, 60_000},
+          {"t2", "t1", {3840, 5760}, 140_000}
+        ]
+        |> Enum.reduce(ws, fn {id, after_id, span, bpm}, ws ->
+          {:ok, ops, ch} =
+            Operate.lower(
+              {:insert_note, :tempo, id, after_id, span, %{bpm: bpm}},
+              ws,
+              %Operate.Config{}
+            )
+
+          {:ok, ws} = Workspace.apply_batch(ws, :tempo, ws.edit_version, ops, ch)
+          ws
+        end)
+
+      # Move permutes ids but leaves spans untouched.
+      {:ok, ops, ch} = Operate.lower({:move_note, :tempo, "t2", "t0"}, ws, %Operate.Config{})
+      {:ok, ws} = Workspace.apply_batch(ws, :tempo, ws.edit_version, ops, ch)
+      assert ws.tempo_space.ids == ["t0", "t2", "t1"]
+
+      {:ok, tm} = Workspace.tempo_map(ws)
+      assert tuple_size(tm) == 3
+      # 1920 ticks @120bpm = 2.0s; +1920 ticks @60bpm = 4.0s; total 6.0s at tick 3840.
+      assert_in_delta Score.TempoMap.tick_to_sec(tm, 3840, 480), 6.0, 0.01
+    end
+
+    test "slice returns [] for zero-width ranges", %{ws: ws} do
+      {:ok, ops, ch} =
+        Operate.lower(
+          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120_000}},
+          ws,
+          %Operate.Config{}
+        )
+
+      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+
+      {:ok, tm} = Workspace.tempo_map(ws)
+      assert Score.TempoMap.slice(tm, 100, 100) == []
+    end
   end
 end

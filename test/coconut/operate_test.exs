@@ -346,6 +346,30 @@ defmodule Coconut.OperateTest do
       # `into` keeps its own payload — content merging is domain policy.
       assert ws.side.elements_by_id["n1"] == %{lyric: "ら"}
     end
+
+    test "edit_note :touch marker preserves element data", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower(
+          {:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}},
+          ws,
+          %Operate.Config{}
+        )
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, ops, changes} =
+        Operate.lower({:edit_note, @track, "n1", %{lyric: "ら"}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, changes)
+
+      assert ws.side.elements_by_id["n1"] == %{pitch: 60}
+    end
+
+    test "unknown track returns an error tuple, not bare :error", %{ws: ws} do
+      changes = %{elements: %{}, span_snapshot: %{}, patches_add: [], patches_remove: []}
+
+      assert {:error, {:unknown_track, :nope}} = Workspace.apply_batch(ws, :nope, 0, [], changes)
+    end
   end
 
   describe "workspace side accessors" do

@@ -94,6 +94,9 @@ defmodule Coconut.Workspace do
            side: side,
            edit_version: ws.edit_version + 1
        }}
+    else
+      :error -> {:error, {:unknown_track, track_id}}
+      {:error, _} = err -> err
     end
   end
 
@@ -112,7 +115,7 @@ defmodule Coconut.Workspace do
   @spec transport_patches(
           t(),
           Coconut.Operate.track_id(),
-          warp_provider :: (Tamale.Anchor.Metric.t(), Tamale.Space.t() -> Tamale.Warp.t()) | nil
+          warp_provider :: Tamale.Transport.warp_provider() | nil
         ) :: {:ok, survivors :: [Coconut.Patch.t()], dead :: [term()]}
   def transport_patches(ws, track_id, warp_provider \\ nil)
 
@@ -164,19 +167,18 @@ defmodule Coconut.Workspace do
   defp sync_elements(side, elements) when map_size(elements) == 0, do: side
 
   defp sync_elements(side, elements) do
-    {upserts, tombstones} =
-      Enum.split_with(elements, fn {_id, v} -> v != :delete end)
+    # `:delete` tombstones remove the element; `:touch` / `:pending` are
+    # markers only (no data change) — same convention as apply_span_deltas/2.
+    Enum.reduce(elements, side, fn
+      {id, :delete}, acc ->
+        %{acc | elements_by_id: Map.delete(acc.elements_by_id, id)}
 
-    new_elements =
-      side.elements_by_id
-      |> Map.merge(Map.new(upserts))
+      {_id, marker}, acc when marker in [:touch, :pending] ->
+        acc
 
-    new_elements =
-      Enum.reduce(tombstones, new_elements, fn {id, _}, acc ->
-        Map.delete(acc, id)
-      end)
-
-    %{side | elements_by_id: new_elements}
+      {id, data}, acc ->
+        %{acc | elements_by_id: Map.put(acc.elements_by_id, id, data)}
+    end)
   end
 
   defp sync_spans(side, _track_id, _new_version, span_changes) when map_size(span_changes) == 0,
@@ -318,24 +320,25 @@ defmodule Coconut.Workspace do
         latest = latest_spans(ws, :tempo)
         elements = ws.side.elements_by_id
 
+        # Collect every live event. Move only permutes ids — spans are
+        # untouched — so ordering must never silently drop events here;
+        # RecordMap sorts by position and rejects pathological input loudly.
         events =
           space.ids
-          |> Enum.reduce({0, []}, fn id, {cursor, acc} ->
+          |> Enum.flat_map(fn id ->
             case Map.get(latest, id) do
-              {start, _end_tick} when start >= cursor ->
+              {start, _end_tick} ->
                 bpm_milli = Map.get(elements, id, %{}) |> Map.get(:bpm)
 
                 event =
                   {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: bpm_milli / 1000}}}
 
-                {start, [event | acc]}
+                [event]
 
               _ ->
-                {cursor, acc}
+                []
             end
           end)
-          |> elem(1)
-          |> Enum.reverse()
 
         tpqn = Keyword.get(opts, :tpqn, 480)
         TempoMap.compile(events, tpqn: tpqn)
