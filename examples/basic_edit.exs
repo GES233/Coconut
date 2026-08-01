@@ -1,9 +1,10 @@
 # Example: basic edit pipeline
 #
 # Creates a workspace with a note track and tempo track, inserts notes,
-# attaches patches, edits, and transports.
+# mounts patches, edits, transports, and runs a Resolve + Engine round.
 
-alias Coconut.{Operate, Patch, WarpProvider, Workspace, Engine.MockEngine}
+alias Coconut.{Engine, Operate, Patch, Resolve, WarpProvider, Workspace}
+alias Coconut.Engine.{MockEngine, Request}
 alias Coconut.Util.ID
 
 cfg = %Operate.Config{}
@@ -26,9 +27,9 @@ track = :vocal
 
 # ---- 3. Insert notes ----
 notes = [
-  {"n1", :head, {0, 480}, %{pitch: 60, lyric: "\u3089"}},
-  {"n2", "n1", {480, 960}, %{pitch: 62, lyric: "\u308a"}},
-  {"n3", "n2", {960, 1440}, %{pitch: 64, lyric: "\u308b"}},
+  {"n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"}},
+  {"n2", "n1", {480, 960}, %{pitch: 62, lyric: "り"}},
+  {"n3", "n2", {960, 1440}, %{pitch: 64, lyric: "る"}}
 ]
 
 ws =
@@ -41,24 +42,53 @@ ws =
 
 IO.puts("=== After insert ===")
 IO.inspect(ws.tracks[track].ids, label: "order")
-IO.inspect(MockEngine.render(ws), label: "render")
+{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws})
+IO.inspect(art.notes, label: "render")
 
-# ---- 4. Attach patches ----
-{:ok, cp1} = Patch.new(%{
-  track_id: track,
-  anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[track].version},
-  patch: %Tamale.Patch{base_digest: "deadbeef", payload: %{lyric: "\u3089\u3093"}}
-})
-{:ok, cp2} = Patch.new(%{
-  track_id: track,
-  anchor: %Tamale.Anchor.Metric{coord: :tick, from: 600, to: 800, at_version: ws.tracks[track].version},
-  patch: %Tamale.Patch{base_digest: "cafebabe", payload: %{energy: 0.8}}
-})
-{:ok, cp3} = Patch.new(%{
-  track_id: track,
-  anchor: %Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100, at_version: ws.tracks[track].version},
-  patch: %Tamale.Patch{base_digest: "ba5eba11", payload: %{breathiness: 0.3}}
-})
+# ---- 4. Mount patches (mount = capture base via projection) ----
+to_tick = fn
+  {n, d} -> div(n, d)
+  i when is_integer(i) -> i
+end
+
+# Toy channel projection — the "base slice" a patch guards. Ordinal/Relative
+# guard their element; Metric guards the elements overlapping its span.
+projection = fn ws, %Patch{} = cp ->
+  case cp.anchor do
+    %Tamale.Anchor.Ordinal{refs: [id | _]} ->
+      Map.fetch(ws.side.elements_by_id, id)
+
+    %Tamale.Anchor.Relative{ref: id} ->
+      Map.fetch(ws.side.elements_by_id, id)
+
+    %Tamale.Anchor.Metric{from: f, to: t} ->
+      from_t = to_tick.(f)
+      to_t = to_tick.(t)
+
+      overlapping =
+        for {id, {s, e}} <- Workspace.latest_spans(ws, cp.track_id),
+            s < to_t and e > from_t,
+            into: %{} do
+          {id, Map.get(ws.side.elements_by_id, id)}
+        end
+
+      {:ok, overlapping}
+  end
+end
+
+ver = ws.tracks[track].version
+
+mount = fn anchor, channel, payload ->
+  probe = %Patch{track_id: track, anchor: anchor, channel: channel}
+  {:ok, base} = projection.(ws, probe)
+  {:ok, tp} = Tamale.Patch.new(base, payload)
+  {:ok, cp} = Patch.new(%{track_id: track, anchor: anchor, channel: channel, patch: tp})
+  cp
+end
+
+cp1 = mount.(%Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ver}, :lyric, %{lyric: "らん"})
+cp2 = mount.(%Tamale.Anchor.Metric{coord: :tick, from: 600, to: 800, at_version: ver}, :energy, %{energy: 80})
+cp3 = mount.(%Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100, at_version: ver}, :breath, %{breathiness: 30})
 
 ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
@@ -69,7 +99,8 @@ ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
 IO.puts("\n=== After drag n1 (0..480 -> 100..580) ===")
 IO.inspect(ws.tracks[track].ids, label: "order")
-IO.inspect(MockEngine.render(ws), label: "render")
+{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws})
+IO.inspect(art.notes, label: "render")
 
 # ---- 6. Transport patches ----
 wp = WarpProvider.tick(Workspace.track_spans(ws, track))
@@ -105,6 +136,30 @@ IO.puts("\n=== TempoMap ===")
 if n1_span do
   sec_start = Coconut.Score.TempoMap.tick_to_sec(tm, elem(n1_span, 0), 480)
   IO.puts("n1 at tick #{elem(n1_span, 0)} = #{Float.round(sec_start, 4)} sec")
+end
+
+# ---- 9. Resolve + Engine round ----
+channels = %{
+  lyric: %{projection: projection, target: {:port, :synth, :lyric}},
+  energy: %{projection: projection, target: {:port, :synth, :energy}},
+  breath: %{projection: projection, target: {:port, :synth, :breath}}
+}
+
+IO.puts("\n=== Resolve.run_check ===")
+
+case Resolve.run_check(ws, channels) do
+  {:ok, %{interventions: interventions, survivors: resolved}} ->
+    IO.puts("resolved #{length(resolved)} patches")
+    IO.inspect(interventions, label: "interventions")
+
+    {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
+    :ok = Engine.run_check(MockEngine, request)
+    {:ok, artifact} = Engine.run_render(MockEngine, request)
+    IO.inspect(artifact.overrides, label: "engine overrides")
+
+  {:error, {:check_failed, entries}} ->
+    IO.puts("check failed:")
+    Enum.each(entries, fn e -> IO.inspect({e.kind, e.channel, e[:reason]}, label: "entry") end)
 end
 
 IO.puts("\nDone.")

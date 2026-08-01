@@ -39,6 +39,10 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 
 ## 3. ACF（Anti-Corruption Facade，桥接层）
 
+> 2026-08-01 补记：桥接层实现定名 `Coconut.Resolve`（`lib/coconut/resolve.ex`），
+> 不使用 ACF 一名；Engine behaviour 见 `lib/coconut/engine.ex`，两段式
+> check/render 经 `Coconut.Engine.Request` 传递。
+
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 
 1. tamale transport/resolve 结果 → 折叠为 oi 的 `%{PortRef => %{input: value}}`

@@ -1,30 +1,41 @@
 defmodule Coconut.Engine.MockEngine do
   @moduledoc """
-  Minimal engine stub for exercising the edit pipeline end-to-end.
+  Minimal engine for exercising the edit pipeline end-to-end.
 
-  check/1  — always passes (no engine to validate against yet).
-  render/1 — collects elements_by_id with spans from all tracks.
+  check/2  — always passes (no engine to validate against yet).
+  render/2 — flat map of element data with resolved spans from all tracks,
+             plus the request's folded overrides so callers can assert the
+             Resolve → Engine handoff.
   """
 
+  @behaviour Coconut.Engine
+
+  alias Coconut.Engine.Request
+
+  @impl true
   def info(_),
     do: %{
       name: "Mock Engine",
       version: "dev"
     }
 
-  @doc "Always ok in mock mode."
-  def check(_ws), do: :ok
+  @impl true
+  def check(%Request{}, _config), do: :ok
 
-  @doc "Returns a flat map of note data with resolved spans from all tracks."
-  def render(ws) do
+  @impl true
+  def render(%Request{} = request, _config) do
+    ws = request.workspace
     all_spans = collect_latest_spans(ws.side.spans_by_version)
 
-    ws.side.elements_by_id
-    |> Enum.map(fn {id, data} ->
-      span = Map.get(all_spans, id)
-      {id, Map.put(data, :span, span)}
-    end)
-    |> Map.new()
+    notes =
+      ws.side.elements_by_id
+      |> Enum.map(fn {id, data} ->
+        span = Map.get(all_spans, id)
+        {id, Map.put(data, :span, span)}
+      end)
+      |> Map.new()
+
+    {:ok, %{notes: notes, overrides: request.interventions}}
   end
 
   defp collect_latest_spans(spans_by_track) do
