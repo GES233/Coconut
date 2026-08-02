@@ -293,8 +293,9 @@ defmodule Coconut.Workspace do
   @doc """
   Appends a patch to the side table.
 
-  No validation is performed — legality (track exists, anchor well-formed)
-  is the caller's job, same as the lowering path.
+  No validation is performed at this point: construction-time legality
+  (supported Metric `coord`) is enforced by `Coconut.Patch.new/1`, and
+  unknown tracks surface as check entries in `Coconut.Resolve.run_check/3`.
   """
   @spec attach_patch(t(), Coconut.Patch.t()) :: t()
   def attach_patch(ws, %Coconut.Patch{} = patch) do

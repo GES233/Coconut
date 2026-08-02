@@ -17,8 +17,9 @@ defmodule Coconut.WarpProvider do
 
   - WarpProvider is a thin factory now. Ripple mode (v2) and
     frame-space warp will add non-identity logic.
-  - The closure returns `Tamale.Warp.t()` directly (no error tuple).
-    Callers for non-:tick coords should guard before invoking.
+  - The closure returns `Tamale.Warp.t()` directly (no error tuple), so the
+    coord must be guarded before invoking: `Coconut.Patch.new/1` rejects
+    Metric anchors outside `supported_coords/0` at construction time.
   """
 
   alias Tamale.Warp
@@ -33,4 +34,14 @@ defmodule Coconut.WarpProvider do
   def tick(_track_spans) do
     fn :tick, _entry -> Warp.identity() end
   end
+
+  @doc """
+  Coordinate systems this provider can serve.
+
+  `Coconut.Patch.new/1` rejects Metric anchors outside this list at
+  construction time — that guard is what keeps the single-clause `tick/1`
+  closure total in practice.
+  """
+  @spec supported_coords() :: [atom()]
+  def supported_coords, do: [:tick]
 end
