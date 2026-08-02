@@ -49,7 +49,16 @@ defmodule Coconut.Engine.DiffSingerIntegrationTest do
     ws = tigers_workspace()
     config = %{voicebank_root: voicebank, python: [python], output_dir: tmp_dir}
 
-    {:ok, request} = Request.new(%{workspace: ws, globals: %{gender: 0.2, steps: 10}})
+    # A pitch slide on the second note (spans tick 480..960 ⇒ 0.5..1.0 s)
+    # forces the pitch re-run with pitch_in / retake injection.
+    interventions = %{{:port, "n480", :pitch} => %{input: [[480, 62], [960, 64]]}}
+
+    {:ok, request} =
+      Request.new(%{
+        workspace: ws,
+        globals: %{gender: 0.2, steps: 10},
+        interventions: interventions
+      })
 
     assert {:ok, %{passed: true, checked: checked}} =
              Engine.run_check({DiffSinger, config}, request)

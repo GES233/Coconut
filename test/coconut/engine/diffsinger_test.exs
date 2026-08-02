@@ -165,6 +165,49 @@ defmodule Coconut.Engine.DiffSingerTest do
     assert payload.pitch_pred_midi == [60.0, 62.0]
   end
 
+  test "pitch intervention becomes a second-domain override in the render payload" do
+    interventions = %{{:port, "n2", :pitch} => %{input: [[480, 62], [960, 64]]}}
+
+    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+
+    assert {:ok, %{passed: true, checked: checked}} =
+             Engine.run_check({DiffSinger, config()}, request)
+
+    assert {:ok, _artifact} = Engine.run_render({DiffSinger, config()}, request, checked)
+
+    assert_received {:fake_call, %{action: "render", overrides: [override]}}
+    assert override.kind == "pitch"
+    assert override.note_index == 1
+    assert [[s1, m1], [s2, m2]] = override.points
+    assert_in_delta s1, 0.5, 0.001
+    assert m1 == 62
+    assert_in_delta s2, 1.0, 0.001
+    assert m2 == 64
+  end
+
+  test "intervention on an unknown note vetoes at check before calling the worker" do
+    interventions = %{{:port, "nope", :pitch} => %{input: [[0, 60]]}}
+    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+
+    assert {:ok, %{passed: false, entries: [entry], checked: nil}} =
+             Engine.run_check({DiffSinger, config()}, request)
+
+    assert entry == %{kind: :unknown_note, note_id: "nope"}
+    refute_received {:fake_call, _}
+  end
+
+  test "foreign ports are ignored" do
+    interventions = %{{:port, :synth, :lyric} => %{input: "x"}}
+    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+
+    assert {:ok, %{passed: true, checked: checked}} =
+             Engine.run_check({DiffSinger, config()}, request)
+
+    assert {:ok, _artifact} = Engine.run_render({DiffSinger, config()}, request, checked)
+
+    assert_received {:fake_call, %{action: "render", overrides: []}}
+  end
+
   test "worker error propagates" do
     {:ok, request} = Request.new(%{workspace: phonemized_ws()})
 

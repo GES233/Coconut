@@ -179,8 +179,10 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    （`Coconut.Channel` behaviour + 内置 `Channel.Lyric`）与全局参数闸门
    （`Request.globals` + `info` 声明校验）已落地；首个真实引擎
    `Coconut.Engine.DiffSinger` 已落地（Python worker 经 NDJSON stdio，
-   globals 已接入；interventions 映射与 G2P 未做）；orchid/oi 真实接入
-   未开始（`Coconut.Engine.OrchidAdapter` 仅占位）；
+   globals 已接入）；orchid/oi 真实接入
+   未开始（`Coconut.Engine.OrchidAdapter` 仅占位）；pitch override 已全链路
+   打通（`Channel.Pitch` → `{:port, note_id, :pitch}` → adapter 秒域曲线 →
+   worker 帧域 pitch_in/retake）；G2P 未做；
 6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
    仍是纯模块）；
 7. 帧空间锚 + tempo 对组合（v2）——未开始。

@@ -13,8 +13,11 @@ defmodule Coconut.Channel do
     region: a canonical term (see `Tamale.Digest`). `Tamale.Patch.resolve/2`
     digests it and compares against the patch's `base_digest` with zero
     tolerance.
-  - `target/0` — where a resolved payload lands: a single `port_ref`, or a
-    function fanning the payload out to `[{port_ref, value}]` pairs.
+  - `target/0` or `target/1` — where a resolved payload lands: a single
+    `port_ref`, or a function fanning the payload out to
+    `[{port_ref, value}]` pairs. `target/1` additionally receives the
+    patch, for ports derived from the anchor (e.g. per-note ports like
+    `{:port, note_id, :pitch}`). At least one of the two must be exported.
   """
 
   alias Coconut.{Patch, Resolve, Workspace}
@@ -22,4 +25,9 @@ defmodule Coconut.Channel do
   @callback projection(Workspace.t(), Patch.t()) :: {:ok, term()} | {:error, term()}
 
   @callback target() :: Resolve.port_ref() | (term() -> [{Resolve.port_ref(), term()}])
+
+  @callback target(Patch.t()) ::
+              Resolve.port_ref() | (term() -> [{Resolve.port_ref(), term()}])
+
+  @optional_callbacks target: 0, target: 1
 end

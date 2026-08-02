@@ -185,7 +185,19 @@ defmodule Coconut.Resolve do
   defp normalize_spec(%{projection: _, target: _} = spec), do: spec
 
   defp normalize_spec(module) when is_atom(module) do
-    %{projection: &module.projection/2, target: module.target()}
+    Code.ensure_loaded!(module)
+    base = %{projection: &module.projection/2}
+
+    cond do
+      function_exported?(module, :target, 1) ->
+        Map.put(base, :patch_target, &module.target/1)
+
+      function_exported?(module, :target, 0) ->
+        Map.put(base, :target, module.target())
+
+      true ->
+        raise ArgumentError, "channel #{inspect(module)} exports neither target/0 nor target/1"
+    end
   end
 
   # Mirrors equinox Runner.fold_resolved: later writes to the same port
@@ -194,13 +206,16 @@ defmodule Coconut.Resolve do
     Enum.reduce(resolved, %{}, fn {patch, payload}, acc ->
       channels[patch.channel]
       |> normalize_spec()
-      |> Map.fetch!(:target)
+      |> target_for(patch)
       |> bind_payload(payload)
       |> Enum.reduce(acc, fn {port_ref, value}, inner ->
         Map.put(inner, port_ref, %{input: value})
       end)
     end)
   end
+
+  defp target_for(%{patch_target: fun}, patch), do: fun.(patch)
+  defp target_for(%{target: target}, _patch), do: target
 
   defp bind_payload({:port, _, _} = port_ref, payload), do: [{port_ref, payload}]
   defp bind_payload(fun, payload) when is_function(fun, 1), do: fun.(payload)

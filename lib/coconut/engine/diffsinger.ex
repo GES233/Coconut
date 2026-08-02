@@ -16,9 +16,16 @@ defmodule Coconut.Engine.DiffSinger do
   - **globals** — `gender` / `velocity` / `depth` / `steps` are declared in
     `info/1` and forwarded to the worker from `Request.globals`.
 
-  Interventions are **not yet mapped** onto the diffusion inputs — `render/2`
-  synthesizes the base score and echoes `request.interventions` in the
-  artifact as `:overrides`.
+  ## Interventions
+
+  The adapter claims interventions at `{:port, note_id, :pitch}` — the
+  fold shape produced by `Coconut.Channel.Pitch`. The value is a sparse
+  piecewise-linear curve, `[[tick, midi], ...]` in absolute ticks; points
+  are converted to seconds here and sampled onto the engine's frame grid
+  by the worker (`pitch_in` / `retake` of the pitch model). A port naming
+  an unknown note vetoes at check time (`passed: false`); ports of other
+  shapes are left for other engines and ignored. The raw interventions
+  map is echoed in the artifact as `:overrides`.
 
   ## Config
 
@@ -58,19 +65,34 @@ defmodule Coconut.Engine.DiffSinger do
   @impl true
   def check(%Request{} = request, config) do
     with {:ok, config} <- normalize_config(config),
-         {:ok, words} <- words(request.workspace, config),
-         {:ok, probe} <-
-           call_client(%{action: "check", words: words, globals: request.globals}, config) do
-      {:ok, %{passed: true, entries: [], checked: %{words: words, probe: probe}}}
+         {:ok, bundle} <- assemble(request, config) do
+      case bundle.override_errors do
+        [] ->
+          with {:ok, probe} <-
+                 call_client(
+                   %{action: "check", words: bundle.words, globals: request.globals},
+                   config
+                 ) do
+            {:ok,
+             %{
+               passed: true,
+               entries: [],
+               checked: %{words: bundle.words, overrides: bundle.overrides, probe: probe}
+             }}
+          end
+
+        entries ->
+          {:ok, %{passed: false, entries: entries, checked: nil}}
+      end
     end
   end
 
   @impl true
   def render(%Request{} = request, checked, config) do
     with {:ok, config} <- normalize_config(config),
-         {:ok, words} <- checked_words(checked, request.workspace, config),
+         {:ok, bundle} <- checked_bundle(checked, request, config),
          out_path = out_path(config),
-         payload = render_payload(words, checked, request.globals, out_path),
+         payload = render_payload(bundle, checked, request.globals, out_path),
          {:ok, result} <- call_client(payload, config) do
       {:ok,
        %{
@@ -83,15 +105,21 @@ defmodule Coconut.Engine.DiffSinger do
     end
   end
 
-  # Reuse the words assembled at check time; reassemble when render is
-  # invoked without a prior check (checked is nil or foreign).
-  defp checked_words(%{words: words}, _ws, _config), do: {:ok, words}
-  defp checked_words(_checked, ws, config), do: words(ws, config)
+  # Reuse what check assembled; reassemble when render is invoked without
+  # a prior check (checked is nil or foreign).
+  defp checked_bundle(%{words: _, overrides: _} = bundle, _request, _config), do: {:ok, bundle}
+  defp checked_bundle(_checked, request, config), do: assemble(request, config)
 
   # The worker skips its own dur/pitch forwards when the probe from the
   # check stage is supplied (same Request ⇒ same words and globals).
-  defp render_payload(words, checked, globals, out_path) do
-    base = %{action: "render", words: words, globals: globals, out_path: out_path}
+  defp render_payload(bundle, checked, globals, out_path) do
+    base = %{
+      action: "render",
+      words: bundle.words,
+      overrides: bundle.overrides,
+      globals: globals,
+      out_path: out_path
+    }
 
     case checked do
       %{probe: %{"ph_dur" => ph_dur, "pitch_pred_midi" => pitch_pred}} ->
@@ -125,8 +153,11 @@ defmodule Coconut.Engine.DiffSinger do
 
   # ---- Note assembly ----
 
-  defp words(%Workspace{} = ws, config) do
+  # Assembles everything the worker needs from a Request: the word list
+  # and the frame-bound overrides, plus any override validation errors.
+  defp assemble(%Request{} = request, config) do
     tpqn = Map.get(config, :tpqn, @default_tpqn)
+    ws = request.workspace
 
     with {:ok, to_sec} <- sec_converter(ws, tpqn),
          {:ok, notes} <- collect_notes(ws) do
@@ -135,8 +166,38 @@ defmodule Coconut.Engine.DiffSinger do
           [data.phonemes, to_sec.(end_tick) - to_sec.(start_tick), data.pitch]
         end)
 
-      {:ok, words}
+      {overrides, errors} = collect_overrides(request.interventions, notes, to_sec)
+      {:ok, %{words: words, overrides: overrides, override_errors: errors}}
     end
+  end
+
+  # The adapter claims `{:port, note_id, :pitch}` interventions; other port
+  # shapes belong to other engines and are ignored. Curve points arrive in
+  # absolute ticks and leave in absolute seconds — the worker owns the
+  # frame grid.
+  defp collect_overrides(interventions, notes, to_sec) do
+    index =
+      notes
+      |> Enum.with_index()
+      |> Map.new(fn {{id, _data, _span}, i} -> {id, i} end)
+
+    {overrides, errors} =
+      Enum.reduce(interventions, {[], []}, fn
+        {{:port, note_id, :pitch}, %{input: points}}, {oks, errs} ->
+          case Map.fetch(index, note_id) do
+            {:ok, i} ->
+              points = Enum.map(points, fn [tick, midi] -> [to_sec.(tick), midi] end)
+              {[%{kind: "pitch", note_index: i, points: points} | oks], errs}
+
+            :error ->
+              {oks, [%{kind: :unknown_note, note_id: note_id} | errs]}
+          end
+
+        _foreign_port, acc ->
+          acc
+      end)
+
+    {Enum.reverse(overrides), Enum.reverse(errors)}
   end
 
   defp collect_notes(ws) do

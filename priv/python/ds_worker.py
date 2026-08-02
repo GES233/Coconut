@@ -7,6 +7,11 @@ voicebank once at startup, then serves one JSON request per line.
              "words": [[[lang, ph], ...], dur_sec, midi],
              "globals": {"gender": f, "velocity": f, "depth": f, "steps": i},
              "out_path": str (render only),
+             "overrides": [{"kind": "pitch", "note_index": i,
+                            "points": [[sec, midi], ...]}] (render only;
+                            sparse piecewise-linear curve in absolute
+                            seconds; sampled onto frames, edge-held and
+                            clipped to the note's frame range),
              "ph_dur": [int] (render only, from a prior check),
              "pitch_pred_midi": [float] (render only, from a prior check)}
   response: {"id": int, "ok": true, "result": {...}} |
@@ -85,11 +90,12 @@ class DiffSingerEngine:
             "total_frames": int(ph_dur.sum()),
         }
 
-    def render(self, words, out_path, gl, ph_dur=None, pitch_pred=None):
+    def render(self, words, out_path, gl, ph_dur=None, pitch_pred=None, overrides=None):
         """render: full pipeline → wav.
 
         `ph_dur` / `pitch_pred` (lists from a prior check) skip the
-        dur / pitch forwards when supplied.
+        dur / pitch forwards when supplied — but pitch overrides force a
+        pitch re-run (the probe's prediction ignores them).
         """
         # 1. dur
         if ph_dur is None:
@@ -97,8 +103,10 @@ class DiffSingerEngine:
         else:
             ph_dur = np.array([ph_dur], dtype=np.int64)
         # 2. pitch
-        if pitch_pred is None:
-            pitch_pred = self._pitch(words, ph_dur, gl)
+        pitch_overrides = [ov for ov in (overrides or []) if ov.get("kind") == "pitch"]
+        if pitch_pred is None or pitch_overrides:
+            pitch_in, retake = self._pitch_injection(words, ph_dur, pitch_overrides)
+            pitch_pred = self._pitch(words, ph_dur, gl, pitch_in, retake)
         else:
             pitch_pred = np.array([pitch_pred], dtype=np.float32)
         f0 = self._midi_to_f0(pitch_pred)
@@ -174,7 +182,7 @@ class DiffSingerEngine:
         )[0]
         return np.round(ph_dur_pred).astype(np.int64)  # type: ignore
 
-    def _pitch(self, words, ph_dur, gl):
+    def _pitch(self, words, ph_dur, gl, pitch_in=None, retake=None):
         tokens_p, langs_p, _, _, _ = self._encode(words, self.pitch_phonemes, self.pitch_langs)
         enc_out_p, _ = self.sess_pitch_ling.run(
             ["encoder_out", "x_masks"],
@@ -183,9 +191,11 @@ class DiffSingerEngine:
         total_frames = int(ph_dur.sum())
         note_midi = np.array([[w[2] for w in words for _ in w[0]]], dtype=np.float32)
         note_rest = np.zeros_like(note_midi, dtype=bool)
-        pitch_in = np.zeros((1, total_frames), dtype=np.float32)
+        if pitch_in is None:
+            pitch_in = np.zeros((1, total_frames), dtype=np.float32)
+        if retake is None:
+            retake = np.ones((1, total_frames), dtype=bool)
         expr = np.ones((1, total_frames), dtype=np.float32)
-        retake = np.ones((1, total_frames), dtype=bool)
         steps = np.array(gl["steps"], dtype=np.int64)
 
         return self.sess_pitch.run(
@@ -224,6 +234,56 @@ class DiffSingerEngine:
             np.array([all_midis], dtype=np.int64),
         )
 
+    def _pitch_injection(self, words, ph_dur, pitch_overrides):
+        """Build pitch_in / retake arrays from pitch overrides.
+
+        Note frame ranges derive from ph_dur (cumulative per phoneme).
+        Sparse second-domain points are converted to frames here — the
+        frame grid is engine-side — then linearly interpolated, edge-held
+        and clipped within the note's range. Overridden frames are
+        excluded from re-prediction (retake=False).
+        """
+        total_frames = int(ph_dur.sum())
+        pitch_in = np.zeros((1, total_frames), dtype=np.float32)
+        retake = np.ones((1, total_frames), dtype=bool)
+
+        if not pitch_overrides:
+            return pitch_in, retake
+
+        ranges = []
+        ph, start = 0, 0
+        for phonemes, _dur, _midi in words:
+            n = len(phonemes)
+            note_frames = int(ph_dur[0][ph : ph + n].sum())
+            ranges.append((start, start + note_frames))
+            start += note_frames
+            ph += n
+
+        for ov in pitch_overrides:
+            f0, f1 = ranges[ov["note_index"]]
+            if f1 <= f0:
+                continue
+
+            pts = sorted(
+                (min(max(int(round(sec * self.sample_rate / self.hop_size)), f0), f1 - 1), float(midi))
+                for sec, midi in ov["points"]
+            )
+            # edge-hold anchors extend the first/last value to the note bounds
+            anchors = [(f0, pts[0][1])] + pts + [(f1 - 1, pts[-1][1])]
+            anchors.sort(key=lambda p: p[0])
+
+            for (fa, ma), (fb, mb) in zip(anchors, anchors[1:]):
+                for fr in range(fa, fb):
+                    t = 0.0 if fb == fa else (fr - fa) / (fb - fa)
+                    pitch_in[0, fr] = ma + (mb - ma) * t
+                    retake[0, fr] = False
+
+            fa, ma = anchors[-1]
+            pitch_in[0, fa] = ma
+            retake[0, fa] = False
+
+        return pitch_in, retake
+
     def _midi_to_f0(self, midi):
         midi = np.asarray(midi)
         f0 = 440.0 * np.power(2.0, (midi - 69.0) / 12.0)
@@ -255,6 +315,7 @@ def dispatch(engine, req):
             gl,
             ph_dur=req.get("ph_dur"),
             pitch_pred=req.get("pitch_pred_midi"),
+            overrides=req.get("overrides"),
         )
     raise ValueError(f"unknown action: {action}")
 

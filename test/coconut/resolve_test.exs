@@ -146,6 +146,28 @@ defmodule Coconut.ResolveTest do
     assert entry.channel == :pitch
   end
 
+  test "patch-aware channel target folds to per-note ports", %{ws: ws} do
+    ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
+
+    data = Map.fetch!(ws.side.elements_by_id, "n1")
+    {:ok, tp} = Tamale.Patch.new(data, [[0, 60], [480, 62]])
+
+    {:ok, cp} =
+      Patch.new(%{
+        track_id: @track,
+        channel: :pitch,
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].version},
+        patch: tp
+      })
+
+    ws = Workspace.attach_patch(ws, cp)
+
+    assert {:ok, %{passed: true, interventions: interventions}} =
+             Resolve.run_check(ws, %{pitch: Coconut.Channel.Pitch})
+
+    assert interventions == %{{:port, "n1", :pitch} => %{input: [[0, 60], [480, 62]]}}
+  end
+
   test "function target fans a payload out to multiple ports", %{ws: ws} do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "らん", energy: 80})
