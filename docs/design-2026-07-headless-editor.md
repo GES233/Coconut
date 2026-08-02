@@ -54,7 +54,10 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 > 消费而不重算——DiffSinger 的 dur/pitch 前向即经此复用。两层 check
 > （Resolve 与 Engine）统一 verdict 语义：`{:ok, %{passed: ...}}` = 检查
 > 执行完毕（false 即否决，entries 为全量明细），`{:error, _}` 只留给
-> 检查自身无法执行（worker 崩溃、配置缺失、输入无法装配）。
+> 检查自身无法执行（worker 崩溃、配置缺失、输入无法装配）。Encoder 契约
+> `Coconut.Encoder`（note→request token，形状对契约不透明、由引擎定义）：
+> phrase 粒度、逐轨调用、现算，具体机制由引擎开发者实现（首个实现
+> Literal）；v1 手动配置，声库自动推导留待声库声明层。
 
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 
@@ -154,7 +157,7 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 1. 引擎面：驱动的引擎是谁（决定 Engine behaviour 与 digest 投影实现）
    ——已定（2026-08-02）：首发 DiffSinger（OpenUTAU 格式声库），经
    `Coconut.Engine.DiffSinger` + `priv/python/ds_worker.py`（NDJSON stdio）
-   接入；UTAU classic 备选，G2P 层单开；
+   接入；UTAU classic 备选，歌词→请求 token 的 Encoder 层单开；
 2. 坐标基准：已定（tick 权威 + 帧 + 微秒，见第 4 节）；
 3. 首发 channel 清单——方向已定（2026-08-02）：抽象为 `Coconut.Channel`
    behaviour，不写死；首发候选音素 / 音素时长 / 音高（对齐 DiffSinger 的
@@ -182,7 +185,9 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    globals 已接入）；orchid/oi 真实接入
    未开始（`Coconut.Engine.OrchidAdapter` 仅占位）；pitch override 已全链路
    打通（`Channel.Pitch` → `{:port, note_id, :pitch}` → adapter 秒域曲线 →
-   worker 帧域 pitch_in/retake）；G2P 未做；
+   worker 帧域 pitch_in/retake）；Encoder 契约 + Literal 已落地（phrase
+   粒度、逐轨调用、token 形状引擎自定义；真实字典编码器由引擎开发者
+   实现）；
 6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
    仍是纯模块）；
 7. 帧空间锚 + tempo 对组合（v2）——未开始。

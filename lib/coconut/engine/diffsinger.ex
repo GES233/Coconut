@@ -5,11 +5,14 @@ defmodule Coconut.Engine.DiffSinger do
   The heavy lifting (ONNX inference) lives in the Python worker; this module
   is the adaptation boundary:
 
-  - **note assembly** — every element across every track, merged and sorted
-    by start tick. Each note must carry `:phonemes` (`[[lang, ph], ...]`
-    pairs) and `:pitch` (MIDI) in its element data: G2P is a separate,
-    still-missing layer, and `check/2` rejects notes lacking them instead
-    of guessing.
+  - **note assembly** — every element across every track, merged and
+    sorted by start tick. Each note must carry `:pitch` (MIDI) and
+    phonemes: either explicit `:phonemes` (`[[lang, ph], ...]` pairs —
+    always wins) or derived by the configured encoder (see `Coconut.Encoder`),
+    which runs once per track over the track's full note sequence so
+    melisma and context-dependent readings have their phrase. Notes with
+    neither are rejected at assembly time (`:missing_phonemes`,
+    `:encoder_failed`, `:encoder_incomplete`).
   - **tick → second conversion** — via the workspace tempo map when a tempo
     track exists, else a flat 120 BPM fallback (the only place float
     seconds enter; design doc §4).
@@ -35,6 +38,10 @@ defmodule Coconut.Engine.DiffSinger do
       (default `["python"]`; e.g. `["uv", "run", "--project", "..."]`)
     * `:client` — module replacing the worker client (test seam),
       default `Coconut.Engine.DiffSinger.PortClient`
+    * `:encoder` — `Coconut.Encoder` module or `{module, config}` deriving
+      phonemes for notes that lack explicit `:phonemes`. Manual for v1;
+      voicebank-derived auto-selection waits for the voicebank
+      declaration layer.
     * `:tpqn` — ticks per quarter note (default 480)
 
   Client contract: `call(payload :: map(), config :: map()) ::
@@ -160,7 +167,7 @@ defmodule Coconut.Engine.DiffSinger do
     ws = request.workspace
 
     with {:ok, to_sec} <- sec_converter(ws, tpqn),
-         {:ok, notes} <- collect_notes(ws) do
+         {:ok, notes} <- collect_notes(ws, Map.get(config, :encoder)) do
       words =
         Enum.map(notes, fn {_id, data, {start_tick, end_tick}} ->
           [data.phonemes, to_sec.(end_tick) - to_sec.(start_tick), data.pitch]
@@ -200,26 +207,81 @@ defmodule Coconut.Engine.DiffSinger do
     {Enum.reverse(overrides), Enum.reverse(errors)}
   end
 
-  defp collect_notes(ws) do
-    notes =
-      for {track_id, _space} <- ws.tracks,
-          {id, span} <- Workspace.latest_spans(ws, track_id),
-          data = Map.get(ws.side.elements_by_id, id, %{}),
-          is_map(data),
-          do: {id, data, span}
+  # Notes are collected per track (phrase context lives within a track),
+  # phonemes resolved there (explicit `:phonemes` win; the rest go to the
+  # configured encoder), then merged into one score-ordered list.
+  defp collect_notes(ws, encoder) do
+    per_track =
+      Map.new(ws.tracks, fn {track_id, _space} ->
+        notes =
+          for {id, span} <- Workspace.latest_spans(ws, track_id),
+              data = Map.get(ws.side.elements_by_id, id, %{}),
+              is_map(data),
+              do: {id, data, span}
 
-    # Deterministic across tracks: start tick first, id as tiebreak.
-    notes = Enum.sort_by(notes, fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)
+        {track_id,
+         Enum.sort_by(notes, fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)}
+      end)
 
-    missing_phonemes = for {id, data, _span} <- notes, not has_phonemes?(data), do: id
-    missing_pitch = for {id, data, _span} <- notes, not is_integer(Map.get(data, :pitch)), do: id
+    with {:ok, per_track} <- resolve_phonemes(per_track, encoder) do
+      notes =
+        per_track
+        |> Map.values()
+        |> List.flatten()
+        |> Enum.sort_by(fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)
 
-    cond do
-      missing_phonemes != [] -> {:error, {:missing_phonemes, missing_phonemes}}
-      missing_pitch != [] -> {:error, {:missing_pitch, missing_pitch}}
-      true -> {:ok, notes}
+      missing_pitch =
+        for {id, data, _span} <- notes, not is_integer(Map.get(data, :pitch)), do: id
+
+      case missing_pitch do
+        [] -> {:ok, notes}
+        _ -> {:error, {:missing_pitch, missing_pitch}}
+      end
     end
   end
+
+  # The encoder sees the track's full sequence (context), but only notes
+  # lacking explicit `:phonemes` consume its result.
+  defp resolve_phonemes(per_track, encoder) do
+    Enum.reduce_while(per_track, {:ok, %{}}, fn {track_id, notes}, {:ok, acc} ->
+      unresolved = for {id, data, _span} <- notes, not has_phonemes?(data), do: id
+
+      case {unresolved, encoder} do
+        {[], _any} ->
+          {:cont, {:ok, Map.put(acc, track_id, notes)}}
+
+        {_, nil} ->
+          {:halt, {:error, {:missing_phonemes, unresolved}}}
+
+        {_, encoder} ->
+          case encode_all(encoder, notes) do
+            {:ok, by_id} ->
+              case Enum.reject(unresolved, &Map.has_key?(by_id, &1)) do
+                [] ->
+                  notes = Enum.map(notes, &fill_phonemes(&1, by_id))
+                  {:cont, {:ok, Map.put(acc, track_id, notes)}}
+
+                missing ->
+                  {:halt, {:error, {:encoder_incomplete, missing}}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, {:encoder_failed, reason}}}
+          end
+      end
+    end)
+  end
+
+  defp fill_phonemes({id, data, span}, by_id) do
+    if has_phonemes?(data) do
+      {id, data, span}
+    else
+      {id, Map.put(data, :phonemes, Map.fetch!(by_id, id)), span}
+    end
+  end
+
+  defp encode_all({module, encoder_config}, notes), do: module.encode(notes, encoder_config)
+  defp encode_all(module, notes) when is_atom(module), do: module.encode(notes, nil)
 
   defp has_phonemes?(data), do: match?([_ | _], Map.get(data, :phonemes))
 

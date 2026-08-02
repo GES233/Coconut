@@ -23,6 +23,27 @@ defmodule Coconut.Engine.DiffSingerTest do
     end
   end
 
+  defmodule RecordingEncoder do
+    @moduledoc "Records the note sequence it receives, covers everything."
+    @behaviour Coconut.Encoder
+
+    @impl true
+    def encode(notes, config) do
+      if pid = config[:test_pid],
+        do: send(pid, {:encoder_called, Enum.map(notes, fn {id, _data, _span} -> id end)})
+
+      {:ok, Map.new(notes, fn {id, _data, _span} -> {id, [["zh", "x"]]} end)}
+    end
+  end
+
+  defmodule PartialEncoder do
+    @moduledoc "Covers nothing."
+    @behaviour Coconut.Encoder
+
+    @impl true
+    def encode(_notes, _config), do: {:ok, %{}}
+  end
+
   defp config(extra \\ %{}) do
     Map.merge(
       %{voicebank_root: "unused/fake", client: FakeClient, test_pid: self()},
@@ -119,6 +140,105 @@ defmodule Coconut.Engine.DiffSingerTest do
     {:ok, request} = Request.new(%{workspace: ws})
 
     assert {:error, {:missing_pitch, ["n1"]}} = Engine.run_check({DiffSinger, config()}, request)
+    refute_received {:fake_call, _}
+  end
+
+  test "notes without phonemes go through the configured encoder" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "l iang"})
+
+    config = config(%{encoder: {Coconut.Encoder.Literal, %{lang: "zh"}}})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
+
+    assert_received {:fake_call, %{words: [[phonemes, _dur, 60]]}}
+    assert phonemes == [["zh", "l"], ["zh", "iang"]]
+  end
+
+  test "a note's :lang key overrides the encoder's configured language" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a", lang: "ja"})
+
+    config = config(%{encoder: {Coconut.Encoder.Literal, %{lang: "zh"}}})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
+
+    assert_received {:fake_call, %{words: [[phonemes, _dur, 60]]}}
+    assert phonemes == [["ja", "a"]]
+  end
+
+  test "explicit phonemes win over the encoder" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{
+        pitch: 60,
+        lyric: "l iang",
+        phonemes: [["zh", "manual"]]
+      })
+
+    config = config(%{encoder: {Coconut.Encoder.Literal, %{lang: "zh"}}})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
+
+    assert_received {:fake_call, %{words: [[phonemes, _dur, 60]]}}
+    assert phonemes == [["zh", "manual"]]
+  end
+
+  test "the encoder is called once per track with the full score-ordered sequence" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
+      |> insert(:vocal, "n2", "n1", {480, 960}, %{pitch: 62, phonemes: [["zh", "i"]]})
+      |> insert(:harmony, "h1", :head, {0, 960}, %{pitch: 55, lyric: "u"})
+
+    config = config(%{encoder: {RecordingEncoder, %{test_pid: self()}}})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
+
+    # one call per track, full sequence in score order — explicit-phoneme
+    # notes included as context
+    assert_received {:encoder_called, ids1}
+    assert_received {:encoder_called, ids2}
+    assert Enum.sort([ids1, ids2]) == Enum.sort([["n1", "n2"], ["h1"]])
+  end
+
+  test "encoder failure aborts assembly before calling the worker" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: " "})
+
+    config = config(%{encoder: Coconut.Encoder.Literal})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:error, {:encoder_failed, {:empty_lyric, "n1"}}} =
+             Engine.run_check({DiffSinger, config}, request)
+
+    refute_received {:fake_call, _}
+  end
+
+  test "encoder result not covering every note aborts assembly" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
+
+    config = config(%{encoder: PartialEncoder})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:error, {:encoder_incomplete, ["n1"]}} =
+             Engine.run_check({DiffSinger, config}, request)
+
     refute_received {:fake_call, _}
   end
 
