@@ -14,6 +14,7 @@ defmodule Coconut.Operate do
   - lowering does NOT apply anything; `Workspace.apply_batch/2` is the writer.
   """
 
+  alias Coconut.Score.Tempo
   alias Tamale.Op.{Delete, Insert, Merge, Move, Retime, Split}
 
   # ---- Config ----
@@ -53,6 +54,9 @@ defmodule Coconut.Operate do
 
   `old_span` in `drag_note` is the span captured by the caller at drag-start;
   Retime needs both ends to keep the op log self-contained for warp construction.
+
+  For `:tempo` inserts, `attrs.bpm` is a plain bpm number (floats allowed) and
+  is normalized to exact milli-bpm during lowering (`Coconut.Score.Tempo.cast_bpm/1`).
   """
   @type request ::
           {:insert_note, track_id, Tamale.id(), Tamale.id() | :head, span(), attrs :: map()}
@@ -98,6 +102,17 @@ defmodule Coconut.Operate do
   adjacent, etc. Returns `:ok` or `{:error, reason}`.
   """
   @spec validate(request(), Coconut.Workspace.t()) :: :ok | {:error, term()}
+  # Tempo inserts additionally require a castable bpm (normalized at lower time).
+  def validate({:insert_note, :tempo, id, after_id, {start_t, end_t}, attrs}, ws) do
+    with {:ok, _milli_bpm} <- Tempo.cast_bpm(Map.get(attrs, :bpm)),
+         {:ok, space, _side} <- track_context(ws, :tempo),
+         :ok <- id_fresh?(space, id),
+         :ok <- after_valid?(space, after_id),
+         :ok <- span_valid?(start_t, end_t) do
+      :ok
+    end
+  end
+
   def validate({:insert_note, track, id, after_id, {start_t, end_t}, _attrs}, ws) do
     with {:ok, space, _side} <- track_context(ws, track),
          :ok <- id_fresh?(space, id),
@@ -183,6 +198,21 @@ defmodule Coconut.Operate do
   """
   @spec lower(request(), Coconut.Workspace.t(), Config.t()) ::
           {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
+  def lower({:insert_note, :tempo, id, after_id, span, attrs}, _ws, _cfg) do
+    # bpm enters as a plain number and is stored as exact milli-bpm.
+    with {:ok, milli_bpm} <- Tempo.cast_bpm(Map.get(attrs, :bpm)) do
+      ops = [%Insert{id: id, after_id: after_id}]
+
+      changes = %{
+        @empty_side_changes
+        | elements: %{id => Map.put(attrs, :bpm, milli_bpm)},
+          span_snapshot: %{id => span}
+      }
+
+      {:ok, ops, changes}
+    end
+  end
+
   def lower({:insert_note, _track, id, after_id, span, attrs}, _ws, _cfg) do
     ops = [%Insert{id: id, after_id: after_id}]
 

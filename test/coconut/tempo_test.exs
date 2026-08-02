@@ -21,7 +21,7 @@ defmodule Coconut.TempoTest do
     test "inserts tempo event into tempo_space", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -39,7 +39,7 @@ defmodule Coconut.TempoTest do
     test "second tempo event inserted after first", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -48,7 +48,7 @@ defmodule Coconut.TempoTest do
 
       {:ok, ops2, changes2} =
         Operate.lower(
-          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 140_000}},
+          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 140}},
           ws,
           %Operate.Config{}
         )
@@ -65,7 +65,7 @@ defmodule Coconut.TempoTest do
     test "rejects delete of first tempo event", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -79,7 +79,7 @@ defmodule Coconut.TempoTest do
     test "allows delete of non-first tempo event", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -88,7 +88,7 @@ defmodule Coconut.TempoTest do
 
       {:ok, ops2, ch2} =
         Operate.lower(
-          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 140_000}},
+          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 140}},
           ws,
           %Operate.Config{}
         )
@@ -103,7 +103,7 @@ defmodule Coconut.TempoTest do
     test "transports patches on tempo track (warp is identity)", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -127,7 +127,7 @@ defmodule Coconut.TempoTest do
     test "metric anchor on tempo track always gets identity warp", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -156,7 +156,7 @@ defmodule Coconut.TempoTest do
     test "builds from default single tempo event", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -173,7 +173,7 @@ defmodule Coconut.TempoTest do
     test "handles multiple tempo changes", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -182,7 +182,7 @@ defmodule Coconut.TempoTest do
 
       {:ok, ops2, ch2} =
         Operate.lower(
-          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 60_000}},
+          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 60}},
           ws,
           %Operate.Config{}
         )
@@ -200,7 +200,7 @@ defmodule Coconut.TempoTest do
     test "round-trip: sec_to_tick then tick_to_sec", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -216,9 +216,9 @@ defmodule Coconut.TempoTest do
     test "tempo_map keeps every event after a Move permutes tempo ids", %{ws: ws} do
       ws =
         [
-          {"t0", :head, {0, 1920}, 120_000},
-          {"t1", "t0", {1920, 3840}, 60_000},
-          {"t2", "t1", {3840, 5760}, 140_000}
+          {"t0", :head, {0, 1920}, 120},
+          {"t1", "t0", {1920, 3840}, 60},
+          {"t2", "t1", {3840, 5760}, 140}
         ]
         |> Enum.reduce(ws, fn {id, after_id, span, bpm}, ws ->
           {:ok, ops, ch} =
@@ -246,7 +246,7 @@ defmodule Coconut.TempoTest do
     test "slice returns [] for zero-width ranges", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120_000}},
+          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -255,6 +255,73 @@ defmodule Coconut.TempoTest do
 
       {:ok, tm} = Workspace.tempo_map(ws)
       assert Score.TempoMap.slice(tm, 100, 100) == []
+    end
+  end
+
+  describe "bpm normalization" do
+    test "cast_bpm accepts integer bpm" do
+      assert Score.Tempo.cast_bpm(120) == {:ok, 120_000}
+    end
+
+    test "cast_bpm rationalizes float bpm to milli-bpm" do
+      assert Score.Tempo.cast_bpm(120.5) == {:ok, 120_500}
+      assert Score.Tempo.cast_bpm(87.25) == {:ok, 87_250}
+    end
+
+    test "cast_bpm accepts {num, den} rationals" do
+      assert Score.Tempo.cast_bpm({241, 2}) == {:ok, 120_500}
+    end
+
+    test "cast_bpm rejects non-positive and non-numeric bpm" do
+      assert {:error, {:invalid_bpm, 0}} = Score.Tempo.cast_bpm(0)
+      assert {:error, {:invalid_bpm, -3}} = Score.Tempo.cast_bpm(-3)
+      assert Score.Tempo.cast_bpm(0.0) == {:error, {:invalid_bpm, 0.0}}
+      assert {:error, {:invalid_bpm, "fast"}} = Score.Tempo.cast_bpm("fast")
+      assert {:error, {:invalid_bpm, nil}} = Score.Tempo.cast_bpm(nil)
+    end
+
+    test "lower normalizes tempo insert attrs to milli-bpm", %{ws: ws} do
+      {:ok, _ops, changes} =
+        Operate.lower(
+          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120.5}},
+          ws,
+          %Operate.Config{}
+        )
+
+      assert changes.elements == %{"t0" => %{bpm: 120_500}}
+    end
+
+    test "validate rejects un-castable bpm on tempo insert", %{ws: ws} do
+      assert {:error, {:invalid_bpm, "fast"}} =
+               Operate.validate(
+                 {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: "fast"}},
+                 ws
+               )
+
+      assert {:error, {:invalid_bpm, nil}} =
+               Operate.validate({:insert_note, :tempo, "t0", :head, {0, 1920}, %{}}, ws)
+    end
+
+    test "lower rejects un-castable bpm directly", %{ws: ws} do
+      assert {:error, {:invalid_bpm, -1.5}} =
+               Operate.lower(
+                 {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: -1.5}},
+                 ws,
+                 %Operate.Config{}
+               )
+    end
+
+    test "note inserts on regular tracks are untouched by bpm rules", %{ws: ws} do
+      ws = put_in(ws.tracks[:vocal], %Tamale.Space{})
+
+      {:ok, _ops, changes} =
+        Operate.lower(
+          {:insert_note, :vocal, "n1", :head, {0, 480}, %{lyric: "ら"}},
+          ws,
+          %Operate.Config{}
+        )
+
+      assert changes.elements == %{"n1" => %{lyric: "ら"}}
     end
   end
 end

@@ -97,7 +97,8 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 
 - tempo 事件作为元素住自己的 Space（id + tick span + 侧表存 bpm）；
-- bpm 必须是有理数（建议 milli-bpm 整数）；
+- bpm 以 milli-bpm 整数存储（有理数）；请求侧收普通 bpm 数值，由
+  `Tempo.cast_bpm/1` 在 lower 时归一化（float 只在此一处舍入）；
 - tempo 编辑自动落 op log（Insert/Delete/Retime），为帧 warp 提供原料；
 - 平铺约定（待定，倾向宽松）：洞 = 继承前一元素 bpm，且首元素受保护
   不可删除；

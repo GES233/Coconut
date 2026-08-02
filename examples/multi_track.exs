@@ -20,7 +20,7 @@ track_b = :vocal_b
 
 # ---- Tempo ----
 {:ok, ops, ch} =
-  Operate.lower({:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120_000}}, ws, cfg)
+  Operate.lower({:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}}, ws, cfg)
 {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
 
 # ---- Track A: melody ----

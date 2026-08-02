@@ -183,6 +183,31 @@ defmodule Coconut.Score.Tempo do
           Segment.duration()
   def sec_to_tick(segment, sec, tpqn), do: impl(segment).sec_to_tick(segment, sec, tpqn)
 
+  @doc """
+  Normalize a bpm value into exact milli-bpm integer storage (`120.5` → `120_500`).
+
+  This is the adapter-layer rationalization point (design doc §4/§6): bpm
+  enters as a domain number and is stored as an exact integer, so tempo
+  elements stay digestable (`Tamale.Digest` rejects floats) and no float
+  dust crosses the kernel. Accepts positive integers, finite floats, and
+  `{num, den}` rationals. The input is **bpm**, not milli-bpm; the ×1000
+  rounding is the single defined rounding point.
+  """
+  @spec cast_bpm(term()) :: {:ok, pos_integer()} | {:error, {:invalid_bpm, term()}}
+  def cast_bpm(bpm) when is_integer(bpm) and bpm > 0, do: {:ok, bpm * 1000}
+
+  def cast_bpm(bpm) when is_float(bpm) and bpm > 0 do
+    milli = round(bpm * 1000)
+    if milli > 0, do: {:ok, milli}, else: {:error, {:invalid_bpm, bpm}}
+  end
+
+  def cast_bpm({num, den}) when is_integer(num) and is_integer(den) and num > 0 and den > 0 do
+    milli = round(num * 1000 / den)
+    if milli > 0, do: {:ok, milli}, else: {:error, {:invalid_bpm, {num, den}}}
+  end
+
+  def cast_bpm(other), do: {:error, {:invalid_bpm, other}}
+
   defp impl(%module{}), do: module
   defp impl(module) when is_atom(module), do: module
 end
