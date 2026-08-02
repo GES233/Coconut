@@ -30,7 +30,7 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
       1. 校验 + base version 检查（过期拒绝，幂等）
       2. lowering：编辑手势 → op 批次（拖音符 = Move+Retime 同批）
       3. apply_batch 到各 Space，版本 +1，侧表/快照同步写回
-      4. transport：存活 patch 的 anchor 沿新 log 运输
+      4. transport：存活 patch 的 anchor 沿新 log 运输（写时回写；死 patch 入坟场）
       5. 存活集合 → ACF → orchid/oi check/render（异步 job，事件回推）
 ```
 
@@ -116,16 +116,20 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 - 撤销/重做 = 追加逆批次（append-only，不写回滚）——inverse batch 生成
   逻辑需自写；
 - 跨轨拖动 = 源 Space Delete + 目标 Space Insert，锚判死由策略层重挂
-  （"Relocation is policy, not transport"）；
+  （"Relocation is policy, not transport"；死 patch 在 `side.dead_patches`
+  等策略层收取）；
 - 跨 Space 原子性由 Workspace 串行化 + 校验前置保证；
-- 非单调重排（乱序搬运）下 Metric 锚不经 warp，行为需场景测试；
+- 非单调碰撞（扩张/右移压过邻域）的 Metric 锚按旧域序水位线裁决：先到
+  先得像，后续 identity 截断、冲突段成洞，受影响锚死于 transport
+  （warp_provider 场景测试已钉死）；
 - 同轨复音（重叠音符）不支持；协作/离线分支不支持（单写者线性 log）。
 
 ## 8. 已知缺口（需在 coconut 侧补齐）
 
 tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
-1. warp-provider 参考实现 → 本设计第 5 节即其方案；
+1. warp-provider 参考实现 → 已落地（`Coconut.WarpProvider`，本设计第 5 节的
+   v1 非 ripple 版）；
 2. `diff(old, new)` 回退适配器（编辑来源是状态而非 op 时需要，如文件导入）
    ——启发式集中在这一个函数；
 3. chunked digest helper；

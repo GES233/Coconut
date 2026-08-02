@@ -4,11 +4,14 @@ defmodule Coconut.Workspace do
 
   The workspace is a single-writer serialisation point. Every track write
   goes through `apply_batch/5`, which atomically updates the Space, bumps
-  the version, and syncs the side tables.
+  the version, syncs the side tables, and transports the track's patches
+  (write-time transport: survivors are persisted with up-to-date anchors,
+  the dead move to `side.dead_patches`).
   """
 
   alias Coconut.Util.{ID, Model, Object}
   alias Coconut.Score.{Tempo, TempoMap}
+  alias Coconut.WarpProvider
 
   defmodule Side do
     @moduledoc """
@@ -25,14 +28,25 @@ defmodule Coconut.Workspace do
             tempos_by_version: %{Tamale.version() => TempoMap.t()},
             spans_by_version: %{Coconut.Operate.track_id() => %{Tamale.version() => span()}},
             elements_by_id: %{Tamale.id() => item()},
-            patches: [Coconut.Patch.t()]
+            patches: [Coconut.Patch.t()],
+            dead_patches: [{Coconut.Patch.t(), term()}]
           }
     # tempos_by_version is reserved for the variable-tempo plan: once tempo
     # changes are committed into the Space, versioned TempoMap snapshots will
     # be written here to anchor transport across tempo edits. Nothing writes
     # it yet — `Workspace.tempo_map/2` compiles on demand from latest spans.
+    #
+    # dead_patches is the graveyard: patches that died at write-time
+    # transport accumulate here as `{patch, reason}` until the policy layer
+    # takes them (`Workspace.take_dead_patches/1`) for re-mount or discard.
     use Object,
-      keys: [tempos_by_version: %{}, spans_by_version: %{}, elements_by_id: %{}, patches: []]
+      keys: [
+        tempos_by_version: %{},
+        spans_by_version: %{},
+        elements_by_id: %{},
+        patches: [],
+        dead_patches: []
+      ]
   end
 
   @type t :: %__MODULE__{
@@ -56,6 +70,13 @@ defmodule Coconut.Workspace do
   moved on, `{:error, :version_conflict}` is returned.
 
   `ops` and `side_changes` are the output of `Coconut.Operate.lower/3`.
+
+  After the batch commits, the track's patches are transported along the
+  fresh log entry and persisted (write-time transport; design doc §2 step
+  4): survivors keep marching with up-to-date `at_version`, the dead
+  (`{:undefined, _}` / `{:clip, _, _}` results) move to
+  `side.dead_patches`. `patches_add` from the same batch are minted at the
+  new head and join afterwards, untransported.
   """
   @spec apply_batch(
           t(),
@@ -69,13 +90,8 @@ defmodule Coconut.Workspace do
          %Tamale.Space{} = space <- ws.tempo_space,
          {:ok, space} <- Tamale.Space.apply_batch(space, ops),
          side <- sync_side(ws.side, :tempo, space.version, side_changes) do
-      {:ok,
-       %{
-         ws
-         | tempo_space: space,
-           side: side,
-           edit_version: ws.edit_version + 1
-       }}
+      ws = %{ws | tempo_space: space, side: side, edit_version: ws.edit_version + 1}
+      {:ok, transport_track_patches(ws, :tempo, side_changes.patches_add)}
     else
       nil -> {:error, :no_tempo_track}
       {:error, _} = err -> err
@@ -87,13 +103,14 @@ defmodule Coconut.Workspace do
          {:ok, space} <- Map.fetch(ws.tracks, track_id),
          {:ok, space} <- Tamale.Space.apply_batch(space, ops),
          side <- sync_side(ws.side, track_id, space.version, side_changes) do
-      {:ok,
-       %{
-         ws
-         | tracks: Map.put(ws.tracks, track_id, space),
-           side: side,
-           edit_version: ws.edit_version + 1
-       }}
+      ws = %{
+        ws
+        | tracks: Map.put(ws.tracks, track_id, space),
+          side: side,
+          edit_version: ws.edit_version + 1
+      }
+
+      {:ok, transport_track_patches(ws, track_id, side_changes.patches_add)}
     else
       :error -> {:error, {:unknown_track, track_id}}
       {:error, _} = err -> err
@@ -108,6 +125,11 @@ defmodule Coconut.Workspace do
   Returns `{:ok, survivors, dead}` where survivors have updated anchors.
   `warp_provider` is required for `Tamale.Anchor.Metric` patches; pass `nil`
   for Ordinal/Relative-only v1.
+
+  `apply_batch/5` already transports at write time and persists the
+  results, so calling this on a workspace whose patches all sit at head is
+  a no-op fold — it remains as the check-time safety net (`Coconut.Resolve`)
+  for patches mounted out-of-band.
 
   Dead patches are `{patch, result}` tuples — the caller decides whether to
   garbage-collect, notify, or retry.
@@ -155,13 +177,32 @@ defmodule Coconut.Workspace do
     {:ok, Enum.reverse(survivors), Enum.reverse(dead)}
   end
 
+  # Write-time transport (design doc §2 flow step 4). Runs inside
+  # apply_batch on the post-sync workspace: the track's surviving patches
+  # are persisted with anchors at the new head, the dead are moved to the
+  # graveyard, and this batch's own `patches_add` join untouched.
+  defp transport_track_patches(ws, track_id, patches_add) do
+    own = Enum.filter(ws.side.patches, &(&1.track_id == track_id))
+    provider = WarpProvider.tick(track_spans(ws, track_id), own)
+    {:ok, survivors, dead} = transport_patches(ws, track_id, provider)
+
+    %{
+      ws
+      | side: %{
+          ws.side
+          | patches: survivors ++ patches_add,
+            dead_patches: ws.side.dead_patches ++ dead
+        }
+    }
+  end
+
   # ---- Side sync (private) ----
 
   defp sync_side(side, track_id, new_version, changes) do
     side
     |> sync_elements(changes.elements)
     |> sync_spans(track_id, new_version, changes.span_snapshot)
-    |> sync_patches(changes.patches_add, changes.patches_remove)
+    |> drop_patches(changes.patches_remove)
   end
 
   defp sync_elements(side, elements) when map_size(elements) == 0, do: side
@@ -217,12 +258,10 @@ defmodule Coconut.Workspace do
     end)
   end
 
-  defp sync_patches(side, adds, removes) do
-    cond do
-      adds == [] and removes == [] -> side
-      true -> %{side | patches: (side.patches ++ adds) -- removes}
-    end
-  end
+  # Removes land before write-time transport; additions land after it (see
+  # apply_batch/5), so a batch never transports the patches it mints.
+  defp drop_patches(side, []), do: side
+  defp drop_patches(side, removes), do: %{side | patches: side.patches -- removes}
 
   # ---- Transport helpers ----
 
@@ -296,6 +335,9 @@ defmodule Coconut.Workspace do
   No validation is performed at this point: construction-time legality
   (supported Metric `coord`) is enforced by `Coconut.Patch.new/1`, and
   unknown tracks surface as check entries in `Coconut.Resolve.run_check/3`.
+
+  Mount anchors at the track's current head version; every later
+  `apply_batch/5` transports them forward.
   """
   @spec attach_patch(t(), Coconut.Patch.t()) :: t()
   def attach_patch(ws, %Coconut.Patch{} = patch) do
@@ -306,6 +348,16 @@ defmodule Coconut.Workspace do
   @spec attach_patches(t(), [Coconut.Patch.t()]) :: t()
   def attach_patches(ws, patches) when is_list(patches) do
     %{ws | side: %{ws.side | patches: ws.side.patches ++ patches}}
+  end
+
+  @doc """
+  Returns the accumulated dead patches (`{patch, reason}` tuples) and clears
+  the graveyard. The policy layer decides re-mount or discard (design doc
+  §6: 锚判死由策略层重挂).
+  """
+  @spec take_dead_patches(t()) :: {[{Coconut.Patch.t(), term()}], t()}
+  def take_dead_patches(ws) do
+    {ws.side.dead_patches, %{ws | side: %{ws.side | dead_patches: []}}}
   end
 
   @doc """

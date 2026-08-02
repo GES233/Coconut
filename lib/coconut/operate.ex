@@ -78,6 +78,8 @@ defmodule Coconut.Operate do
   - `elements`: upsert element data (`map()`) or tombstone (`:delete`).
   - `span_snapshot`: the new version's span table entries for affected ids.
   - `patches_add` / `patches_remove`: patch lifecycle from content edits.
+    Removes land before write-time transport; additions are minted at the
+    post-batch head and join after it, untransported by their own batch.
   """
   @type side_changes :: %{
           elements: %{Tamale.id() => map() | :delete},

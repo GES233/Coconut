@@ -463,13 +463,12 @@ defmodule Coconut.OperateTest do
 
       ws = put_in(ws.side.patches, [cp])
 
-      # Delete the note
+      # Delete the note — write-time transport inside apply_batch kills it.
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
-      assert survivors == []
-      assert length(dead) == 1
+      assert ws.side.patches == []
+      assert [{^cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
     end
 
     test "ordinal anchor survives move (identity follows)", %{ws: ws} do
@@ -582,11 +581,10 @@ defmodule Coconut.OperateTest do
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
-      wp = Coconut.WarpProvider.tick(Workspace.track_spans(ws, @track), ws.side.patches)
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
-
-      assert survivors == []
-      assert [{^cp, {:undefined, :outside_warp}}] = dead
+      # Write-time transport folds the delete's warp hole: the anchor dies
+      # inside apply_batch, no explicit transport_patches call needed.
+      assert ws.side.patches == []
+      assert [{^cp, {:undefined, :outside_warp}}] = ws.side.dead_patches
     end
 
     test "patches for other tracks pass through", %{ws: ws} do
@@ -682,9 +680,94 @@ defmodule Coconut.OperateTest do
     {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
-    {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
+    # Write-time transport inside apply_batch kills it on the spot.
+    assert ws.side.patches == []
+    assert [{^cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
+  end
 
-    assert survivors == []
-    assert length(dead) == 1
+  describe "write-time transport" do
+    test "apply_batch transports and persists anchors (at_version advances)", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower({:insert_note, @track, "n1", :head, {0, 480}, %{}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, cp} =
+        Coconut.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: 1},
+          patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
+        })
+
+      ws = put_in(ws.side.patches, [cp])
+
+      {:ok, ops2, changes2} =
+        Operate.lower({:insert_note, @track, "n2", "n1", {480, 960}, %{}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
+
+      # No explicit transport_patches call — the batch itself folded.
+      assert [%{anchor: %{at_version: 2}}] = ws.side.patches
+      assert ws.side.dead_patches == []
+    end
+
+    test "take_dead_patches returns the graveyard and clears it", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower({:insert_note, @track, "n1", :head, {0, 480}, %{}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, cp} =
+        Coconut.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: 1},
+          patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
+        })
+
+      ws = put_in(ws.side.patches, [cp])
+
+      {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
+
+      {dead, ws} = Workspace.take_dead_patches(ws)
+      assert [{^cp, {:undefined, {:deleted, "n1"}}}] = dead
+      assert ws.side.dead_patches == []
+    end
+
+    test "patches_add minted by a batch join untransported, removes land first", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower({:insert_note, @track, "n1", :head, {0, 480}, %{}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, old} =
+        Coconut.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: 1},
+          patch: %Tamale.Patch{base_digest: "old", payload: %{}}
+        })
+
+      {:ok, fresh} =
+        Coconut.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: 1},
+          patch: %Tamale.Patch{base_digest: "fresh", payload: %{}}
+        })
+
+      ws = put_in(ws.side.patches, [old])
+
+      # A content-edit-style batch: no ops, removes the old patch, mints one.
+      changes = %{
+        elements: %{"n1" => :touch},
+        span_snapshot: %{},
+        patches_add: [fresh],
+        patches_remove: [old]
+      }
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 1, [], changes)
+
+      assert ws.side.patches == [fresh]
+      assert ws.side.dead_patches == []
+    end
   end
 end

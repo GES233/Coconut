@@ -112,15 +112,18 @@ defmodule Coconut.ResolveTest do
     assert Enum.all?(entries, &(&1.kind == :conflict))
   end
 
-  test "patch anchored on a deleted note is a transport failure", %{ws: ws} do
+  test "patch anchored on a deleted note dies at write time", %{ws: ws} do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "x"})
 
     {:ok, ops, changes} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
 
-    assert {:error, {:check_failed, [entry]}} = Resolve.run_check(ws, channels())
-    assert entry.kind == :transport
+    # Write-time transport moved the patch to the graveyard during
+    # apply_batch — the check no longer sees it at all.
+    assert ws.side.patches == []
+    assert [{_cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
+    assert {:ok, %{interventions: %{}, survivors: []}} = Resolve.run_check(ws, channels())
   end
 
   test "patch on an unknown channel is rejected", %{ws: ws} do

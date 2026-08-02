@@ -7,10 +7,11 @@
 #   Delete  → the note's span becomes a hole (no image)
 #   others  → identity
 #
-# Anchors that cannot survive coherently die loudly as transport entries —
-# never silently misplace. Note the anchors are NOT written back after
-# transport (that is the next milestone): every transport here re-folds
-# from the mount version, which is exactly what exercises the fold.
+# Anchors that cannot survive coherently die loudly — never silently
+# misplace. Write-time transport: every apply_batch folds the fresh log
+# entry and persists up-to-date anchors; the dead move to the graveyard
+# (side.dead_patches) for the policy layer. The explicit transport calls
+# below therefore re-fold nothing — they just re-verify the persisted state.
 
 alias Coconut.{Operate, Patch, Resolve, WarpProvider, Workspace}
 alias Coconut.Util.ID
@@ -192,21 +193,25 @@ wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.side.patches)
 w = wp.(:tick, {ws.tracks[track].version, ops})
 show_pieces.(w)
 
-transport_and_report.(ws, "transport after act 3 (curve dies in the hole)")
+transport_and_report.(ws, "transport after act 3 (live set already folded by apply_batch)")
 
-# ---- 7. Check round: one dead patch vetoes the batch ----
-IO.puts("\n=== Resolve.run_check (curve is dead) ===")
+IO.puts("surfaced at write time (side.dead_patches):")
+
+Enum.each(ws.side.dead_patches, fn {cp, reason} ->
+  IO.puts("  DIES      #{cp.channel}: #{inspect(reason)}")
+end)
+
+# ---- 7. Check round: the dead patch is out of the live set ----
+IO.puts("\n=== Resolve.run_check (curve already in the graveyard) ===")
 
 case Resolve.run_check(ws, channels) do
-  {:ok, %{interventions: interventions}} ->
-    IO.puts("unexpected success:")
+  {:ok, %{interventions: interventions, survivors: survivors}} ->
+    IO.puts("resolved #{length(survivors)} patches — no veto, the dead one is out:")
     IO.inspect(interventions)
 
   {:error, {:check_failed, entries}} ->
-    IO.puts("check_failed — one entry vetoes the whole batch:")
-    Enum.each(entries, fn e ->
-      IO.puts("  kind=#{e.kind} channel=#{e.channel} reason=#{inspect(e[:reason])}")
-    end)
+    IO.puts("unexpected veto:")
+    Enum.each(entries, fn e -> IO.inspect({e.kind, e.channel, e[:reason]}) end)
 end
 
 IO.puts("\nDone.")
