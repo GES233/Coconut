@@ -61,6 +61,7 @@ defmodule Coconut.Engine do
   @callback info(config :: term()) :: %{
               optional(:globals) => %{atom() => global_spec()},
               name: String.t(),
+              info: String.t(),
               version: String.t()
             }
 

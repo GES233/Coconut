@@ -60,6 +60,7 @@ defmodule Coconut.Engine.DiffSinger do
     %{
       name: "DiffSinger",
       version: "zongzi-svs",
+      info: "Onnx DiffSinger runner.",
       globals: %{
         gender: {:range, -1.0, 1.0},
         velocity: {:range, 0.1, 3.0},

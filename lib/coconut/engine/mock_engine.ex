@@ -19,6 +19,7 @@ defmodule Coconut.Engine.MockEngine do
     do: %{
       name: "Mock Engine",
       version: "dev",
+      info: "",
       globals: %{
         gender: {:range, -1.0, 1.0},
         depth: {:range, 0.0, 2.0},
