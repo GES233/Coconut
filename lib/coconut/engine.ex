@@ -7,8 +7,12 @@ defmodule Coconut.Engine do
 
   - `check/2` — the engine's own gate over a `Request`. Always consulted
     before `render/2`; a failure here aborts the round. (Patch-level
-    conflicts are vetoed earlier, in `Coconut.Resolve.run_check/3`.)
-  - `render/2` — produce an artifact from the same `Request`.
+    conflicts are vetoed earlier, in `Coconut.Resolve.run_check/3`.) On
+    success it returns `{:ok, checked}` — whatever the engine prepared
+    (projections, probes, pre-computed forwards) — which is handed back
+    to `render/3` so work done at check time is not redone at render time.
+  - `render/3` — produce an artifact from the same `Request` plus the
+    `checked` term from `check/2`.
 
   ## Capability declaration
 
@@ -40,14 +44,17 @@ defmodule Coconut.Engine do
               version: String.t()
             }
 
-  @callback check(Request.t(), config :: term()) :: :ok | {:error, term()}
+  @callback check(Request.t(), config :: term()) :: {:ok, checked :: term()} | {:error, term()}
 
-  @callback render(Request.t(), config :: term()) :: {:ok, term()} | {:error, term()}
+  @callback render(Request.t(), checked :: term(), config :: term()) ::
+              {:ok, term()} | {:error, term()}
 
   # ---- API ----
 
   @spec run_check(engine(), Request.t()) ::
-          :ok | {:error, term()} | {:error, {:check_failed, [global_entry()]}}
+          {:ok, checked :: term()}
+          | {:error, term()}
+          | {:error, {:check_failed, [global_entry()]}}
   def run_check(engine, %Request{} = request) do
     {module, config} = unpack(engine)
 
@@ -56,10 +63,10 @@ defmodule Coconut.Engine do
     end
   end
 
-  @spec run_render(engine(), Request.t()) :: {:ok, term()} | {:error, term()}
-  def run_render(engine, %Request{} = request) do
+  @spec run_render(engine(), Request.t(), checked :: term()) :: {:ok, term()} | {:error, term()}
+  def run_render(engine, %Request{} = request, checked) do
     {module, config} = unpack(engine)
-    module.render(request, config)
+    module.render(request, checked, config)
   end
 
   # ---- Globals gate ----

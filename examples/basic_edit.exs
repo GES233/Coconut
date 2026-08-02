@@ -42,7 +42,7 @@ ws =
 
 IO.puts("=== After insert ===")
 IO.inspect(ws.tracks[track].ids, label: "order")
-{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws})
+{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 
 # ---- 4. Mount patches (mount = capture base via projection) ----
@@ -99,7 +99,7 @@ ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
 IO.puts("\n=== After drag n1 (0..480 -> 100..580) ===")
 IO.inspect(ws.tracks[track].ids, label: "order")
-{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws})
+{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 
 # ---- 6. Transport patches ----
@@ -153,8 +153,8 @@ case Resolve.run_check(ws, channels) do
     IO.inspect(interventions, label: "interventions")
 
     {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
-    :ok = Engine.run_check(MockEngine, request)
-    {:ok, artifact} = Engine.run_render(MockEngine, request)
+    {:ok, checked} = Engine.run_check(MockEngine, request)
+    {:ok, artifact} = Engine.run_render(MockEngine, request, checked)
     IO.inspect(artifact.overrides, label: "engine overrides")
 
   {:error, {:check_failed, entries}} ->

@@ -13,10 +13,10 @@ defmodule Coconut.EngineTest do
     def info(_), do: %{name: "Bare", version: "dev"}
 
     @impl true
-    def check(_request, _config), do: :ok
+    def check(_request, _config), do: {:ok, nil}
 
     @impl true
-    def render(_request, _config), do: {:ok, :rendered}
+    def render(_request, _checked, _config), do: {:ok, :rendered}
   end
 
   defp request(globals) do
@@ -37,12 +37,12 @@ defmodule Coconut.EngineTest do
   end
 
   test "valid globals pass the gate" do
-    assert :ok = Engine.run_check(MockEngine, request(%{gender: 0.5, phoneme_mode: :auto}))
+    assert {:ok, nil} = Engine.run_check(MockEngine, request(%{gender: 0.5, phoneme_mode: :auto}))
   end
 
   test "empty globals always pass, declared or not" do
-    assert :ok = Engine.run_check(MockEngine, request(%{}))
-    assert :ok = Engine.run_check(BareEngine, request(%{}))
+    assert {:ok, nil} = Engine.run_check(MockEngine, request(%{}))
+    assert {:ok, nil} = Engine.run_check(BareEngine, request(%{}))
   end
 
   test "unknown global vetoes the round" do
@@ -89,8 +89,8 @@ defmodule Coconut.EngineTest do
   test "render passes globals through untouched" do
     {:ok, request} = Request.new(%{workspace: workspace(), globals: %{depth: 1.5}})
 
-    assert :ok = Engine.run_check(MockEngine, request)
-    assert {:ok, artifact} = Engine.run_render(MockEngine, request)
+    assert {:ok, nil} = Engine.run_check(MockEngine, request)
+    assert {:ok, artifact} = Engine.run_render(MockEngine, request, nil)
     assert artifact.globals == %{depth: 1.5}
     assert artifact.overrides == %{}
   end

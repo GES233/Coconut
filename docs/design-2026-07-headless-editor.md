@@ -50,7 +50,9 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 > ad-hoc spec map；首个内置 `Coconut.Channel.Lyric`）。不挂音符的全局
 > 参数走 `Request.globals`：过 check（`Engine.info` 的 `:globals` 声明做
 > 白名单+范围/枚举校验，非法进 `check_failed` 一票否决）、不过 resolve
-> （无 anchor/digest/transport），render 透传。
+> （无 anchor/digest/transport），render 透传。两段式的交接：`Engine.check/2`
+> 返回 `{:ok, checked}`（引擎在检查阶段算好的投影/前向），`render/3` 消费
+> 它而不重算——DiffSinger 的 dur/pitch 前向即经此复用。
 
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 
@@ -147,7 +149,10 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
 ## 9. 前置条件（动手前需定）
 
-1. 引擎面：驱动的引擎是谁（决定 Engine behaviour 与 digest 投影实现）；
+1. 引擎面：驱动的引擎是谁（决定 Engine behaviour 与 digest 投影实现）
+   ——已定（2026-08-02）：首发 DiffSinger（OpenUTAU 格式声库），经
+   `Coconut.Engine.DiffSinger` + `priv/python/ds_worker.py`（NDJSON stdio）
+   接入；UTAU classic 备选，G2P 层单开；
 2. 坐标基准：已定（tick 权威 + 帧 + 微秒，见第 4 节）；
 3. 首发 channel 清单——方向已定（2026-08-02）：抽象为 `Coconut.Channel`
    behaviour，不写死；首发候选音素 / 音素时长 / 音高（对齐 DiffSinger 的
@@ -170,7 +175,9 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 5. 桥接 + Engine 两段式（check/render）——部分完成：`Coconut.Resolve` +
    `Coconut.Engine` behaviour + `MockEngine` 已落地；channel 注册表
    （`Coconut.Channel` behaviour + 内置 `Channel.Lyric`）与全局参数闸门
-   （`Request.globals` + `info` 声明校验）已落地；orchid/oi 真实接入
+   （`Request.globals` + `info` 声明校验）已落地；首个真实引擎
+   `Coconut.Engine.DiffSinger` 已落地（Python worker 经 NDJSON stdio，
+   globals 已接入；interventions 映射与 G2P 未做）；orchid/oi 真实接入
    未开始（`Coconut.Engine.OrchidAdapter` 仅占位）；
 6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
    仍是纯模块）；

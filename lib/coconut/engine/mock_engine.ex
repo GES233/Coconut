@@ -4,8 +4,8 @@ defmodule Coconut.Engine.MockEngine do
 
   info/1   — declares a few global knobs (`:gender`, `:depth`,
              `:phoneme_mode`) so the globals gate has something to judge.
-  check/2  — always passes (no engine to validate against yet).
-  render/2 — flat map of element data with resolved spans from all tracks,
+  check/2  — always passes with no prepared state (`{:ok, nil}`).
+  render/3 — flat map of element data with resolved spans from all tracks,
              plus the request's folded overrides and globals so callers can
              assert the Resolve → Engine handoff and the globals pass-through.
   """
@@ -27,10 +27,10 @@ defmodule Coconut.Engine.MockEngine do
     }
 
   @impl true
-  def check(%Request{}, _config), do: :ok
+  def check(%Request{}, _config), do: {:ok, nil}
 
   @impl true
-  def render(%Request{} = request, _config) do
+  def render(%Request{} = request, _checked, _config) do
     ws = request.workspace
     all_spans = collect_latest_spans(ws.side.spans_by_version)
 

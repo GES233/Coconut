@@ -36,7 +36,7 @@ track_b = :vocal_b
 IO.puts("=== After insert (both tracks) ===")
 IO.inspect(ws.tracks[track_a].ids, label: "#{track_a} order")
 IO.inspect(ws.tracks[track_b].ids, label: "#{track_b} order")
-{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws})
+{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render (flat)")
 
 # ---- Attach patches to A ----
@@ -53,7 +53,7 @@ ws = Workspace.attach_patch(ws, cp_a)
 {:ok, ws} = Workspace.apply_batch(ws, track_a, ws.edit_version, ops, ch)
 
 IO.puts("\n=== After drag a1 to {0,600} ===")
-{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws})
+{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 # a1 {0,600} overlaps b1 {240,720} at {240,600} -- fine, different tracks
 

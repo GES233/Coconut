@@ -169,8 +169,8 @@ defmodule Coconut.ResolveTest do
     {:ok, %{interventions: interventions}} = Resolve.run_check(ws, channels())
     {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
 
-    assert :ok = Engine.run_check(MockEngine, request)
-    assert {:ok, artifact} = Engine.run_render(MockEngine, request)
+    assert {:ok, nil} = Engine.run_check(MockEngine, request)
+    assert {:ok, artifact} = Engine.run_render(MockEngine, request, nil)
     assert artifact.overrides == interventions
     assert artifact.notes["n1"].span == {0, 480}
     assert artifact.notes["n1"].lyric == "ら"

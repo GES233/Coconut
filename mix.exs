@@ -27,8 +27,11 @@ defmodule Coconut.MixProject do
   defp deps do
     [
       # Rebase support
-      {:tamale, path: "../tamale"}
+      {:tamale, path: "../tamale"},
       # {:tamale, github: "SynapticStrings/Tamal"}
+
+      # NDJSON wire format for engine workers (priv/python)
+      {:jason, "~> 1.4"}
 
       # Compute Agent
       #  add orchid or blabla
