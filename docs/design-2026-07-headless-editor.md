@@ -185,15 +185,15 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    `TempoMap`，bpm 在 lower 时归一化为 milli-bpm）；
 5. 桥接 + Engine 两段式（check/render）——部分完成：`Coconut.Resolve` +
    `Coconut.Engine` behaviour + `Coconut.Engines.Mock` 已落地；channel 注册表
-   （`Coconut.Channel` behaviour + 内置 `Channel.Lyric`）与全局参数闸门
+   （`Coconut.Channel` behaviour + 内置 `Engines.Channels.Lyric`）与全局参数闸门
    （`Request.globals` + `info` 声明校验）已落地；首个真实引擎
    `Coconut.Engines.DiffSinger` 已落地（Python worker 经 NDJSON stdio，
    globals 已接入）；orchid/oi 真实接入
    未开始（`Coconut.Engines.OrchidAdapter` 仅占位）；pitch override 已全链路
-   打通（`Channel.Pitch` → `{:port, note_id, :pitch}` → adapter 秒域曲线 →
+   打通（`Engines.Channels.Pitch` → `{:port, note_id, :pitch}` → adapter 秒域曲线 →
    worker 帧域 pitch_in/retake）；Encoder 契约 + Literal + worker dsdict
    编码器已落地（汉字歌词 → pypinyin → 声库 dsdict 查表，字典按语言
-   懒加载 + CSafeLoader）；dur override 已接入（`Channel.Duration` → 钉音素帧数，未钉
+   懒加载 + CSafeLoader）；dur override 已接入（`Engines.Channels.Duration` → 钉音素帧数，未钉
    按比例吸收；顺带修债：ph_dur 逐 word 归一到记谱帧数，渲染长度不再
    偏离乐谱）；
 6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
@@ -202,3 +202,84 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
 工作量估计：约 3–4 周（单人），风险集中在 Caller 义务（warp 构造、
 digest 投影、float 归一化）与隐式约定密集，而非代码量。
+
+## 11. 已知架构问题与演进方向（2026-08-02 评审）
+
+引擎接口已知会大改（渲染不落盘、音频走内存），本节不含此项。以下为评审
+确认的存量问题，按实质程度排序；未标注「已定」的方向均未拍板，改动前
+需先在这里更新结论。
+
+### 11.1 Request 直塞 Workspace 内部结构；Snapshot/Artifact 空壳（优先立项）
+
+**现象**：`Coconut.Engine.Request` 把整个 `Workspace` 交给引擎，引擎各自
+解析 `side` 的内部结构——`DiffSinger.collect_notes`、`MockEngine.
+collect_latest_spans`、`Workspace.latest_spans` 三份"拍扁乐谱"的逻辑并存。
+`lib/coconut/engine/snapshot.ex` / `artifact.ex` 至今是占位空壳。
+
+**为什么痛**：引擎不该知道 `spans_by_version`、`elements_by_id` 长什么样；
+side 结构一变所有引擎跟着碎。Map → Note 管线落地后，下游需要的是一层
+正式的"乐谱视图"。
+
+**方向**：`Snapshot` = 拍扁的乐谱视图（各轨有序 `[{Note, span}]`、编好的
+`TempoMap`、版本钉），`Request` 携带 Snapshot 而非 Workspace；`Artifact`
+同
+期定义为渲染产物的正式形状（为不落盘渲染铺路）。引擎只读 Snapshot。
+
+### 11.2 时间双真相：Note tick vs spans 表（与 11.1 同期）
+
+**现象**：`Note.start_tick/duration_tick` 是插入时快照，`spans_by_version`
+才是时间权威；transport 只更新后者，split 继承时手工同步前者。
+
+**为什么痛**：两处都"像真的"，读错一处就是静默错位。
+
+**方向**（二选一，未拍）：a) Note 不存 tick，只做内容载体（key/lyric/
+metadata），时间一律走 spans；b) span 写回时同步 Note（apply_batch 里
+加同步点）。倾向 a，Note 更纯。
+
+### 11.3 side 杂物抽屉（随 11.1 顺带）
+
+**现象**：`Side` 一个 struct 装 spans_by_version / elements_by_id / patches
+/ dead_patches / tempos_by_version（占位从未写入）；`spans_by_version`
+无界增长，`Space.truncate` 的"同步裁剪"未实现。
+
+**方向**：启用 `tempos_by_version`（变 tempo 时的 transport 锚定需要它）
+或删字段；接入 truncate 裁剪；side 拆分命名（乐谱侧表 / 干预侧表）。
+
+### 11.4 port_ref 语义（已定：废元组，改 DTO）
+
+**现象**：`{:port, node, port}` 的 node 位一会是角色名（`:synth`）一会是
+音符 id；fold 同 port 后来者**静默**覆盖先来者；端口认领靠各 adapter
+模式匹配自觉，无注册机制。
+
+**已定方向**：port 引用改为显式 DTO（Map 或 Struct，不用位置元组），
+字段命名语义（如 `%{scope, kind, id}`）；fold 的覆盖语义显式化——同
+port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认领在多引擎
+并存前要有注册/声明处（配合 capability 声明）。
+
+### 11.5 check → render 无版本钉
+
+**现象**：`Request` 是值快照，checked 之后 workspace 变了无人发现，全靠
+调用方顺序自觉。
+
+**方向**：`edit_version` 钉进 `Request`/`checked`，`run_render` 校验一致
+（随 GenServer 壳一起做）。
+
+### 11.6 PortClient 无监督 + key 切换队列污染
+
+**现象**：全局单例 GenServer 不在 supervision tree 下；worker key 变化时
+旧 key 的排队请求会落到新 worker（v1 注释妥协）。
+
+**方向**：挂监督树；key 切换时 fail 掉旧队列而非误投（多声部/多声库时
+重做）。
+
+### 11.7 毛边（记入 backlog，随用随修）
+
+- 错误词汇两套：`missing_x` / `bad_x` / `unknown_x` 混用，接口层对外前
+  统一。
+- Operate request 为 6~7 元 tagged tuple，位置参数多；成为 wire format
+  前再评。
+- `Note.to_canonical` 的 key 形状（`%{midi: n}`）是隐性契约：换 tuning
+  或改形状 = 全部已挂 patch 的 base_digest 失效。改 canonical 形状视为
+  breaking change。
+- `Workspace.tempo_map/2` 每次现编 TempoMap；大工程下考虑缓存
+  （与 tempos_by_version 一并想）。
