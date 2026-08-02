@@ -22,7 +22,7 @@ defmodule Coconut.Engines.DiffSinger.Encoder do
       action: "encode",
       notes:
         Enum.map(notes, fn {id, data, _span} ->
-          %{id: id, lyric: Map.get(data, :lyric), lang: Map.get(data, :lang, "zh")}
+          %{id: id, lyric: data.lyric, lang: Map.get(data.metadata, "lang", "zh")}
         end)
     }
 

@@ -6,13 +6,14 @@ defmodule Coconut.Engines.DiffSinger do
   is the adaptation boundary:
 
   - **note assembly** — every element across every track, merged and
-    sorted by start tick. Each note must carry `:pitch` (MIDI) and
-    phonemes: either explicit `:phonemes` (`[[lang, ph], ...]` pairs —
-    always wins) or derived by the configured encoder (see `Coconut.Encoder`),
-    which runs once per track over the track's full note sequence so
-    melisma and context-dependent readings have their phrase. Notes with
-    neither are rejected at assembly time (`:missing_phonemes`,
-    `:encoder_failed`, `:encoder_incomplete`).
+    sorted by start tick. Elements on note tracks are `Coconut.Score.Note`
+    structs (cast at lowering): each must carry a `:key` (pitch) and
+    phonemes — explicit `"phonemes"` metadata (`[[lang, ph], ...]` pairs,
+    always wins) or derived by the configured encoder (see
+    `Coconut.Encoder`), which runs once per track over the track's full
+    note sequence so melisma and context-dependent readings have their
+    phrase. Notes with neither are rejected at assembly time
+    (`:missing_phonemes`, `:encoder_failed`, `:encoder_incomplete`).
   - **tick → second conversion** — via the workspace tempo map when a tempo
     track exists, else a flat 120 BPM fallback (the only place float
     seconds enter; design doc §4).
@@ -62,7 +63,7 @@ defmodule Coconut.Engines.DiffSinger do
 
   @behaviour Coconut.Engine
 
-  alias Coconut.{Engine.Request, Score.TempoMap, Workspace}
+  alias Coconut.{Engine.Request, Score.Key, Score.TempoMap, Workspace}
 
   @default_client Coconut.Engines.DiffSinger.PortClient
   @default_tpqn 480
@@ -183,7 +184,7 @@ defmodule Coconut.Engines.DiffSinger do
          {:ok, notes} <- collect_notes(ws, config) do
       words =
         Enum.map(notes, fn {_id, data, {start_tick, end_tick}} ->
-          [data.phonemes, to_sec.(end_tick) - to_sec.(start_tick), data.pitch]
+          [phonemes_of(data), to_sec.(end_tick) - to_sec.(start_tick), Key.to_midi(data.key)]
         end)
 
       {overrides, errors} = collect_overrides(request.interventions, notes, to_sec)
@@ -236,7 +237,7 @@ defmodule Coconut.Engines.DiffSinger do
   # Validations the adapter can own: index in range, pinned total within
   # the note's span.
   defp convert_durations(durations, note_id, {data, {start_tick, end_tick}}, to_sec) do
-    phoneme_count = length(data.phonemes)
+    phoneme_count = length(Map.get(data.metadata, "phonemes", []))
     note_sec = to_sec.(end_tick) - to_sec.(start_tick)
 
     {secs, errs} =
@@ -287,7 +288,7 @@ defmodule Coconut.Engines.DiffSinger do
         |> Enum.sort_by(fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)
 
       missing_pitch =
-        for {id, data, _span} <- notes, not is_integer(Map.get(data, :pitch)), do: id
+        for {id, %Coconut.Score.Note{key: nil}, _span} <- notes, do: id
 
       case missing_pitch do
         [] -> {:ok, notes}
@@ -328,11 +329,14 @@ defmodule Coconut.Engines.DiffSinger do
     end)
   end
 
-  defp fill_phonemes({id, data, span}, by_id) do
-    if has_phonemes?(data) do
-      {id, data, span}
+  defp fill_phonemes({id, %Coconut.Score.Note{} = note, span}, by_id) do
+    if has_phonemes?(note) do
+      {id, note, span}
     else
-      {id, Map.put(data, :phonemes, Map.fetch!(by_id, id)), span}
+      {:ok, note} =
+        Coconut.Score.Note.update_metadata(note, %{"phonemes" => Map.fetch!(by_id, id)})
+
+      {id, note, span}
     end
   end
 
@@ -345,7 +349,10 @@ defmodule Coconut.Engines.DiffSinger do
   defp encode_all(module, notes, config) when is_atom(module),
     do: module.encode(notes, config)
 
-  defp has_phonemes?(data), do: match?([_ | _], Map.get(data, :phonemes))
+  defp has_phonemes?(%Coconut.Score.Note{metadata: metadata}),
+    do: match?([_ | _], Map.get(metadata, "phonemes"))
+
+  defp phonemes_of(%Coconut.Score.Note{metadata: %{"phonemes" => phonemes}}), do: phonemes
 
   # tick→sec via the tempo map when available; flat 120 BPM otherwise.
   defp sec_converter(ws, tpqn) do

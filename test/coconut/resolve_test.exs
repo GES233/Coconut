@@ -30,11 +30,11 @@ defmodule Coconut.ResolveTest do
     ws
   end
 
-  # Mounts a :lyric patch on `note_id`, capturing the current element as
-  # base — same as a real mount-at-edit-time flow.
+  # Mounts a :lyric patch on `note_id`, capturing the current element's
+  # canonical projection as base — same as a real mount-at-edit-time flow.
   defp attach_lyric_patch(ws, note_id, payload) do
     data = Map.fetch!(ws.side.elements_by_id, note_id)
-    {:ok, tp} = Tamale.Patch.new(data, payload)
+    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), payload)
 
     {:ok, cp} =
       Patch.new(%{
@@ -47,12 +47,21 @@ defmodule Coconut.ResolveTest do
     Workspace.attach_patch(ws, cp)
   end
 
+  # Rewrites a note's element data in place (simulating a content edit).
+  defp rewrite_note(ws, note_id, attrs) do
+    {start_t, end_t} = Workspace.latest_span(ws, @track, note_id)
+    {:ok, note} = Coconut.Score.Note.from_element(note_id, {start_t, end_t}, attrs)
+    put_in(ws.side.elements_by_id[note_id], note)
+  end
+
   defp lyric_channel do
     %{
       projection: fn ws, %Patch{} = patch ->
         case patch.anchor do
           %Tamale.Anchor.Ordinal{refs: [id | _]} ->
-            Map.fetch(ws.side.elements_by_id, id)
+            with {:ok, element} <- Map.fetch(ws.side.elements_by_id, id) do
+              {:ok, Coconut.Score.Note.to_canonical(element)}
+            end
 
           _other ->
             {:error, :unsupported_anchor}
@@ -91,7 +100,7 @@ defmodule Coconut.ResolveTest do
     assert {:ok, %{passed: true}} = Resolve.run_check(ws, channels())
 
     # The content changes out from under the mounted patch.
-    ws = put_in(ws.side.elements_by_id["n1"], %{pitch: 60, lyric: "り"})
+    ws = rewrite_note(ws, "n1", %{pitch: 60, lyric: "り"})
 
     assert {:ok, %{passed: false, entries: [entry]}} = Resolve.run_check(ws, channels())
     assert entry.kind == :conflict
@@ -105,8 +114,8 @@ defmodule Coconut.ResolveTest do
     ws = attach_lyric_patch(ws, "n1", %{lyric: "x"})
     ws = attach_lyric_patch(ws, "n2", %{lyric: "y"})
 
-    ws = put_in(ws.side.elements_by_id["n1"], %{pitch: 61})
-    ws = put_in(ws.side.elements_by_id["n2"], %{pitch: 63})
+    ws = rewrite_note(ws, "n1", %{pitch: 61})
+    ws = rewrite_note(ws, "n2", %{pitch: 63})
 
     assert {:ok, %{passed: false, entries: entries}} = Resolve.run_check(ws, channels())
     assert length(entries) == 2
@@ -151,7 +160,7 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
 
     data = Map.fetch!(ws.side.elements_by_id, "n1")
-    {:ok, tp} = Tamale.Patch.new(data, [[0, 60], [480, 62]])
+    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), [[0, 60], [480, 62]])
 
     {:ok, cp} =
       Patch.new(%{
@@ -173,7 +182,7 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
 
     data = Map.fetch!(ws.side.elements_by_id, "n1")
-    {:ok, tp} = Tamale.Patch.new(data, [[0, 96], [1, 384]])
+    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), [[0, 96], [1, 384]])
 
     {:ok, cp} =
       Patch.new(%{

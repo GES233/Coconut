@@ -2,6 +2,7 @@ defmodule Coconut.OperateTest do
   use ExUnit.Case, async: true
 
   alias Coconut.{Operate, Workspace}
+  alias Coconut.Score.{Key.TwelveET, Note}
   alias Coconut.Util.ID
 
   @track :vocal
@@ -112,7 +113,7 @@ defmodule Coconut.OperateTest do
                  %Operate.Config{}
                )
 
-      assert changes.elements == %{"n1" => %{pitch: 60}}
+      assert %{"n1" => %Note{key: %TwelveET{midi: 60}}} = changes.elements
       assert changes.span_snapshot == %{"n1" => {0, 480}}
     end
 
@@ -168,7 +169,15 @@ defmodule Coconut.OperateTest do
                Operate.lower({:split_note, @track, "n1", 240, "n2"}, ws, %Operate.Config{})
 
       assert changes.span_snapshot == %{"n1" => {0, 240}, "n2" => {240, 480}}
-      assert changes.elements == %{"n2" => %{pitch: 60}}
+
+      assert %{
+               "n2" => %Note{
+                 id: "n2",
+                 start_tick: 240,
+                 duration_tick: 240,
+                 key: %TwelveET{midi: 60}
+               }
+             } = changes.elements
     end
 
     test "split without span state is unreachable", %{ws: ws} do
@@ -232,7 +241,7 @@ defmodule Coconut.OperateTest do
 
       # Side updated
       assert ws.edit_version == 1
-      assert ws.side.elements_by_id["n1"] == %{pitch: 60}
+      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
       assert ws.side.spans_by_version[@track][1] == %{"n1" => {0, 480}}
     end
 
@@ -246,7 +255,7 @@ defmodule Coconut.OperateTest do
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
-      assert ws.side.elements_by_id["n1"] == %{pitch: 60}
+      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
 
       # Delete
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
@@ -284,7 +293,7 @@ defmodule Coconut.OperateTest do
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # Element unchanged
-      assert ws.side.elements_by_id["n1"] == %{pitch: 60}
+      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
       # Span updated
       assert ws.side.spans_by_version[@track][2]["n1"] == {100, 580}
       # Old version's span preserved
@@ -310,7 +319,9 @@ defmodule Coconut.OperateTest do
 
       assert Workspace.latest_span(ws, @track, "n1") == {0, 240}
       assert Workspace.latest_span(ws, @track, "n2") == {240, 480}
-      assert ws.side.elements_by_id["n2"] == %{pitch: 60}
+
+      assert %Note{id: "n2", start_tick: 240, key: %TwelveET{midi: 60}} =
+               ws.side.elements_by_id["n2"]
 
       # The right half used to have no span at all — a second split validates now.
       assert :ok = Operate.validate({:split_note, @track, "n2", 360, "n3"}, ws)
@@ -344,7 +355,7 @@ defmodule Coconut.OperateTest do
       assert Workspace.latest_span(ws, @track, "n2") == nil
       refute Map.has_key?(ws.side.elements_by_id, "n2")
       # `into` keeps its own payload — content merging is domain policy.
-      assert ws.side.elements_by_id["n1"] == %{lyric: "ら"}
+      assert %Note{lyric: "ら"} = ws.side.elements_by_id["n1"]
     end
 
     test "edit_note :touch marker preserves element data", %{ws: ws} do
@@ -362,7 +373,7 @@ defmodule Coconut.OperateTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, changes)
 
-      assert ws.side.elements_by_id["n1"] == %{pitch: 60}
+      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
     end
 
     test "unknown track returns an error tuple, not bare :error", %{ws: ws} do

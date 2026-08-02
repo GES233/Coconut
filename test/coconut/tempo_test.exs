@@ -321,7 +321,7 @@ defmodule Coconut.TempoTest do
           %Operate.Config{}
         )
 
-      assert changes.elements == %{"n1" => %{lyric: "ら"}}
+      assert %{"n1" => %Coconut.Score.Note{lyric: "ら", key: nil}} = changes.elements
     end
   end
 end

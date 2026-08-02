@@ -26,3 +26,6 @@ coconut-*.tar
 *.pyc
 __pycache__/
 .venv/
+
+# Audio
+*.wav

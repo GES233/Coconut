@@ -58,6 +58,12 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 > `Coconut.Encoder`（note→request token，形状对契约不透明、由引擎定义）：
 > phrase 粒度、逐轨调用、现算，具体机制由引擎开发者实现（首个实现
 > Literal）；v1 手动配置，声库自动推导留待声库声明层。
+>
+> 2026-08-02 补记 II：元素数据流定为 Map → Note → ……——`Operate`
+> lowering 把音符 attrs 铸成 `Coconut.Score.Note`（pitch → `Key.TwelveET`，
+> 其余进 metadata），`elements_by_id` 直接存 struct；tempo 事件等非音符
+> 元素仍存裸 map。digest 场景走 `Note.to_canonical/1`（key 经
+> `Map.from_struct` 归约为 `%{midi: n}`，Tamale.Digest 拒 struct）。
 
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 

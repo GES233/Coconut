@@ -99,10 +99,10 @@ defmodule Coconut.Engines.DiffSingerTest do
     assert [[ph1, dur1, midi1], [ph2, dur2, midi2]] = words
     assert ph1 == [["zh", "l"], ["zh", "a"]]
     assert_in_delta dur1, 0.5, 0.001
-    assert midi1 == 60
+    assert midi1 == 60.0
     assert ph2 == [["zh", "z"], ["zh", "i"]]
     assert_in_delta dur2, 0.5, 0.001
-    assert midi2 == 62
+    assert midi2 == 62.0
   end
 
   test "notes across tracks are merged and sorted by start tick" do
@@ -118,7 +118,7 @@ defmodule Coconut.Engines.DiffSingerTest do
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
     assert_received {:fake_call, %{words: words}}
-    assert Enum.map(words, fn [_ph, _dur, midi] -> midi end) == [55, 60, 62]
+    assert Enum.map(words, fn [_ph, _dur, midi] -> midi end) == [55.0, 60.0, 62.0]
   end
 
   test "check rejects notes without phonemes before calling the worker" do
@@ -163,7 +163,7 @@ defmodule Coconut.Engines.DiffSingerTest do
     assert_received {:fake_call,
                      %{action: "encode", notes: [%{id: "n1", lyric: "两", lang: "zh"}]}}
 
-    assert_received {:fake_call, %{action: "check", words: [[phonemes, _dur, 60]]}}
+    assert_received {:fake_call, %{action: "check", words: [[phonemes, _dur, 60.0]]}}
     assert phonemes == [["zh", "x"]]
   end
 
@@ -178,7 +178,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
-    assert_received {:fake_call, %{words: [[phonemes, _dur, 60]]}}
+    assert_received {:fake_call, %{words: [[phonemes, _dur, 60.0]]}}
     assert phonemes == [["zh", "l"], ["zh", "iang"]]
   end
 
@@ -193,7 +193,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
-    assert_received {:fake_call, %{words: [[phonemes, _dur, 60]]}}
+    assert_received {:fake_call, %{words: [[phonemes, _dur, 60.0]]}}
     assert phonemes == [["ja", "a"]]
   end
 
@@ -212,7 +212,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
-    assert_received {:fake_call, %{words: [[phonemes, _dur, 60]]}}
+    assert_received {:fake_call, %{words: [[phonemes, _dur, 60.0]]}}
     assert phonemes == [["zh", "manual"]]
   end
 
@@ -275,7 +275,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
-    assert_received {:fake_call, %{words: [[_ph, dur, 60]]}}
+    assert_received {:fake_call, %{words: [[_ph, dur, 60.0]]}}
     assert_in_delta dur, 0.5, 0.0001
   end
 
@@ -330,7 +330,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   test "intervention on an unknown note vetoes at check before calling the worker" do
-    interventions = %{{:port, "nope", :pitch} => %{input: [[0, 60]]}}
+    interventions = %{{:port, "nope", :pitch} => %{input: [[0, 60.0]]}}
     {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
 
     assert {:ok, %{passed: false, entries: [entry], checked: nil}} =

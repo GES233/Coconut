@@ -39,6 +39,63 @@ defmodule Coconut.Score.Note do
   # ---- Constructor ----
 
   @doc """
+  Cast a raw element map into a Note ("Map → Note").
+
+  `attrs` recognises `:pitch` (a number, cast to `Key.TwelveET`, or an
+  existing `Score.Key` struct), `:lyric` and `:annotation`; every other
+  key is carried in `metadata` with stringified keys.
+
+  `start_tick` / `duration_tick` snapshot the insert span — the workspace
+  spans table remains the timing authority after transport.
+
+  ## Examples
+
+      iex> from_element("n1", {0, 480}, %{pitch: 60, lyric: "ら", phonemes: [["zh", "a"]]})
+      {:ok, %Note{id: "n1", start_tick: 0, duration_tick: 480, lyric: "ら",
+                  metadata: %{"phonemes" => [["zh", "a"]]}}}
+  """
+  @spec from_element(Tamale.id(), {non_neg_integer(), non_neg_integer()}, map()) ::
+          {:ok, t()} | {:error, term()}
+  def from_element(id, {start_tick, end_tick}, attrs) do
+    {pitch, attrs} = Map.pop(attrs, :pitch)
+    {lyric, attrs} = Map.pop(attrs, :lyric)
+    {annotation, attrs} = Map.pop(attrs, :annotation)
+
+    with {:ok, key} <- cast_key(pitch) do
+      new(%{
+        id: id,
+        start_tick: start_tick,
+        duration_tick: end_tick - start_tick,
+        key: key,
+        lyric: lyric,
+        annotation: annotation,
+        metadata: Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
+      })
+    end
+  end
+
+  defp cast_key(nil), do: {:ok, nil}
+  defp cast_key(%_{} = key), do: {:ok, key}
+  defp cast_key(n) when is_number(n), do: Key.TwelveET.from_midi(n, nil)
+  defp cast_key(other), do: {:error, {:invalid_key, other}}
+
+  @doc """
+  Canonical projection for digests (`Tamale.Digest` rejects structs).
+
+  The key struct is reduced to a plain map (`Map.from_struct/1`); every
+  remaining field is already canonical.
+  """
+  @spec to_canonical(t()) :: map()
+  def to_canonical(%__MODULE__{} = note) do
+    note
+    |> Map.from_struct()
+    |> Map.update!(:key, fn
+      nil -> nil
+      %_{} = key -> Map.from_struct(key)
+    end)
+  end
+
+  @doc """
   Create new note.
 
   Note identity is by `id`. Ordering is extrinsic to the Note struct.

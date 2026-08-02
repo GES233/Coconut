@@ -14,7 +14,7 @@ defmodule Coconut.Operate do
   - lowering does NOT apply anything; `Workspace.apply_batch/2` is the writer.
   """
 
-  alias Coconut.Score.Tempo
+  alias Coconut.Score.{Tempo, Note}
   alias Tamale.Op.{Delete, Insert, Merge, Move, Retime, Split}
 
   # ---- Config ----
@@ -115,11 +115,12 @@ defmodule Coconut.Operate do
     end
   end
 
-  def validate({:insert_note, track, id, after_id, {start_t, end_t}, _attrs}, ws) do
+  def validate({:insert_note, track, id, after_id, {start_t, end_t}, attrs}, ws) do
     with {:ok, space, _side} <- track_context(ws, track),
          :ok <- id_fresh?(space, id),
          :ok <- after_valid?(space, after_id),
-         :ok <- span_valid?(start_t, end_t) do
+         :ok <- span_valid?(start_t, end_t),
+         {:ok, _note} <- Note.from_element(id, {start_t, end_t}, attrs) do
       :ok
     end
   end
@@ -216,15 +217,19 @@ defmodule Coconut.Operate do
   end
 
   def lower({:insert_note, _track, id, after_id, span, attrs}, _ws, _cfg) do
-    ops = [%Insert{id: id, after_id: after_id}]
+    # Note tracks store Score.Note structs (Map → Note); extra attrs are
+    # carried in the note's metadata.
+    with {:ok, note} <- Note.from_element(id, span, attrs) do
+      ops = [%Insert{id: id, after_id: after_id}]
 
-    changes = %{
-      @empty_side_changes
-      | elements: %{id => attrs},
-        span_snapshot: %{id => span}
-    }
+      changes = %{
+        @empty_side_changes
+        | elements: %{id => note},
+          span_snapshot: %{id => span}
+      }
 
-    {:ok, ops, changes}
+      {:ok, ops, changes}
+    end
   end
 
   def lower({:delete_note, _track, id}, _ws, _cfg) do
@@ -271,7 +276,9 @@ defmodule Coconut.Operate do
         # after a split is the caller's business (see :edit_note).
         changes = %{
           @empty_side_changes
-          | elements: %{new_id => Map.get(ws.side.elements_by_id, id, %{})},
+          | elements: %{
+              new_id => inherit_element(Map.get(ws.side.elements_by_id, id), new_id, at_tick, e)
+            },
             span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
         }
 
@@ -321,6 +328,17 @@ defmodule Coconut.Operate do
   end
 
   # ---- Helpers ----
+
+  # The right half inherits the parent's payload. Note structs get the
+  # new id and the right half's span snapshot.
+  defp inherit_element(%Note{} = parent, new_id, start_tick, end_tick) do
+    {:ok, child} =
+      Note.update(parent, start_tick: start_tick, duration_tick: end_tick - start_tick)
+
+    %{child | id: new_id}
+  end
+
+  defp inherit_element(element, _new_id, _start_tick, _end_tick), do: element || %{}
 
   defp track_context(ws, :tempo) do
     case ws.tempo_space do

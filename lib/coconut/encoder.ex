@@ -28,8 +28,10 @@ defmodule Coconut.Encoder do
   re-derives tokens automatically. Caching is a later concern.
   """
 
-  @typedoc "One note as the adapter assembled it: `{id, data, {start_tick, end_tick}}`."
-  @type note :: {Tamale.id(), data :: map(), span :: {non_neg_integer(), non_neg_integer()}}
+  @typedoc "One note as the adapter assembled it: `{id, note, {start_tick, end_tick}}`."
+  @type note ::
+          {Tamale.id(), data :: Coconut.Score.Note.t(),
+           span :: {non_neg_integer(), non_neg_integer()}}
 
   @callback encode(notes :: [note()], config :: term()) ::
               {:ok, %{Tamale.id() => term()}} | {:error, term()}

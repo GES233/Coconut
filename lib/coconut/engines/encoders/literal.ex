@@ -17,14 +17,14 @@ defmodule Coconut.Engines.Encoders.Literal do
     default_lang = Map.get(config || %{}, :lang, "zh")
 
     Enum.reduce_while(notes, {:ok, %{}}, fn {id, data, _span}, {:ok, acc} ->
-      case Map.get(data, :lyric) do
+      case data.lyric do
         lyric when is_binary(lyric) ->
           case String.split(lyric) do
             [] ->
               {:halt, {:error, {:empty_lyric, id}}}
 
             parts ->
-              lang = Map.get(data, :lang, default_lang)
+              lang = Map.get(data.metadata, "lang", default_lang)
               {:cont, {:ok, Map.put(acc, id, Enum.map(parts, &[lang, &1]))}}
           end
 
