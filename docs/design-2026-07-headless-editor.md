@@ -44,6 +44,13 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 > 2026-08-01 补记：实现定名 `Coconut.Resolve`（`lib/coconut/resolve.ex`），
 > 原拟名 ACF 废弃；Engine behaviour 见 `lib/coconut/engine.ex`，两段式
 > check/render 经 `Coconut.Engine.Request` 传递。
+>
+> 2026-08-02 补记：channel 抽象为 `Coconut.Channel` behaviour，不写死
+> （注册表即 `run_check/3` 的 channels map，值可为 behaviour 模块或
+> ad-hoc spec map；首个内置 `Coconut.Channel.Lyric`）。不挂音符的全局
+> 参数走 `Request.globals`：过 check（`Engine.info` 的 `:globals` 声明做
+> 白名单+范围/枚举校验，非法进 `check_failed` 一票否决）、不过 resolve
+> （无 anchor/digest/transport），render 透传。
 
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 
@@ -142,8 +149,10 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
 1. 引擎面：驱动的引擎是谁（决定 Engine behaviour 与 digest 投影实现）；
 2. 坐标基准：已定（tick 权威 + 帧 + 微秒，见第 4 节）；
-3. 首发 channel 清单（每个 channel 一个 adapter：warp_payload + digest
-   投影，是工作量乘数）；
+3. 首发 channel 清单——方向已定（2026-08-02）：抽象为 `Coconut.Channel`
+   behaviour，不写死；首发候选音素 / 音素时长 / 音高（对齐 DiffSinger 的
+   tokens/durations/f0 三路模型输入），每 channel 一个 adapter：warp_payload
+   + digest 投影，是工作量乘数；
 4. API 边界形状：首发建议 Elixir API + JSON-RPC/stdio + CLI 三件套，
    MCP 可后加；渲染为长任务（check 同步一票否决，render 异步 job + 事件）；
 5. 持久化：工程文件落盘与否（equinox 的 Pickle codec 可参考）。
@@ -159,7 +168,9 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 4. Tempo Track Space + TempoMap fold——已完成（`Coconut.Score.Tempo` /
    `TempoMap`，bpm 在 lower 时归一化为 milli-bpm）；
 5. 桥接 + Engine 两段式（check/render）——部分完成：`Coconut.Resolve` +
-   `Coconut.Engine` behaviour + `MockEngine` 已落地；orchid/oi 真实接入
+   `Coconut.Engine` behaviour + `MockEngine` 已落地；channel 注册表
+   （`Coconut.Channel` behaviour + 内置 `Channel.Lyric`）与全局参数闸门
+   （`Request.globals` + `info` 声明校验）已落地；orchid/oi 真实接入
    未开始（`Coconut.Engine.OrchidAdapter` 仅占位）；
 6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
    仍是纯模块）；

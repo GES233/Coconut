@@ -2,10 +2,12 @@ defmodule Coconut.Engine.MockEngine do
   @moduledoc """
   Minimal engine for exercising the edit pipeline end-to-end.
 
+  info/1   — declares a few global knobs (`:gender`, `:depth`,
+             `:phoneme_mode`) so the globals gate has something to judge.
   check/2  — always passes (no engine to validate against yet).
   render/2 — flat map of element data with resolved spans from all tracks,
-             plus the request's folded overrides so callers can assert the
-             Resolve → Engine handoff.
+             plus the request's folded overrides and globals so callers can
+             assert the Resolve → Engine handoff and the globals pass-through.
   """
 
   @behaviour Coconut.Engine
@@ -16,7 +18,12 @@ defmodule Coconut.Engine.MockEngine do
   def info(_),
     do: %{
       name: "Mock Engine",
-      version: "dev"
+      version: "dev",
+      globals: %{
+        gender: {:range, -1.0, 1.0},
+        depth: {:range, 0.0, 2.0},
+        phoneme_mode: {:enum, [:auto, :manual]}
+      }
     }
 
   @impl true
@@ -35,7 +42,7 @@ defmodule Coconut.Engine.MockEngine do
       end)
       |> Map.new()
 
-    {:ok, %{notes: notes, overrides: request.interventions}}
+    {:ok, %{notes: notes, overrides: request.interventions, globals: request.globals}}
   end
 
   defp collect_latest_spans(spans_by_track) do

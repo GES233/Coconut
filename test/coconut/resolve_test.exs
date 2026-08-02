@@ -61,7 +61,7 @@ defmodule Coconut.ResolveTest do
     }
   end
 
-  defp channels, do: %{lyric: lyric_channel()}
+  defp channels, do: %{lyric: Coconut.Channel.Lyric}
 
   # ---- Tests ----
 

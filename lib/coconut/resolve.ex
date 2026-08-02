@@ -17,7 +17,8 @@ defmodule Coconut.Resolve do
   interventions via each channel's `target`.
 
   Channel specs are caller-supplied: digest projection shapes are domain
-  policy, not kernel policy.
+  policy, not kernel policy. A spec is either a module implementing the
+  `Coconut.Channel` behaviour or an ad-hoc `%{projection, target}` map.
   """
 
   alias Coconut.{Patch, WarpProvider, Workspace}
@@ -35,10 +36,12 @@ defmodule Coconut.Resolve do
   - `target` — where a resolved payload lands: a single `port_ref`, or a
     function fanning the payload out to `[{port_ref, value}]` pairs.
   """
-  @type channel_spec :: %{
-          projection: (Workspace.t(), Patch.t() -> {:ok, term()} | {:error, term()}),
-          target: port_ref() | (term() -> [{port_ref(), term()}])
-        }
+  @type channel_spec ::
+          module()
+          | %{
+              projection: (Workspace.t(), Patch.t() -> {:ok, term()} | {:error, term()}),
+              target: port_ref() | (term() -> [{port_ref(), term()}])
+            }
 
   @typedoc "A single check failure. Entries are aggregated before vetoing."
   @type check_entry :: %{
@@ -131,7 +134,7 @@ defmodule Coconut.Resolve do
           {ok_acc, entry_acc ++ [entry]}
 
         {:ok, spec} ->
-          case resolve_one(ws, patch, spec) do
+          case resolve_one(ws, patch, normalize_spec(spec)) do
             {:ok, payload} -> {ok_acc ++ [{patch, payload}], entry_acc}
             {:error, entry} -> {ok_acc, entry_acc ++ [entry]}
           end
@@ -168,11 +171,20 @@ defmodule Coconut.Resolve do
 
   # ---- Fold ----
 
+  # A channel spec is either an ad-hoc map or a `Coconut.Channel` module.
+  defp normalize_spec(%{projection: _, target: _} = spec), do: spec
+
+  defp normalize_spec(module) when is_atom(module) do
+    %{projection: &module.projection/2, target: module.target()}
+  end
+
   # Mirrors equinox Runner.fold_resolved: later writes to the same port
   # override earlier ones.
   defp fold_resolved(resolved, channels) do
     Enum.reduce(resolved, %{}, fn {patch, payload}, acc ->
-      channels[patch.channel].target
+      channels[patch.channel]
+      |> normalize_spec()
+      |> Map.fetch!(:target)
       |> bind_payload(payload)
       |> Enum.reduce(acc, fn {port_ref, value}, inner ->
         Map.put(inner, port_ref, %{input: value})
