@@ -13,7 +13,7 @@ defmodule Coconut.EngineTest do
     def info(_), do: %{name: "Bare", version: "dev"}
 
     @impl true
-    def check(_request, _config), do: {:ok, nil}
+    def check(_request, _config), do: {:ok, %{passed: true, entries: [], checked: nil}}
 
     @impl true
     def render(_request, _checked, _config), do: {:ok, :rendered}
@@ -37,42 +37,43 @@ defmodule Coconut.EngineTest do
   end
 
   test "valid globals pass the gate" do
-    assert {:ok, nil} = Engine.run_check(MockEngine, request(%{gender: 0.5, phoneme_mode: :auto}))
+    assert {:ok, %{passed: true}} =
+             Engine.run_check(MockEngine, request(%{gender: 0.5, phoneme_mode: :auto}))
   end
 
   test "empty globals always pass, declared or not" do
-    assert {:ok, nil} = Engine.run_check(MockEngine, request(%{}))
-    assert {:ok, nil} = Engine.run_check(BareEngine, request(%{}))
+    assert {:ok, %{passed: true}} = Engine.run_check(MockEngine, request(%{}))
+    assert {:ok, %{passed: true}} = Engine.run_check(BareEngine, request(%{}))
   end
 
   test "unknown global vetoes the round" do
-    assert {:error, {:check_failed, [entry]}} =
+    assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check(MockEngine, request(%{breathiness: 1}))
 
     assert entry == %{kind: :global, key: :breathiness, reason: :unknown_global}
   end
 
   test "out-of-range and non-number globals are reported" do
-    assert {:error, {:check_failed, [entry]}} =
+    assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check(MockEngine, request(%{gender: 2.0}))
 
     assert entry.reason == {:out_of_range, {-1.0, 1.0}}
 
-    assert {:error, {:check_failed, [entry]}} =
+    assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check(MockEngine, request(%{gender: "high"}))
 
     assert entry.reason == :not_a_number
   end
 
   test "enum global rejects values outside the set" do
-    assert {:error, {:check_failed, [entry]}} =
+    assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check(MockEngine, request(%{phoneme_mode: :semi}))
 
     assert entry.reason == {:not_in_enum, [:auto, :manual]}
   end
 
   test "failures are aggregated, not short-circuited" do
-    assert {:error, {:check_failed, entries}} =
+    assert {:ok, %{passed: false, entries: entries}} =
              Engine.run_check(MockEngine, request(%{gender: 9.0, breathiness: 1}))
 
     assert length(entries) == 2
@@ -80,7 +81,7 @@ defmodule Coconut.EngineTest do
   end
 
   test "engine without a :globals declaration accepts none" do
-    assert {:error, {:check_failed, [entry]}} =
+    assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check(BareEngine, request(%{gender: 0.5}))
 
     assert entry.reason == :unknown_global
@@ -89,7 +90,7 @@ defmodule Coconut.EngineTest do
   test "render passes globals through untouched" do
     {:ok, request} = Request.new(%{workspace: workspace(), globals: %{depth: 1.5}})
 
-    assert {:ok, nil} = Engine.run_check(MockEngine, request)
+    assert {:ok, %{passed: true, checked: nil}} = Engine.run_check(MockEngine, request)
     assert {:ok, artifact} = Engine.run_render(MockEngine, request, nil)
     assert artifact.globals == %{depth: 1.5}
     assert artifact.overrides == %{}

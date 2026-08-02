@@ -12,9 +12,12 @@ defmodule Coconut.Resolve do
      against the patch's `base_digest`. Conflicts become check entries.
 
   All entries are aggregated — no short-circuit — and a single entry vetoes
-  the whole batch: `{:error, {:check_failed, [entry]}}`. On success the
-  resolved payloads are folded into `%{port_ref => %{input: value}}` engine
-  interventions via each channel's `target`.
+  the whole batch. Verdict semantics: `{:ok, verdict}` means the check
+  **executed**; `passed: false` is the veto, carrying the aggregated
+  `entries`. This stage never fails to execute, so there is no
+  `{:error, _}` case here. On a pass the resolved payloads are folded into
+  `%{port_ref => %{input: value}}` engine interventions via each channel's
+  `target`.
 
   Channel specs are caller-supplied: digest projection shapes are domain
   policy, not kernel policy. A spec is either a module implementing the
@@ -55,13 +58,19 @@ defmodule Coconut.Resolve do
   @doc """
   Run the two-stage check over every patch in the workspace.
 
-  Returns `{:ok, %{interventions: ..., survivors: ...}}` when all patches
-  survive transport and resolve cleanly; `{:error, {:check_failed, entries}}`
-  otherwise. `survivors` carry transported (up-to-date) anchors.
+  Returns `{:ok, %{passed: true, interventions: ..., survivors: ...}}` when
+  all patches survive transport and resolve cleanly;
+  `{:ok, %{passed: false, entries: entries}}` otherwise. `survivors` carry
+  transported (up-to-date) anchors.
   """
   @spec run_check(Workspace.t(), %{atom() => channel_spec()}, keyword()) ::
-          {:ok, %{interventions: %{port_ref() => %{input: term()}}, survivors: [Patch.t()]}}
-          | {:error, {:check_failed, [check_entry()]}}
+          {:ok,
+           %{
+             passed: true,
+             interventions: %{port_ref() => %{input: term()}},
+             survivors: [Patch.t()]
+           }
+           | %{passed: false, entries: [check_entry()]}}
   def run_check(ws, channels, opts \\ [])
 
   def run_check(%Workspace{} = ws, channels, _opts) when is_map(channels) do
@@ -70,10 +79,11 @@ defmodule Coconut.Resolve do
 
     case transport_entries ++ resolve_entries do
       [] ->
-        {:ok, %{interventions: fold_resolved(resolved, channels), survivors: survivors}}
+        {:ok,
+         %{passed: true, interventions: fold_resolved(resolved, channels), survivors: survivors}}
 
       entries ->
-        {:error, {:check_failed, entries}}
+        {:ok, %{passed: false, entries: entries}}
     end
   end
 

@@ -66,7 +66,7 @@ defmodule Coconut.ResolveTest do
   # ---- Tests ----
 
   test "empty patch list resolves to empty interventions", %{ws: ws} do
-    assert {:ok, %{interventions: interventions, survivors: []}} =
+    assert {:ok, %{passed: true, interventions: interventions, survivors: []}} =
              Resolve.run_check(ws, channels())
 
     assert interventions == %{}
@@ -76,7 +76,7 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "らん"})
 
-    assert {:ok, %{interventions: interventions, survivors: survivors}} =
+    assert {:ok, %{passed: true, interventions: interventions, survivors: survivors}} =
              Resolve.run_check(ws, channels())
 
     assert interventions == %{{:port, :synth, :lyric} => %{input: %{lyric: "らん"}}}
@@ -87,12 +87,12 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "らん"})
 
-    assert {:ok, _} = Resolve.run_check(ws, channels())
+    assert {:ok, %{passed: true}} = Resolve.run_check(ws, channels())
 
     # The content changes out from under the mounted patch.
     ws = put_in(ws.side.elements_by_id["n1"], %{pitch: 60, lyric: "り"})
 
-    assert {:error, {:check_failed, [entry]}} = Resolve.run_check(ws, channels())
+    assert {:ok, %{passed: false, entries: [entry]}} = Resolve.run_check(ws, channels())
     assert entry.kind == :conflict
     assert entry.channel == :lyric
     assert entry.track_id == @track
@@ -107,7 +107,7 @@ defmodule Coconut.ResolveTest do
     ws = put_in(ws.side.elements_by_id["n1"], %{pitch: 61})
     ws = put_in(ws.side.elements_by_id["n2"], %{pitch: 63})
 
-    assert {:error, {:check_failed, entries}} = Resolve.run_check(ws, channels())
+    assert {:ok, %{passed: false, entries: entries}} = Resolve.run_check(ws, channels())
     assert length(entries) == 2
     assert Enum.all?(entries, &(&1.kind == :conflict))
   end
@@ -123,7 +123,9 @@ defmodule Coconut.ResolveTest do
     # apply_batch — the check no longer sees it at all.
     assert ws.side.patches == []
     assert [{_cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
-    assert {:ok, %{interventions: %{}, survivors: []}} = Resolve.run_check(ws, channels())
+
+    assert {:ok, %{passed: true, interventions: %{}, survivors: []}} =
+             Resolve.run_check(ws, channels())
   end
 
   test "patch on an unknown channel is rejected", %{ws: ws} do
@@ -139,7 +141,7 @@ defmodule Coconut.ResolveTest do
 
     ws = Workspace.attach_patch(ws, cp)
 
-    assert {:error, {:check_failed, [entry]}} = Resolve.run_check(ws, channels())
+    assert {:ok, %{passed: false, entries: [entry]}} = Resolve.run_check(ws, channels())
     assert entry.kind == :unknown_channel
     assert entry.channel == :pitch
   end
@@ -166,10 +168,10 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "らん"})
 
-    {:ok, %{interventions: interventions}} = Resolve.run_check(ws, channels())
+    {:ok, %{passed: true, interventions: interventions}} = Resolve.run_check(ws, channels())
     {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
 
-    assert {:ok, nil} = Engine.run_check(MockEngine, request)
+    assert {:ok, %{passed: true, checked: nil}} = Engine.run_check(MockEngine, request)
     assert {:ok, artifact} = Engine.run_render(MockEngine, request, nil)
     assert artifact.overrides == interventions
     assert artifact.notes["n1"].span == {0, 480}

@@ -20,10 +20,17 @@ defmodule Coconut.Engine do
   `:globals` key names the engine-level knobs the engine accepts, each with
   a spec: `{:range, min, max}` for numbers or `{:enum, [term]}` for a fixed
   set. `run_check/2` validates `Request.globals` against this declaration
-  before `check/2` — an unknown or out-of-spec knob vetoes the round with
-  `{:error, {:check_failed, [%{kind: :global, ...}]}}`, same one-vote
-  semantics as patch conflicts. Engines that declare no `:globals` accept
-  none.
+  before `check/2` — unknown or out-of-spec knobs yield a veto verdict
+  (`passed: false`), same one-vote semantics as patch conflicts. Engines
+  that declare no `:globals` accept none.
+
+  ## Verdict semantics
+
+  `{:ok, verdict}` means the check **executed**; the verdict is data:
+  `passed: true` proceeds to render (carrying `checked`), `passed: false`
+  vetoes the round (carrying the aggregated `entries`). `{:error, _}` is
+  reserved for checks that could not execute at all (crashed worker,
+  missing config, unassemblable input).
   """
 
   alias Coconut.Engine.Request
@@ -36,6 +43,19 @@ defmodule Coconut.Engine do
   @typedoc "A globals-gate failure. Entries are aggregated before vetoing."
   @type global_entry :: %{kind: :global, key: atom(), reason: term()}
 
+  @typedoc """
+  Verdict of an executed check.
+
+  `passed: false` vetoes the round — the caller must not proceed to
+  render — but the check itself executed fine. `checked` is the engine's
+  prepared state handed back to `render/3` (nil on a veto).
+  """
+  @type check_verdict :: %{
+          passed: boolean(),
+          entries: [term()],
+          checked: term()
+        }
+
   # ---- Callbacks ----
 
   @callback info(config :: term()) :: %{
@@ -44,22 +64,20 @@ defmodule Coconut.Engine do
               version: String.t()
             }
 
-  @callback check(Request.t(), config :: term()) :: {:ok, checked :: term()} | {:error, term()}
+  @callback check(Request.t(), config :: term()) :: {:ok, check_verdict()} | {:error, term()}
 
   @callback render(Request.t(), checked :: term(), config :: term()) ::
               {:ok, term()} | {:error, term()}
 
   # ---- API ----
 
-  @spec run_check(engine(), Request.t()) ::
-          {:ok, checked :: term()}
-          | {:error, term()}
-          | {:error, {:check_failed, [global_entry()]}}
+  @spec run_check(engine(), Request.t()) :: {:ok, check_verdict()} | {:error, term()}
   def run_check(engine, %Request{} = request) do
     {module, config} = unpack(engine)
 
-    with :ok <- validate_globals(request.globals, module.info(config)) do
-      module.check(request, config)
+    case validate_globals(request.globals, module.info(config)) do
+      [] -> module.check(request, config)
+      entries -> {:ok, %{passed: false, entries: entries, checked: nil}}
     end
   end
 
@@ -74,15 +92,9 @@ defmodule Coconut.Engine do
   defp validate_globals(globals, info) do
     declared = Map.get(info, :globals, %{})
 
-    entries =
-      for {key, value} <- globals,
-          entry = check_global(key, value, declared),
-          do: entry
-
-    case entries do
-      [] -> :ok
-      _ -> {:error, {:check_failed, entries}}
-    end
+    for {key, value} <- globals,
+        entry = check_global(key, value, declared),
+        do: entry
   end
 
   defp check_global(key, value, declared) do

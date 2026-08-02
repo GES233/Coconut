@@ -49,17 +49,19 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 > （注册表即 `run_check/3` 的 channels map，值可为 behaviour 模块或
 > ad-hoc spec map；首个内置 `Coconut.Channel.Lyric`）。不挂音符的全局
 > 参数走 `Request.globals`：过 check（`Engine.info` 的 `:globals` 声明做
-> 白名单+范围/枚举校验，非法进 `check_failed` 一票否决）、不过 resolve
-> （无 anchor/digest/transport），render 透传。两段式的交接：`Engine.check/2`
-> 返回 `{:ok, checked}`（引擎在检查阶段算好的投影/前向），`render/3` 消费
-> 它而不重算——DiffSinger 的 dur/pitch 前向即经此复用。
+> 白名单+范围/枚举校验）、不过 resolve（无 anchor/digest/transport），
+> render 透传。两段式的交接：`Engine.check/2` 的 checked 由 `render/3`
+> 消费而不重算——DiffSinger 的 dur/pitch 前向即经此复用。两层 check
+> （Resolve 与 Engine）统一 verdict 语义：`{:ok, %{passed: ...}}` = 检查
+> 执行完毕（false 即否决，entries 为全量明细），`{:error, _}` 只留给
+> 检查自身无法执行（worker 崩溃、配置缺失、输入无法装配）。
 
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 
 1. tamale transport/resolve 结果 → 折叠为 oi 的 `%{PortRef => %{input: value}}`
    data 干预（存活干预转 `:override`，按 producer 端口 keying）；
-2. conflict（含 clip / ambiguous）全量聚合为 `{:check_failed, [entry]}`，
-   一票否决（equinox Runner 语义照搬）；
+2. conflict（含 clip / ambiguous）全量聚合为一票否决（verdict
+   `%{passed: false, entries}`；equinox Runner 语义照搬）；
 3. 反向：用户编辑手势 → tamale Op 脚本。
 
 参照：equinox `Runner.resolve_units` / `fold_resolved`。

@@ -68,7 +68,7 @@ defmodule Coconut.Engine.DiffSingerTest do
   test "check assembles words from phonemized notes over the tempo map" do
     {:ok, request} = Request.new(%{workspace: phonemized_ws()})
 
-    assert {:ok, _checked} = Engine.run_check({DiffSinger, config()}, request)
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
     assert_received {:fake_call, %{action: "check", words: words, globals: %{}}}
     assert [[ph1, dur1, midi1], [ph2, dur2, midi2]] = words
@@ -90,7 +90,7 @@ defmodule Coconut.Engine.DiffSingerTest do
 
     {:ok, request} = Request.new(%{workspace: ws})
 
-    assert {:ok, _checked} = Engine.run_check({DiffSinger, config()}, request)
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
     assert_received {:fake_call, %{words: words}}
     assert Enum.map(words, fn [_ph, _dur, midi] -> midi end) == [55, 60, 62]
@@ -129,7 +129,7 @@ defmodule Coconut.Engine.DiffSingerTest do
 
     {:ok, request} = Request.new(%{workspace: ws})
 
-    assert {:ok, _checked} = Engine.run_check({DiffSinger, config()}, request)
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
     assert_received {:fake_call, %{words: [[_ph, dur, 60]]}}
     assert_in_delta dur, 0.5, 0.0001
@@ -144,7 +144,9 @@ defmodule Coconut.Engine.DiffSingerTest do
     {:ok, request} =
       Request.new(%{workspace: phonemized_ws(), globals: globals, interventions: interventions})
 
-    assert {:ok, checked} = Engine.run_check({DiffSinger, config}, request)
+    assert {:ok, %{passed: true, checked: checked}} =
+             Engine.run_check({DiffSinger, config}, request)
+
     assert {:ok, artifact} = Engine.run_render({DiffSinger, config}, request, checked)
 
     assert artifact.globals == globals
@@ -182,7 +184,7 @@ defmodule Coconut.Engine.DiffSingerTest do
   test "globals gate rejects undeclared knobs before any worker call" do
     {:ok, request} = Request.new(%{workspace: phonemized_ws(), globals: %{breathiness: 1}})
 
-    assert {:error, {:check_failed, [%{kind: :global, key: :breathiness} | _]}} =
+    assert {:ok, %{passed: false, entries: [%{kind: :global, key: :breathiness} | _]}} =
              Engine.run_check({DiffSinger, config()}, request)
 
     refute_received {:fake_call, _}

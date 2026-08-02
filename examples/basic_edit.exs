@@ -153,11 +153,11 @@ case Resolve.run_check(ws, channels) do
     IO.inspect(interventions, label: "interventions")
 
     {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
-    {:ok, checked} = Engine.run_check(MockEngine, request)
+    {:ok, %{checked: checked}} = Engine.run_check(MockEngine, request)
     {:ok, artifact} = Engine.run_render(MockEngine, request, checked)
     IO.inspect(artifact.overrides, label: "engine overrides")
 
-  {:error, {:check_failed, entries}} ->
+  {:ok, %{passed: false, entries: entries}} ->
     IO.puts("check failed:")
     Enum.each(entries, fn e -> IO.inspect({e.kind, e.channel, e[:reason]}, label: "entry") end)
 end

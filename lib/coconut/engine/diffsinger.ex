@@ -61,7 +61,7 @@ defmodule Coconut.Engine.DiffSinger do
          {:ok, words} <- words(request.workspace, config),
          {:ok, probe} <-
            call_client(%{action: "check", words: words, globals: request.globals}, config) do
-      {:ok, %{words: words, probe: probe}}
+      {:ok, %{passed: true, entries: [], checked: %{words: words, probe: probe}}}
     end
   end
 

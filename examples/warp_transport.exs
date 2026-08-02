@@ -177,7 +177,7 @@ case Resolve.run_check(ws, channels) do
     IO.puts("resolved #{length(survivors)} patches, interventions:")
     IO.inspect(interventions)
 
-  {:error, {:check_failed, entries}} ->
+  {:ok, %{passed: false, entries: entries}} ->
     IO.puts("unexpected veto:")
     Enum.each(entries, fn e -> IO.inspect({e.kind, e.channel, e[:reason]}) end)
 end
@@ -209,7 +209,7 @@ case Resolve.run_check(ws, channels) do
     IO.puts("resolved #{length(survivors)} patches — no veto, the dead one is out:")
     IO.inspect(interventions)
 
-  {:error, {:check_failed, entries}} ->
+  {:ok, %{passed: false, entries: entries}} ->
     IO.puts("unexpected veto:")
     Enum.each(entries, fn e -> IO.inspect({e.kind, e.channel, e[:reason]}) end)
 end

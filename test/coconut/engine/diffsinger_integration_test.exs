@@ -51,7 +51,8 @@ defmodule Coconut.Engine.DiffSingerIntegrationTest do
 
     {:ok, request} = Request.new(%{workspace: ws, globals: %{gender: 0.2, steps: 10}})
 
-    assert {:ok, checked} = Engine.run_check({DiffSinger, config}, request)
+    assert {:ok, %{passed: true, checked: checked}} =
+             Engine.run_check({DiffSinger, config}, request)
 
     assert {:ok, artifact} = Engine.run_render({DiffSinger, config}, request, checked)
     assert File.exists?(artifact.path)
