@@ -89,6 +89,7 @@ defmodule Coconut.Score.Note do
   def to_canonical(%__MODULE__{} = note) do
     note
     |> Map.from_struct()
+    # key is some *struct* implements `Coconut.Score.Key` or nil(e.g. Rap).
     |> Map.update!(:key, fn
       nil -> nil
       %_{} = key -> Map.from_struct(key)
