@@ -1,7 +1,9 @@
 # Coconut 设计草案：Headless Editor
 
 > 2026-07-29 调研讨论存档。来源：对 Qy 下 tamale / oi / equinox / zongzi /
-> zongzi_feasibility 五个项目的调研结论与架构决策。状态：草案，未实现。
+> zongzi_feasibility 五个项目的调研结论与架构决策。状态：部分实现
+> （2026-08-02 更新：Workspace 内核、WarpProvider、TempoMap、桥接层
+> Resolve 与 Engine 两段式已落地，逐项进度见第 10 节标注）。
 
 ## 1. 定位与选型
 
@@ -31,16 +33,16 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
       2. lowering：编辑手势 → op 批次（拖音符 = Move+Retime 同批）
       3. apply_batch 到各 Space，版本 +1，侧表/快照同步写回
       4. transport：存活 patch 的 anchor 沿新 log 运输（写时回写；死 patch 入坟场）
-      5. 存活集合 → ACF → orchid/oi check/render（异步 job，事件回推）
+      5. 存活集合 → Resolve → Engine check/render（异步 job，事件回推）
 ```
 
 术语对齐：**Workspace（工程）→ Track（轨 = 一个 Space + 侧表）→ Element
 （音符 / tempo 事件）**。不使用 "Timeline" 一词（避免与 zongzi 旧机制串味）。
 
-## 3. ACF（Anti-Corruption Facade，桥接层）
+## 3. 桥接层（`Coconut.Resolve`）
 
-> 2026-08-01 补记：桥接层实现定名 `Coconut.Resolve`（`lib/coconut/resolve.ex`），
-> 不使用 ACF 一名；Engine behaviour 见 `lib/coconut/engine.ex`，两段式
+> 2026-08-01 补记：实现定名 `Coconut.Resolve`（`lib/coconut/resolve.ex`），
+> 原拟名 ACF 废弃；Engine behaviour 见 `lib/coconut/engine.ex`，两段式
 > check/render 经 `Coconut.Engine.Request` 传递。
 
 tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
@@ -62,7 +64,7 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 - **tempo 只支持阶梯（step），不支持线性 ramp**——Warp 段是有理数端点的
   线性段，ramp 的二次曲线无法精确表达，会破坏 digest 零容忍比对。
   渐速靠加密 tempo 点逼近，采样端拟合。
-- tick↔帧换算收敛到唯一一处（warp_provider / ACF 采样处），
+- tick↔帧换算收敛到唯一一处（warp_provider / Resolve 采样处），
   zongzi_feasibility 的教训：跨语言舍入一致性是隐形地雷。
 
 ## 5. warp_provider 设计
@@ -148,14 +150,20 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
 ## 10. 实施顺序建议
 
-1. Workspace 纯函数内核：lowering + transport（命令流第 2、4 步）；
+1. Workspace 纯函数内核：lowering + transport（命令流第 2、4 步）——已完成
+   （`Coconut.Workspace` / `Coconut.Operate`，写时 transport + 死 patch 坟场）；
 2. golden 场景验证台（移植 zongzi_feasibility 的 Scenario/Measurer 模式，
-   先翻 G-INT 家族）；
-3. tamale 接入 + warp_provider（:tick 非 ripple 版）；
-4. Tempo Track Space + TempoMap fold；
-5. ACF 桥 + oi 接入（check/render 两段式）；
-6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）；
-7. 帧空间锚 + tempo 对组合（v2）。
+   先翻 G-INT 家族）——未开始；
+3. tamale 接入 + warp_provider（:tick 非 ripple 版）——已完成
+   （`Coconut.WarpProvider`）；
+4. Tempo Track Space + TempoMap fold——已完成（`Coconut.Score.Tempo` /
+   `TempoMap`，bpm 在 lower 时归一化为 milli-bpm）；
+5. 桥接 + Engine 两段式（check/render）——部分完成：`Coconut.Resolve` +
+   `Coconut.Engine` behaviour + `MockEngine` 已落地；orchid/oi 真实接入
+   未开始（`Coconut.Engine.OrchidAdapter` 仅占位）；
+6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
+   仍是纯模块）；
+7. 帧空间锚 + tempo 对组合（v2）——未开始。
 
 工作量估计：约 3–4 周（单人），风险集中在 Caller 义务（warp 构造、
 digest 投影、float 归一化）与隐式约定密集，而非代码量。
