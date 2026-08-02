@@ -25,3 +25,4 @@ coconut-*.tar
 # Python related
 *.pyc
 __pycache__/
+.venv/

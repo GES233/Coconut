@@ -185,9 +185,9 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    globals 已接入）；orchid/oi 真实接入
    未开始（`Coconut.Engines.OrchidAdapter` 仅占位）；pitch override 已全链路
    打通（`Channel.Pitch` → `{:port, note_id, :pitch}` → adapter 秒域曲线 →
-   worker 帧域 pitch_in/retake）；Encoder 契约 + Literal 已落地（phrase
-   粒度、逐轨调用、token 形状引擎自定义；真实字典编码器由引擎开发者
-   实现）；dur override 已接入（`Channel.Duration` → 钉音素帧数，未钉
+   worker 帧域 pitch_in/retake）；Encoder 契约 + Literal + worker dsdict
+   编码器已落地（汉字歌词 → pypinyin → 声库 dsdict 查表，字典按语言
+   懒加载 + CSafeLoader）；dur override 已接入（`Channel.Duration` → 钉音素帧数，未钉
    按比例吸收；顺带修债：ph_dur 逐 word 归一到记谱帧数，渲染长度不再
    偏离乐谱）；
 6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前

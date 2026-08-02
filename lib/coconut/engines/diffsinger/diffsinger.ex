@@ -48,9 +48,12 @@ defmodule Coconut.Engines.DiffSinger do
     * `:client` — module replacing the worker client (test seam),
       default `Coconut.Engines.DiffSinger.PortClient`
     * `:encoder` — `Coconut.Encoder` module or `{module, config}` deriving
-      phonemes for notes that lack explicit `:phonemes`. Manual for v1;
-      voicebank-derived auto-selection waits for the voicebank
-      declaration layer.
+      phonemes for notes that lack explicit `:phonemes`. The adapter's
+      own config flows down to it (encoder-specific keys win). Bundled
+      options: `Coconut.Engines.DiffSinger.Encoder` (worker-backed, uses
+      the voicebank's dsdict) and `Coconut.Engines.Encoders.Literal`.
+      Manual for v1; voicebank-derived auto-selection waits for the
+      voicebank declaration layer.
     * `:tpqn` — ticks per quarter note (default 480)
 
   Client contract: `call(payload :: map(), config :: map()) ::
@@ -177,7 +180,7 @@ defmodule Coconut.Engines.DiffSinger do
     ws = request.workspace
 
     with {:ok, to_sec} <- sec_converter(ws, tpqn),
-         {:ok, notes} <- collect_notes(ws, Map.get(config, :encoder)) do
+         {:ok, notes} <- collect_notes(ws, config) do
       words =
         Enum.map(notes, fn {_id, data, {start_tick, end_tick}} ->
           [data.phonemes, to_sec.(end_tick) - to_sec.(start_tick), data.pitch]
@@ -263,7 +266,7 @@ defmodule Coconut.Engines.DiffSinger do
   # Notes are collected per track (phrase context lives within a track),
   # phonemes resolved there (explicit `:phonemes` win; the rest go to the
   # configured encoder), then merged into one score-ordered list.
-  defp collect_notes(ws, encoder) do
+  defp collect_notes(ws, config) do
     per_track =
       Map.new(ws.tracks, fn {track_id, _space} ->
         notes =
@@ -276,7 +279,7 @@ defmodule Coconut.Engines.DiffSinger do
          Enum.sort_by(notes, fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)}
       end)
 
-    with {:ok, per_track} <- resolve_phonemes(per_track, encoder) do
+    with {:ok, per_track} <- resolve_phonemes(per_track, Map.get(config, :encoder), config) do
       notes =
         per_track
         |> Map.values()
@@ -295,7 +298,7 @@ defmodule Coconut.Engines.DiffSinger do
 
   # The encoder sees the track's full sequence (context), but only notes
   # lacking explicit `:phonemes` consume its result.
-  defp resolve_phonemes(per_track, encoder) do
+  defp resolve_phonemes(per_track, encoder, config) do
     Enum.reduce_while(per_track, {:ok, %{}}, fn {track_id, notes}, {:ok, acc} ->
       unresolved = for {id, data, _span} <- notes, not has_phonemes?(data), do: id
 
@@ -307,7 +310,7 @@ defmodule Coconut.Engines.DiffSinger do
           {:halt, {:error, {:missing_phonemes, unresolved}}}
 
         {_, encoder} ->
-          case encode_all(encoder, notes) do
+          case encode_all(encoder, notes, config) do
             {:ok, by_id} ->
               case Enum.reject(unresolved, &Map.has_key?(by_id, &1)) do
                 [] ->
@@ -333,8 +336,14 @@ defmodule Coconut.Engines.DiffSinger do
     end
   end
 
-  defp encode_all({module, encoder_config}, notes), do: module.encode(notes, encoder_config)
-  defp encode_all(module, notes) when is_atom(module), do: module.encode(notes, nil)
+  # The adapter's own config flows down (voicebank_root / python / worker
+  # / client apply to worker-backed encoders); encoder-specific config
+  # wins on key conflicts.
+  defp encode_all({module, encoder_config}, notes, config),
+    do: module.encode(notes, Map.merge(config, encoder_config))
+
+  defp encode_all(module, notes, config) when is_atom(module),
+    do: module.encode(notes, config)
 
   defp has_phonemes?(data), do: match?([_ | _], Map.get(data, :phonemes))
 

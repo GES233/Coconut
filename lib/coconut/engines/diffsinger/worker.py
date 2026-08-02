@@ -3,8 +3,12 @@
 Adapted from zongzi-svs `diffsinger/engine.py`: loads the OpenUTAU-format
 voicebank once at startup, then serves one JSON request per line.
 
-  request:  {"id": int, "action": "check" | "render",
+  request:  {"id": int, "action": "check" | "render" | "encode",
              "words": [[[lang, ph], ...], dur_sec, midi],
+             "notes": [{"id": str, "lyric": str, "lang": str}] (encode only;
+                       lyric → phonemes via the voicebank's own
+                       dsdict-<lang>.yaml; hanzi goes through pypinyin
+                       first, ascii tokens are looked up directly),
              "globals": {"gender": f, "velocity": f, "depth": f, "steps": i},
              "out_path": str (render only),
              "overrides": [{"kind": "pitch", "note_index": i,
@@ -26,7 +30,8 @@ voicebank once at startup, then serves one JSON request per line.
 Startup (after the voicebank is loaded):
   {"ready": true, "sample_rate": int, "hop_size": int}
 
-Requires: onnxruntime, soundfile, numpy, pyyaml.
+Requires: onnxruntime, soundfile, numpy, pyyaml; pypinyin (encode of
+hanzi lyrics only).
 """
 
 import json
@@ -38,6 +43,11 @@ import onnxruntime as ort
 import soundfile as sf
 import yaml
 
+try:
+    from pypinyin import Style, pinyin
+except ImportError:  # encode of hanzi lyrics will fail loudly instead
+    Style, pinyin = None, None
+
 DEFAULT_GLOBALS = {"gender": 0.0, "velocity": 1.0, "depth": 1.0, "steps": 20}
 
 
@@ -47,8 +57,11 @@ def load_json(path):
 
 
 def load_yaml(path):
+    # CSafeLoader (libyaml) when available — dsdict yaml files reach ~13 MB,
+    # which the pure-Python loader parses in minutes
+    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.load(f, Loader=loader)
 
 
 class DiffSingerEngine:
@@ -83,8 +96,61 @@ class DiffSingerEngine:
         self.sample_rate = self.vocoder_cfg["sample_rate"]
         self.hop_size = self.vocoder_cfg["hop_size"]
 
+        # lyric → phoneme dictionaries are loaded lazily per lang on first
+        # encode (dsdict-en.yaml is huge — even with CSafeLoader it is not
+        # free, and most projects touch one lang)
+        self._g2p_dicts = {}
+
     def _make_session(self, path):
         return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+
+    # ------------------------------------------------------------------
+    # encode action: lyric → phonemes
+    # ------------------------------------------------------------------
+
+    def encode_lyrics(self, notes):
+        """[{"id", "lyric", "lang"}] → {"tokens": {id: [[lang, sym], ...]}}"""
+        tokens = {}
+        for note in notes:
+            note_id = note.get("id")
+            lyric = (note.get("lyric") or "").strip()
+            if not lyric:
+                raise ValueError(f"missing_lyric: {note_id}")
+            lang = note.get("lang") or "zh"
+            tokens[note_id] = self._lyric_to_phonemes(lyric, lang, note_id)
+        return {"tokens": tokens}
+
+    def _g2p_dict(self, lang):
+        if lang not in self._g2p_dicts:
+            path = os.path.join(self.root, "dsdur", f"dsdict-{lang}.yaml")
+            if os.path.exists(path):
+                entries = load_yaml(path).get("entries", [])
+                self._g2p_dicts[lang] = {e["grapheme"]: e["phonemes"] for e in entries}
+            else:
+                self._g2p_dicts[lang] = None
+        return self._g2p_dicts[lang]
+
+    def _lyric_to_phonemes(self, lyric, lang, note_id):
+        dict_ = self._g2p_dict(lang)
+        if dict_ is None:
+            raise ValueError(f"unsupported_lang: {lang} (note {note_id})")
+
+        out = []
+        for token in lyric.split():
+            syllables = [token.lower()] if token.isascii() else self._hanzi_to_pinyin(token, note_id)
+            for syll in syllables:
+                # zh entries are bare syllables ("ba"), en/ja entries are
+                # lang-prefixed words ("en/about") — try both shapes.
+                phonemes = dict_.get(syll) or dict_.get(f"{lang}/{syll}")
+                if phonemes is None:
+                    raise ValueError(f"unknown_grapheme: {syll!r} (note {note_id}, lang {lang})")
+                out.extend([p.split("/", 1) for p in phonemes])
+        return out
+
+    def _hanzi_to_pinyin(self, token, note_id):
+        if pinyin is None:
+            raise ValueError(f"pypinyin_not_installed (needed for hanzi lyric, note {note_id})")
+        return [syll for (syll,) in pinyin(token, style=Style.NORMAL)]
 
     def check(self, words, gl):
         """check: dur + pitch forward (deterministic)."""
@@ -369,6 +435,8 @@ def dispatch(engine, req):
 
     if action == "check":
         return engine.check(req["words"], gl)
+    if action == "encode":
+        return engine.encode_lyrics(req["notes"])
     if action == "render":
         return engine.render(
             req["words"],
@@ -385,6 +453,11 @@ def main():
     if len(sys.argv) < 2:
         print("usage: ds_worker.py <voicebank_root>", file=sys.stderr)
         sys.exit(2)
+
+    # the NDJSON protocol is UTF-8 regardless of the console codepage
+    # (lyrics pass through here)
+    sys.stdin.reconfigure(encoding="utf-8")  # type: ignore
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore
 
     engine = DiffSingerEngine(sys.argv[1])
     emit({"ready": True, "sample_rate": engine.sample_rate, "hop_size": engine.hop_size})

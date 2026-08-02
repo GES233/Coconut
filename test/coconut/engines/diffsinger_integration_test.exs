@@ -19,24 +19,25 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
   @tag timeout: 600_000
 
   @voicebank "E:/ProgramAssets/OpenUTAUSingers/Qixuan_v2.5.0_DiffSinger_OpenUtau"
-  @python "D:/CodeRepo/SingingSynthesis/zongzi-svs/.venv/Scripts/python.exe"
+  @python Path.expand(".venv/Scripts/python.exe")
 
-  # 两只老虎, matching zongzi-svs scripts/render_ds_tigers.py.
+  # 两只老虎 — hanzi lyrics, phonemes derived by the worker encoder
+  # (voicebank dsdict + pypinyin).
   @tigers [
-    {[["zh", "l"], ["zh", "iang"]], 0.5, 60},
-    {[["zh", "zh"], ["zh", "i"]], 0.5, 62},
-    {[["zh", "l"], ["zh", "ao"]], 0.5, 64},
-    {[["zh", "h"], ["zh", "u"]], 0.5, 60},
-    {[["zh", "l"], ["zh", "iang"]], 0.5, 60},
-    {[["zh", "zh"], ["zh", "i"]], 0.5, 62},
-    {[["zh", "l"], ["zh", "ao"]], 0.5, 64},
-    {[["zh", "h"], ["zh", "u"]], 0.5, 60},
-    {[["zh", "p"], ["zh", "ao"]], 0.5, 64},
-    {[["zh", "d"], ["zh", "e"]], 0.5, 65},
-    {[["zh", "k"], ["zh", "uai"]], 1.0, 67},
-    {[["zh", "p"], ["zh", "ao"]], 0.5, 64},
-    {[["zh", "d"], ["zh", "e"]], 0.5, 65},
-    {[["zh", "k"], ["zh", "uai"]], 1.0, 67}
+    {"两", 0.5, 60},
+    {"只", 0.5, 62},
+    {"老", 0.5, 64},
+    {"虎", 0.5, 60},
+    {"两", 0.5, 60},
+    {"只", 0.5, 62},
+    {"老", 0.5, 64},
+    {"虎", 0.5, 60},
+    {"跑", 0.5, 64},
+    {"得", 0.5, 65},
+    {"快", 1.0, 67},
+    {"跑", 0.5, 64},
+    {"得", 0.5, 65},
+    {"快", 1.0, 67}
   ]
 
   @tag tmp_dir: "ds_integration"
@@ -48,7 +49,13 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
     if not File.exists?(python), do: raise("python not found: #{python}")
 
     ws = tigers_workspace()
-    config = %{voicebank_root: voicebank, python: [python], output_dir: tmp_dir}
+
+    config = %{
+      voicebank_root: voicebank,
+      python: [python],
+      output_dir: tmp_dir,
+      encoder: Coconut.Engines.DiffSinger.Encoder
+    }
 
     # A pitch slide on the second note (spans tick 480..960 ⇒ 0.5..1.0 s)
     # forces the pitch re-run with pitch_in / retake injection; a duration
@@ -93,14 +100,14 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
     ws = insert(ws, :tempo, "t0", :head, {0, 20_000}, %{bpm: 120})
 
     {ws, _prev, _tick} =
-      Enum.reduce(@tigers, {ws, :head, 0}, fn {phonemes, dur_sec, midi}, {ws, prev, tick} ->
+      Enum.reduce(@tigers, {ws, :head, 0}, fn {lyric, dur_sec, midi}, {ws, prev, tick} ->
         span_ticks = round(dur_sec * 960)
         id = "n#{tick}"
 
         ws =
           insert(ws, :vocal, id, prev, {tick, tick + span_ticks}, %{
             pitch: midi,
-            phonemes: phonemes
+            lyric: lyric
           })
 
         {ws, id, tick + span_ticks}

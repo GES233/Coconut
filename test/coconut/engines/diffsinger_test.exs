@@ -18,6 +18,9 @@ defmodule Coconut.Engines.DiffSingerTest do
         {_, "check"} ->
           {:ok, %{"ph_dur" => [10, 20], "pitch_pred_midi" => [60.0, 62.0], "total_frames" => 30}}
 
+        {_, "encode"} ->
+          {:ok, %{"tokens" => Map.new(payload.notes, fn note -> {note.id, [["zh", "x"]]} end)}}
+
         {_, "render"} ->
           {:ok, %{"path" => payload.out_path, "total_frames" => 480, "duration_sec" => 5.0}}
       end
@@ -142,6 +145,26 @@ defmodule Coconut.Engines.DiffSingerTest do
 
     assert {:error, {:missing_pitch, ["n1"]}} = Engine.run_check({DiffSinger, config()}, request)
     refute_received {:fake_call, _}
+  end
+
+  test "worker-backed encoder flows lyrics and adapter config through" do
+    ws =
+      workspace()
+      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "两"})
+
+    config = config(%{encoder: Coconut.Engines.DiffSinger.Encoder})
+    {:ok, request} = Request.new(%{workspace: ws})
+
+    assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
+
+    # the encode call carries the lyric; adapter config (client, test_pid)
+    # flowed down to the encoder
+    assert_received {:fake_call,
+                     %{action: "encode", notes: [%{id: "n1", lyric: "两", lang: "zh"}]}}
+
+    assert_received {:fake_call, %{action: "check", words: [[phonemes, _dur, 60]]}}
+    assert phonemes == [["zh", "x"]]
   end
 
   test "notes without phonemes go through the configured encoder" do
