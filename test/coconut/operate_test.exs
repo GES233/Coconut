@@ -530,6 +530,65 @@ defmodule Coconut.OperateTest do
       assert [{^cp, {:error, :warp_provider_required}}] = dead
     end
 
+    test "metric anchor follows its note's retime segment", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower({:insert_note, @track, "n1", :head, {0, 480}, %{}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, cp} =
+        Coconut.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Metric{coord: :tick, from: 100, to: 200, at_version: 1},
+          patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
+        })
+
+      ws = put_in(ws.side.patches, [cp])
+
+      {:ok, ops2, changes2} =
+        Operate.lower(
+          {:drag_note, @track, "n1", :head, {0, 480}, {100, 580}},
+          ws,
+          %Operate.Config{}
+        )
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
+
+      wp = Coconut.WarpProvider.tick(Workspace.track_spans(ws, @track), ws.side.patches)
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
+
+      assert dead == []
+      assert [survivor] = survivors
+      assert survivor.anchor.from == {200, 1}
+      assert survivor.anchor.to == {300, 1}
+      assert survivor.anchor.at_version == 2
+    end
+
+    test "metric anchor over a deleted note's span dies", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower({:insert_note, @track, "n1", :head, {0, 480}, %{}}, ws, %Operate.Config{})
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, cp} =
+        Coconut.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Metric{coord: :tick, from: 100, to: 200, at_version: 1},
+          patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
+        })
+
+      ws = put_in(ws.side.patches, [cp])
+
+      {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
+
+      wp = Coconut.WarpProvider.tick(Workspace.track_spans(ws, @track), ws.side.patches)
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
+
+      assert survivors == []
+      assert [{^cp, {:undefined, :outside_warp}}] = dead
+    end
+
     test "patches for other tracks pass through", %{ws: ws} do
       other_track = :harmony
       ws = put_in(ws.tracks[other_track], %Tamale.Space{})
@@ -593,7 +652,7 @@ defmodule Coconut.OperateTest do
     {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
 
     # Transport with warp_provider — Relative should NOT use it (dispatch to transport/2)
-    wp = Coconut.WarpProvider.tick(ws.side.spans_by_version)
+    wp = Coconut.WarpProvider.tick(Workspace.track_spans(ws, @track))
     {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
 
     assert dead == []

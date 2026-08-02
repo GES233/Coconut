@@ -256,7 +256,7 @@ defmodule Coconut.Workspace do
   end
 
   @doc """
-  Returns the span table for a specific track, for passing to `WarpProvider.tick/1`.
+  Returns the span table for a specific track, for passing to `WarpProvider.tick/2`.
   """
   @spec track_spans(t(), Coconut.Operate.track_id()) :: %{
           Tamale.version() => %{Tamale.id() => {non_neg_integer(), non_neg_integer()}}

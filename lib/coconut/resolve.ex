@@ -81,7 +81,8 @@ defmodule Coconut.Resolve do
 
     Enum.reduce(track_ids, {[], []}, fn track_id, {surv_acc, entry_acc} ->
       if known_track?(ws, track_id) do
-        warp_provider = WarpProvider.tick(Workspace.track_spans(ws, track_id))
+        track_patches = Enum.filter(ws.side.patches, &(&1.track_id == track_id))
+        warp_provider = WarpProvider.tick(Workspace.track_spans(ws, track_id), track_patches)
         {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, warp_provider)
 
         # transport_patches returns the full patch list with only this

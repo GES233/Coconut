@@ -75,7 +75,7 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 | Retime(id, old, new) | `{old, new}` 段 | op 自足 |
 | Move + Retime 同批 | 同上 | op 自足 |
 | Delete(id) | 洞（无像区间） | 需版本化 span 表 |
-| Insert | 插入点后平移段 | 需版本化 span 表 |
+| Insert | 插入点后平移段（ripple；v1 为 identity） | 需版本化 span 表 |
 | Split / Merge / 纯内容编辑 | identity | — |
 
 设计主张：
