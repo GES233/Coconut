@@ -8,10 +8,16 @@ voicebank once at startup, then serves one JSON request per line.
              "globals": {"gender": f, "velocity": f, "depth": f, "steps": i},
              "out_path": str (render only),
              "overrides": [{"kind": "pitch", "note_index": i,
-                            "points": [[sec, midi], ...]}] (render only;
-                            sparse piecewise-linear curve in absolute
-                            seconds; sampled onto frames, edge-held and
-                            clipped to the note's frame range),
+                            "points": [[sec, midi], ...]} |
+                           {"kind": "duration", "note_index": i,
+                            "durations": [[ph_index, sec], ...]}]
+                            (render only; pitch: sparse piecewise-linear
+                            curve in absolute seconds, sampled onto frames
+                            edge-held and clipped to the note's range.
+                            duration: sparse per-phoneme pins in seconds;
+                            unpinned phonemes absorb the slack — every
+                            word is renormalized to its span-derived
+                            frame target, overrides or not),
              "ph_dur": [int] (render only, from a prior check),
              "pitch_pred_midi": [float] (render only, from a prior check)}
   response: {"id": int, "ok": true, "result": {...}} |
@@ -82,7 +88,7 @@ class DiffSingerEngine:
 
     def check(self, words, gl):
         """check: dur + pitch forward (deterministic)."""
-        ph_dur = self._dur(words)
+        ph_dur = self._apply_duration(words, self._dur(words), [])
         pitch_pred = self._pitch(words, ph_dur, gl)
         return {
             "ph_dur": ph_dur[0].tolist(),
@@ -94,17 +100,22 @@ class DiffSingerEngine:
         """render: full pipeline → wav.
 
         `ph_dur` / `pitch_pred` (lists from a prior check) skip the
-        dur / pitch forwards when supplied — but pitch overrides force a
-        pitch re-run (the probe's prediction ignores them).
+        dur / pitch forwards when supplied — but pitch or duration
+        overrides force a pitch re-run (the probe's prediction ignores
+        them).
         """
-        # 1. dur
+        # 1. dur: score timing is authoritative — every word's phonemes
+        # are renormalized to its span-derived frame target; duration
+        # overrides pin phonemes and the rest absorb the slack.
         if ph_dur is None:
             ph_dur = self._dur(words)
         else:
             ph_dur = np.array([ph_dur], dtype=np.int64)
+        dur_overrides = [ov for ov in (overrides or []) if ov.get("kind") == "duration"]
+        ph_dur = self._apply_duration(words, ph_dur, dur_overrides)
         # 2. pitch
         pitch_overrides = [ov for ov in (overrides or []) if ov.get("kind") == "pitch"]
-        if pitch_pred is None or pitch_overrides:
+        if pitch_pred is None or pitch_overrides or dur_overrides:
             pitch_in, retake = self._pitch_injection(words, ph_dur, pitch_overrides)
             pitch_pred = self._pitch(words, ph_dur, gl, pitch_in, retake)
         else:
@@ -233,6 +244,56 @@ class DiffSingerEngine:
             np.array([word_dur], dtype=np.int64),
             np.array([all_midis], dtype=np.int64),
         )
+
+    def _apply_duration(self, words, ph_dur, dur_overrides):
+        """Pin overridden phonemes, then renormalize every word to its
+        span-derived frame target.
+
+        The score is the timing authority (design doc §4): each word's
+        phoneme frames must sum to `round(dur_sec * sr / hop)`. Duration
+        overrides (`{"note_index", "durations": [[ph_idx, sec], ...]}`)
+        pin phonemes; unpinned phonemes scale proportionally to absorb
+        the slack (largest-remainder rounding hits the target exactly).
+        """
+        ph_dur = ph_dur.astype(np.float64).copy()
+
+        # global phoneme index → pinned frames
+        offsets, off = [], 0
+        for phonemes, _dur, _midi in words:
+            offsets.append(off)
+            off += len(phonemes)
+
+        pinned = {}
+        for ov in dur_overrides or []:
+            base = offsets[ov["note_index"]]
+            for idx, sec in ov["durations"]:
+                pinned[base + int(idx)] = max(1, int(round(sec * self.sample_rate / self.hop_size)))
+
+        g = 0
+        for phonemes, dur_sec, _midi in words:
+            n = len(phonemes)
+            target = int(round(dur_sec * self.sample_rate / self.hop_size))
+            fixed = {g + j: pinned[g + j] for j in range(n) if g + j in pinned}
+            free = [g + j for j in range(n) if g + j not in pinned]
+            budget = max(0, target - sum(fixed.values()))
+
+            if free:
+                raw = ph_dur[0][free]
+                raw_sum = float(raw.sum())
+                shares = raw / raw_sum if raw_sum > 0 else np.full(len(free), 1.0 / len(free))
+                alloc = np.floor(shares * budget).astype(np.int64)
+                # largest-remainder: distribute the leftover frames
+                frac_order = np.argsort(-(shares * budget - alloc))
+                for k in range(budget - int(alloc.sum())):
+                    alloc[frac_order[k % len(free)]] += 1
+                ph_dur[0][free] = alloc
+
+            for gj, frames in fixed.items():
+                ph_dur[0][gj] = frames
+
+            g += n
+
+        return ph_dur.astype(np.int64)
 
     def _pitch_injection(self, words, ph_dur, pitch_overrides):
         """Build pitch_in / retake arrays from pitch overrides.

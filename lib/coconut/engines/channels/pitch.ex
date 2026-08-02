@@ -1,21 +1,22 @@
-defmodule Coconut.Channel.Pitch do
+defmodule Coconut.Engines.Channels.Pitch do
   @moduledoc """
   Built-in channel for per-note pitch-curve overrides.
 
   Payload contract: `[[tick, midi], ...]` — a sparse piecewise-linear curve
   in absolute ticks. The base slice is the current element data (same as
-  `Coconut.Channel.Lyric`): the digest guards the note the curve edits.
+  `Coconut.Engines.Channels.Lyric`): the digest guards the note the curve edits.
 
   Folds to `{:port, note_id, :pitch}` — the note id taken from the anchor's
   first Ordinal ref — so simultaneous overrides on different notes coexist
   instead of clobbering one shared port. The engine adapter (see
-  `Coconut.Engine.DiffSinger`) samples the curve onto the engine's frame
+  `Coconut.Engines.DiffSinger`) samples the curve onto the engine's frame
   grid.
   """
 
   @behaviour Coconut.Channel
 
-  alias Coconut.{Channel.Lyric, Patch}
+  alias Coconut.Engines.Channels.Lyric
+  alias Coconut.Patch
 
   @impl true
   def projection(ws, patch), do: Lyric.projection(ws, patch)

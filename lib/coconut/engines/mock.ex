@@ -1,4 +1,4 @@
-defmodule Coconut.Engine.MockEngine do
+defmodule Coconut.Engines.Mock do
   @moduledoc """
   Minimal engine for exercising the edit pipeline end-to-end.
 

@@ -1,6 +1,6 @@
-defmodule Coconut.Engine.DiffSingerIntegrationTest do
+defmodule Coconut.Engines.DiffSingerIntegrationTest do
   @moduledoc """
-  Real-worker integration: boots `priv/python/ds_worker.py` against the
+  Real-worker integration: boots `lib/coconut/engines/diffsinger/worker.py` against the
   Qixuan voicebank and renders a short phrase. Excluded by default; run with
 
       mix test --include integration
@@ -11,7 +11,8 @@ defmodule Coconut.Engine.DiffSingerIntegrationTest do
   use ExUnit.Case, async: false
 
   alias Coconut.{Engine, Operate, Workspace}
-  alias Coconut.Engine.{DiffSinger, Request}
+  alias Coconut.Engine.Request
+  alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
 
   @moduletag :integration
@@ -50,8 +51,13 @@ defmodule Coconut.Engine.DiffSingerIntegrationTest do
     config = %{voicebank_root: voicebank, python: [python], output_dir: tmp_dir}
 
     # A pitch slide on the second note (spans tick 480..960 ⇒ 0.5..1.0 s)
-    # forces the pitch re-run with pitch_in / retake injection.
-    interventions = %{{:port, "n480", :pitch} => %{input: [[480, 62], [960, 64]]}}
+    # forces the pitch re-run with pitch_in / retake injection; a duration
+    # pin on the first note (phoneme 0 "l" shortened to 0.1 s) forces the
+    # renormalized dur path.
+    interventions = %{
+      {:port, "n480", :pitch} => %{input: [[480, 62], [960, 64]]},
+      {:port, "n0", :duration} => %{input: [[0, 96]]}
+    }
 
     {:ok, request} =
       Request.new(%{
@@ -65,8 +71,12 @@ defmodule Coconut.Engine.DiffSingerIntegrationTest do
 
     assert {:ok, artifact} = Engine.run_render({DiffSinger, config}, request, checked)
     assert File.exists?(artifact.path)
-    assert artifact.duration_sec > 0
     assert artifact.globals == %{gender: 0.2, steps: 10}
+
+    # Score timing is authoritative: with per-word renormalization the
+    # rendered length matches the notated length (12×0.5 + 2×1.0 s),
+    # overrides or not.
+    assert_in_delta artifact.duration_sec, 8.0, 0.05
   end
 
   # 120 BPM → 0.5 s per 480 ticks.

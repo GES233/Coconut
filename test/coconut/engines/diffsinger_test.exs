@@ -1,8 +1,9 @@
-defmodule Coconut.Engine.DiffSingerTest do
+defmodule Coconut.Engines.DiffSingerTest do
   use ExUnit.Case, async: true
 
   alias Coconut.{Engine, Operate, Workspace}
-  alias Coconut.Engine.{DiffSinger, Request}
+  alias Coconut.Engine.Request
+  alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
 
   defmodule FakeClient do
@@ -149,7 +150,7 @@ defmodule Coconut.Engine.DiffSingerTest do
       |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "l iang"})
 
-    config = config(%{encoder: {Coconut.Encoder.Literal, %{lang: "zh"}}})
+    config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
     {:ok, request} = Request.new(%{workspace: ws})
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
@@ -164,7 +165,7 @@ defmodule Coconut.Engine.DiffSingerTest do
       |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a", lang: "ja"})
 
-    config = config(%{encoder: {Coconut.Encoder.Literal, %{lang: "zh"}}})
+    config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
     {:ok, request} = Request.new(%{workspace: ws})
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
@@ -183,7 +184,7 @@ defmodule Coconut.Engine.DiffSingerTest do
         phonemes: [["zh", "manual"]]
       })
 
-    config = config(%{encoder: {Coconut.Encoder.Literal, %{lang: "zh"}}})
+    config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
     {:ok, request} = Request.new(%{workspace: ws})
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
@@ -218,7 +219,7 @@ defmodule Coconut.Engine.DiffSingerTest do
       |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: " "})
 
-    config = config(%{encoder: Coconut.Encoder.Literal})
+    config = config(%{encoder: Coconut.Engines.Encoders.Literal})
     {:ok, request} = Request.new(%{workspace: ws})
 
     assert {:error, {:encoder_failed, {:empty_lyric, "n1"}}} =
@@ -313,6 +314,46 @@ defmodule Coconut.Engine.DiffSingerTest do
              Engine.run_check({DiffSinger, config()}, request)
 
     assert entry == %{kind: :unknown_note, note_id: "nope"}
+    refute_received {:fake_call, _}
+  end
+
+  test "duration intervention becomes second-domain pins in the render payload" do
+    interventions = %{{:port, "n1", :duration} => %{input: [[0, 96]]}}
+
+    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+
+    assert {:ok, %{passed: true, checked: checked}} =
+             Engine.run_check({DiffSinger, config()}, request)
+
+    assert {:ok, _artifact} = Engine.run_render({DiffSinger, config()}, request, checked)
+
+    assert_received {:fake_call, %{action: "render", overrides: [override]}}
+    assert override.kind == "duration"
+    assert override.note_index == 0
+    assert [[0, sec]] = override.durations
+    assert_in_delta sec, 0.1, 0.001
+  end
+
+  test "duration pin with out-of-range phoneme index vetoes at check" do
+    interventions = %{{:port, "n1", :duration} => %{input: [[5, 96]]}}
+    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+
+    assert {:ok, %{passed: false, entries: [entry]}} =
+             Engine.run_check({DiffSinger, config()}, request)
+
+    assert entry == %{kind: :bad_phoneme_index, note_id: "n1", index: 5}
+    refute_received {:fake_call, _}
+  end
+
+  test "duration pins exceeding the note span veto at check" do
+    # n1 spans 0.5 s; 0.5 + 0.25 s of pins overflows
+    interventions = %{{:port, "n1", :duration} => %{input: [[0, 480], [1, 240]]}}
+    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+
+    assert {:ok, %{passed: false, entries: [entry]}} =
+             Engine.run_check({DiffSinger, config()}, request)
+
+    assert entry == %{kind: :duration_overflow, note_id: "n1"}
     refute_received {:fake_call, _}
   end
 

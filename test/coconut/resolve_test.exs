@@ -2,7 +2,8 @@ defmodule Coconut.ResolveTest do
   use ExUnit.Case, async: true
 
   alias Coconut.{Engine, Operate, Patch, Resolve, Workspace}
-  alias Coconut.Engine.{MockEngine, Request}
+  alias Coconut.Engine.Request
+  alias Coconut.Engines.Mock
   alias Coconut.Util.ID
 
   @track :vocal
@@ -61,7 +62,7 @@ defmodule Coconut.ResolveTest do
     }
   end
 
-  defp channels, do: %{lyric: Coconut.Channel.Lyric}
+  defp channels, do: %{lyric: Coconut.Engines.Channels.Lyric}
 
   # ---- Tests ----
 
@@ -163,9 +164,31 @@ defmodule Coconut.ResolveTest do
     ws = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
-             Resolve.run_check(ws, %{pitch: Coconut.Channel.Pitch})
+             Resolve.run_check(ws, %{pitch: Coconut.Engines.Channels.Pitch})
 
     assert interventions == %{{:port, "n1", :pitch} => %{input: [[0, 60], [480, 62]]}}
+  end
+
+  test "duration channel folds to per-note duration ports", %{ws: ws} do
+    ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
+
+    data = Map.fetch!(ws.side.elements_by_id, "n1")
+    {:ok, tp} = Tamale.Patch.new(data, [[0, 96], [1, 384]])
+
+    {:ok, cp} =
+      Patch.new(%{
+        track_id: @track,
+        channel: :duration,
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].version},
+        patch: tp
+      })
+
+    ws = Workspace.attach_patch(ws, cp)
+
+    assert {:ok, %{passed: true, interventions: interventions}} =
+             Resolve.run_check(ws, %{duration: Coconut.Engines.Channels.Duration})
+
+    assert interventions == %{{:port, "n1", :duration} => %{input: [[0, 96], [1, 384]]}}
   end
 
   test "function target fans a payload out to multiple ports", %{ws: ws} do
@@ -193,8 +216,8 @@ defmodule Coconut.ResolveTest do
     {:ok, %{passed: true, interventions: interventions}} = Resolve.run_check(ws, channels())
     {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
 
-    assert {:ok, %{passed: true, checked: nil}} = Engine.run_check(MockEngine, request)
-    assert {:ok, artifact} = Engine.run_render(MockEngine, request, nil)
+    assert {:ok, %{passed: true, checked: nil}} = Engine.run_check(Mock, request)
+    assert {:ok, artifact} = Engine.run_render(Mock, request, nil)
     assert artifact.overrides == interventions
     assert artifact.notes["n1"].span == {0, 480}
     assert artifact.notes["n1"].lyric == "ら"

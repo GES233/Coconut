@@ -4,7 +4,8 @@
 # mounts patches, edits, transports, and runs a Resolve + Engine round.
 
 alias Coconut.{Engine, Operate, Patch, Resolve, WarpProvider, Workspace}
-alias Coconut.Engine.{MockEngine, Request}
+alias Coconut.Engine.Request
+alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 
 cfg = %Operate.Config{}
@@ -42,7 +43,7 @@ ws =
 
 IO.puts("=== After insert ===")
 IO.inspect(ws.tracks[track].ids, label: "order")
-{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws}, nil)
+{:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 
 # ---- 4. Mount patches (mount = capture base via projection) ----
@@ -99,7 +100,7 @@ ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
 IO.puts("\n=== After drag n1 (0..480 -> 100..580) ===")
 IO.inspect(ws.tracks[track].ids, label: "order")
-{:ok, art} = Engine.run_render(MockEngine, %Request{workspace: ws}, nil)
+{:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 
 # ---- 6. Transport patches ----
@@ -153,8 +154,8 @@ case Resolve.run_check(ws, channels) do
     IO.inspect(interventions, label: "interventions")
 
     {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
-    {:ok, %{checked: checked}} = Engine.run_check(MockEngine, request)
-    {:ok, artifact} = Engine.run_render(MockEngine, request, checked)
+    {:ok, %{checked: checked}} = Engine.run_check(Mock, request)
+    {:ok, artifact} = Engine.run_render(Mock, request, checked)
     IO.inspect(artifact.overrides, label: "engine overrides")
 
   {:ok, %{passed: false, entries: entries}} ->

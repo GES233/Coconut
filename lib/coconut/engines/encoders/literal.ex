@@ -1,4 +1,4 @@
-defmodule Coconut.Encoder.Literal do
+defmodule Coconut.Engines.Encoders.Literal do
   @moduledoc """
   Literal encoder: the lyric *is* the token list.
 

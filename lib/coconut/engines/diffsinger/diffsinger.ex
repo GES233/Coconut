@@ -1,6 +1,6 @@
-defmodule Coconut.Engine.DiffSinger do
+defmodule Coconut.Engines.DiffSinger do
   @moduledoc """
-  DiffSinger engine adapter over the `priv/python/ds_worker.py` stdio worker.
+  DiffSinger engine adapter over the `lib/coconut/engines/diffsinger/worker.py` stdio worker.
 
   The heavy lifting (ONNX inference) lives in the Python worker; this module
   is the adaptation boundary:
@@ -21,14 +21,23 @@ defmodule Coconut.Engine.DiffSinger do
 
   ## Interventions
 
-  The adapter claims interventions at `{:port, note_id, :pitch}` — the
-  fold shape produced by `Coconut.Channel.Pitch`. The value is a sparse
-  piecewise-linear curve, `[[tick, midi], ...]` in absolute ticks; points
-  are converted to seconds here and sampled onto the engine's frame grid
-  by the worker (`pitch_in` / `retake` of the pitch model). A port naming
-  an unknown note vetoes at check time (`passed: false`); ports of other
-  shapes are left for other engines and ignored. The raw interventions
-  map is echoed in the artifact as `:overrides`.
+  The adapter claims interventions at `{:port, note_id, :pitch}` and
+  `{:port, note_id, :duration}` — the fold shapes produced by
+  `Coconut.Engines.Channels.Pitch` / `Coconut.Engines.Channels.Duration`.
+
+  Pitch values are sparse piecewise-linear curves, `[[tick, midi], ...]`
+  in absolute ticks; points are converted to seconds here and sampled
+  onto the engine's frame grid by the worker (`pitch_in` / `retake`).
+
+  Duration values are sparse per-phoneme pins, `[[ph_index, dur_tick], ...]`;
+  converted to seconds here. The worker renormalizes every word to its
+  span-derived frame target — unpinned phonemes absorb the slack and the
+  note's total stays on the score grid. Index out of range or a pinned
+  total exceeding the note's span vetoes at check time.
+
+  A port naming an unknown note vetoes at check time (`passed: false`);
+  ports of other shapes are left for other engines and ignored. The raw
+  interventions map is echoed in the artifact as `:overrides`.
 
   ## Config
 
@@ -37,7 +46,7 @@ defmodule Coconut.Engine.DiffSinger do
     * `:python` — command + args prefix for the interpreter, as a list
       (default `["python"]`; e.g. `["uv", "run", "--project", "..."]`)
     * `:client` — module replacing the worker client (test seam),
-      default `Coconut.Engine.DiffSinger.PortClient`
+      default `Coconut.Engines.DiffSinger.PortClient`
     * `:encoder` — `Coconut.Encoder` module or `{module, config}` deriving
       phonemes for notes that lack explicit `:phonemes`. Manual for v1;
       voicebank-derived auto-selection waits for the voicebank
@@ -52,7 +61,7 @@ defmodule Coconut.Engine.DiffSinger do
 
   alias Coconut.{Engine.Request, Score.TempoMap, Workspace}
 
-  @default_client Coconut.Engine.DiffSinger.PortClient
+  @default_client Coconut.Engines.DiffSinger.PortClient
   @default_tpqn 480
 
   @impl true
@@ -179,15 +188,17 @@ defmodule Coconut.Engine.DiffSinger do
     end
   end
 
-  # The adapter claims `{:port, note_id, :pitch}` interventions; other port
-  # shapes belong to other engines and are ignored. Curve points arrive in
-  # absolute ticks and leave in absolute seconds — the worker owns the
-  # frame grid.
+  # The adapter claims `{:port, note_id, :pitch|:duration}` interventions;
+  # other port shapes belong to other engines and are ignored. Curve
+  # points arrive in absolute ticks and leave in absolute seconds — the
+  # worker owns the frame grid.
   defp collect_overrides(interventions, notes, to_sec) do
     index =
       notes
       |> Enum.with_index()
       |> Map.new(fn {{id, _data, _span}, i} -> {id, i} end)
+
+    by_id = Map.new(notes, fn {id, data, span} -> {id, {data, span}} end)
 
     {overrides, errors} =
       Enum.reduce(interventions, {[], []}, fn
@@ -201,11 +212,52 @@ defmodule Coconut.Engine.DiffSinger do
               {oks, [%{kind: :unknown_note, note_id: note_id} | errs]}
           end
 
+        {{:port, note_id, :duration}, %{input: durations}}, {oks, errs} ->
+          with {:ok, i} <- Map.fetch(index, note_id),
+               {:ok, sec_durations} <-
+                 convert_durations(durations, note_id, by_id[note_id], to_sec) do
+            {[%{kind: "duration", note_index: i, durations: sec_durations} | oks], errs}
+          else
+            :error -> {oks, [%{kind: :unknown_note, note_id: note_id} | errs]}
+            {:error, entries} -> {oks, entries ++ errs}
+          end
+
         _foreign_port, acc ->
           acc
       end)
 
     {Enum.reverse(overrides), Enum.reverse(errors)}
+  end
+
+  # `[[ph_index, dur_tick], ...]` → `[[ph_index, dur_sec], ...]`.
+  # Validations the adapter can own: index in range, pinned total within
+  # the note's span.
+  defp convert_durations(durations, note_id, {data, {start_tick, end_tick}}, to_sec) do
+    phoneme_count = length(data.phonemes)
+    note_sec = to_sec.(end_tick) - to_sec.(start_tick)
+
+    {secs, errs} =
+      Enum.reduce(durations, {[], []}, fn
+        [idx, dur_tick], {ss, es}
+        when is_integer(idx) and idx >= 0 and idx < phoneme_count and
+               is_integer(dur_tick) and dur_tick >= 0 ->
+          sec = to_sec.(start_tick + dur_tick) - to_sec.(start_tick)
+          {[[idx, sec] | ss], es}
+
+        [idx, _dur_tick], {ss, es} ->
+          {ss, [%{kind: :bad_phoneme_index, note_id: note_id, index: idx} | es]}
+
+        other, {ss, es} ->
+          {ss, [%{kind: :bad_duration_point, note_id: note_id, point: other} | es]}
+      end)
+
+    pinned_sec = Enum.reduce(secs, 0.0, fn [_idx, sec], acc -> acc + sec end)
+
+    cond do
+      errs != [] -> {:error, Enum.reverse(errs)}
+      pinned_sec > note_sec + 1.0e-6 -> {:error, [%{kind: :duration_overflow, note_id: note_id}]}
+      true -> {:ok, Enum.reverse(secs)}
+    end
   end
 
   # Notes are collected per track (phrase context lives within a track),

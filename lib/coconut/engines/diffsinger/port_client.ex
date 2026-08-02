@@ -1,15 +1,21 @@
-defmodule Coconut.Engine.DiffSinger.PortClient do
+defmodule Coconut.Engines.DiffSinger.PortClient do
   @moduledoc """
-  Port-based client for the DiffSinger stdio worker (`priv/python/ds_worker.py`).
+  Port-based client for the DiffSinger stdio worker (`worker.py`,
+  colocated in this directory).
 
   A single Python process is kept alive per worker key
   (`{python, voicebank_root}`): the worker loads the ONNX voicebank at
   startup (seconds), so it is reused across calls; a config change
   transparently restarts it. Calls are serialized — one outstanding
   request at a time — over newline-delimited JSON.
+
+  The worker script path defaults to the colocated `worker.py`; override
+  with the `:worker` config key (e.g. when packaging a release, where
+  `lib/` sources are not shipped — copy the script somewhere durable and
+  point `:worker` at it).
   """
 
-  alias Coconut.Engine.DiffSinger.PortClient.Server
+  alias Coconut.Engines.DiffSinger.PortClient.Server
 
   @doc """
   Send one request map to the worker and wait for its response.
@@ -44,6 +50,7 @@ defmodule Coconut.Engine.DiffSinger.PortClient do
     require Logger
 
     @line_limit 64_000_000
+    @worker_path Path.expand("worker.py", __DIR__)
 
     def start_link do
       GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
@@ -128,7 +135,7 @@ defmodule Coconut.Engine.DiffSinger.PortClient do
           {:error, {:python_not_found, cmd}}
 
         executable ->
-          script = Path.join(:code.priv_dir(:coconut), "python/ds_worker.py")
+          script = Map.get(config, :worker, @worker_path)
 
           port =
             Port.open({:spawn_executable, executable}, [
@@ -144,7 +151,8 @@ defmodule Coconut.Engine.DiffSinger.PortClient do
     end
 
     defp worker_key(config) do
-      {Map.get(config, :python, ["python"]), Map.get(config, :voicebank_root)}
+      {Map.get(config, :python, ["python"]), Map.get(config, :voicebank_root),
+       Map.get(config, :worker, @worker_path)}
     end
 
     # ---- Protocol ----
