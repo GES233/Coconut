@@ -11,7 +11,7 @@ defmodule Coconut.TempoTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{"tempo" => tempo}
+        tempo: tempo
       })
 
     {:ok, ws: ws}
@@ -31,9 +31,9 @@ defmodule Coconut.TempoTest do
       assert changes.span_snapshot == %{"t0" => {0, 1920}}
 
       {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
-      assert ws.tracks["tempo"].space.version == 1
-      assert ws.tracks["tempo"].space.ids == ["t0"]
-      assert ws.tracks["tempo"].elements_by_id["t0"] == %{bpm: 120_000}
+      assert ws.tempo.space.version == 1
+      assert ws.tempo.space.ids == ["t0"]
+      assert ws.tempo.elements_by_id["t0"] == %{bpm: 120_000}
     end
 
     test "second tempo event inserted after first", %{ws: ws} do
@@ -55,9 +55,9 @@ defmodule Coconut.TempoTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, changes2)
 
-      assert ws.tracks["tempo"].space.ids == ["t0", "t1"]
-      assert ws.tracks["tempo"].spans_by_version[2]["t0"] == {0, 1920}
-      assert ws.tracks["tempo"].spans_by_version[2]["t1"] == {1920, 3840}
+      assert ws.tempo.space.ids == ["t0", "t1"]
+      assert ws.tempo.spans_by_version[2]["t0"] == {0, 1920}
+      assert ws.tempo.spans_by_version[2]["t1"] == {1920, 3840}
     end
   end
 
@@ -117,7 +117,7 @@ defmodule Coconut.TempoTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.tracks["tempo"].patches, [cp])
+      ws = put_in(ws.tempo.patches, [cp])
 
       {:ok, survivors, dead} = Workspace.transport_patches(ws, "tempo")
       assert length(survivors) == 1
@@ -141,7 +141,7 @@ defmodule Coconut.TempoTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.tracks["tempo"].patches, [cp])
+      ws = put_in(ws.tempo.patches, [cp])
 
       wp = WarpProvider.tick(Workspace.track_spans(ws, "tempo"))
       {:ok, survivors, dead} = Workspace.transport_patches(ws, "tempo", wp)
@@ -235,7 +235,7 @@ defmodule Coconut.TempoTest do
       # Move permutes ids but leaves spans untouched.
       {:ok, ops, ch} = Operate.lower({:move_note, "tempo", "t2", "t0"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
-      assert ws.tracks["tempo"].space.ids == ["t0", "t2", "t1"]
+      assert ws.tempo.space.ids == ["t0", "t2", "t1"]
 
       {:ok, tm} = Workspace.tempo_map(ws)
       assert tuple_size(tm.segments) == 3

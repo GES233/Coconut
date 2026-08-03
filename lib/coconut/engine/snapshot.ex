@@ -33,9 +33,9 @@ defmodule Coconut.Engine.Snapshot do
   @doc """
   Flatten a workspace into an engine-facing snapshot.
 
-  `tempo_map` is `nil` when the workspace has no tempo track — engines
-  apply their own fallback (DiffSinger: flat 120 BPM). A present but
-  uncompilable tempo track is an `{:error, _}`.
+  `tempo_map` is `nil` when the tempo track has no events — engines
+  apply their own fallback (DiffSinger: flat 120 BPM). An uncompilable
+  tempo track is an `{:error, _}`.
   """
   @spec from_workspace(Workspace.t()) :: {:ok, t()} | {:error, term()}
   def from_workspace(%Workspace{} = ws) do

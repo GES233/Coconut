@@ -50,7 +50,7 @@ defmodule Coconut.Scenarios.GInt01 do
       anchor_refs(r1.survivors) != [["n2"]] ->
         {:miss, "patch 应锚在左半 n2 且不复制，实际 #{inspect(anchor_refs(r1.survivors))}"}
 
-      not ("n2_b" in final_ws.tracks["vocal"].space.ids) ->
+      "n2_b" not in final_ws.tracks["vocal"].space.ids ->
         {:miss, "右半 n2_b 应存在"}
 
       true ->

@@ -19,10 +19,10 @@ track_b = "vocal_b"
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
     tracks: %{
-      "tempo" => tempo_track,
       track_a => vocal_a,
       track_b => vocal_b
-    }
+    },
+    tempo: tempo_track
   })
 
 # ---- Tempo ----

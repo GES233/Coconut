@@ -88,7 +88,8 @@ end
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tracks: %{"tempo" => tempo_track, track => vocal_track}
+    tracks: %{track => vocal_track},
+    tempo: tempo_track
   })
 
 notes = [

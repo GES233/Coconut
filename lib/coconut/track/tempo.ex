@@ -27,6 +27,11 @@ defmodule Coconut.Track.Tempo do
   end
 
   @impl true
+  def edit_element(element, changes) do
+    cast_element(nil, nil, Map.merge(element || %{}, changes))
+  end
+
+  @impl true
   def validate_gesture(:delete, track, %{id: id}) do
     if track.space.ids == [] or hd(track.space.ids) != id do
       :ok

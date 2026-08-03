@@ -24,8 +24,9 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 ```
 接口层（Elixir API / JSON-RPC stdio / CLI / MCP，可扩展）
   → command 翻译 + dispatch（按 workspace_id 路由）
-  → Workspace（聚合根，GenServer，单写者，命令全序点）
-      tracks: %{track_id => Track.t()}    # tempo 轨是普通 track（Track.Tempo）
+  → Workspace（聚合根，单写者，命令全序点；当前纯模块，GenServer 壳后加，§10.6）
+      tracks: %{track_id => Track.t()}    # 音符轨
+      tempo: Track.t()                    # tempo 轨独立字段，有且仅有一条（已定 2026-08-03）
       tpqn / time_sigs                    # 工程级：tick 分辨率 + 拍号事件
       Track = Space.t() + 侧表（版本化 span 表 / elements_by_id）
               + patches / dead_patches（坟场）
@@ -128,6 +129,11 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   `Track.Tempo.validate_gesture/3`）；
 - `:tick` provider 对 tempo log 永远返回 identity；tempo Space 自身几乎
   不会被挂锚，其角色是"序列化容器 + log 发生器"；
+- tempo 轨的存放：已定（2026-08-03）——Workspace 独立 `tempo` 字段，
+  有且仅有一条（结构性保证，`Workspace.validate/1` 把关 module 与 id
+  冲突），不再住 `tracks` map；`fetch_track/2`/`apply_batch/5` 等按
+  track id 透明路由到该字段；空 tempo 轨（无事件）时
+  `Workspace.tempo_map/1` 报 `:no_tempo_track`，引擎走自有回退；
 - 拍号（TimeSig）：已定（2026-08-03）——**不作 track**，落 `Workspace`
   的 `time_sigs` 字段（`[{bar, sig}]` 事件列表，支持曲子中途变拍如
   4/4 → 3/4；bar 是权威坐标，首事件须在 bar 1 且小节序号严格递增，
@@ -336,10 +342,13 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
 不重叠约束的挂载点。`Track.Audio`（帧域）与 `Track.Synth` 未实现。
 
 - `%Track{id, module, space, spans_by_version, elements_by_id, patches,
-  dead_patches}`——Side 整个删除，Workspace 只剩 `id/edit_version/tracks`
-  + 工程级 `tpqn/time_sigs`（§6 拍号条）。
-- behaviour 回调（克制，不含 Audio 占位共 5 个）：`coord_domain/0`、
-  `cast_element/3`、`validate_gesture/3`、`split_inherit/2`、`view/1`。
+  dead_patches}`——Side 整个删除，Workspace = `id/edit_version/tracks`
+  + 独立 `tempo` 轨字段 + 工程级 `tpqn/time_sigs`（§6）。
+- behaviour 回调（克制，不含 Audio 占位共 6 个）：`coord_domain/0`、
+  `cast_element/3`、`edit_element/2`、`validate_gesture/3`、
+  `split_inherit/2`、`view/1`。`edit_element/2`（2026-08-03 补）：
+  内容编辑的合并+重铸，`edit_note` lowering 经它一步写回（原 `:touch`
+  stub 退役，调用方不再各自扮演 cast 义务）。
 - 首发模块：`Track.Vocal`（Note 元素，tick 域）、`Track.Tempo`（bpm 裸 map，
   tick 域，首元素删除保护落 validate_gesture）。`Track.Audio` 紧随其后，
   `Track.Synth` 留位（参数面比 Vocal 简单，不预留实现）。

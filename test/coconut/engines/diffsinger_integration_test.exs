@@ -94,7 +94,8 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{"tempo" => tempo, "vocal" => vocal}
+        tracks: %{"vocal" => vocal},
+        tempo: tempo
       })
 
     ws = insert(ws, "tempo", "t0", :head, {0, 20_000}, %{bpm: 120})

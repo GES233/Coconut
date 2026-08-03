@@ -33,7 +33,8 @@ config = %{
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tracks: %{"tempo" => tempo_track, "vocal" => vocal_track}
+    tracks: %{"vocal" => vocal_track},
+    tempo: tempo_track
   })
 
 insert = fn ws, track, id, after_id, span, attrs ->

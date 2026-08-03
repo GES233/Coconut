@@ -89,11 +89,12 @@ defmodule Coconut.Resolve do
 
   # ---- Transport stage ----
 
-  # Patches live on their track, so "every patch in the workspace" is
-  # every track's patch list; an out-of-band mount on an unknown track is
-  # rejected at `Workspace.attach_patch/2` and cannot occur here.
+  # Patches live on their track, so "every patch in the workspace" is every
+  # track's patch list (tempo field included, via `Workspace.all_tracks/1`);
+  # an out-of-band mount on an unknown track is rejected at
+  # `Workspace.attach_patch/2` and cannot occur here.
   defp transport_all(ws) do
-    Enum.reduce(ws.tracks, {[], []}, fn {track_id, track}, {surv_acc, entry_acc} ->
+    Enum.reduce(Workspace.all_tracks(ws), {[], []}, fn {track_id, track}, {surv_acc, entry_acc} ->
       case track.patches do
         [] ->
           {surv_acc, entry_acc}

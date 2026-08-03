@@ -65,21 +65,9 @@ defmodule Coconut.Scenario do
     track_id = elem(op, 1)
     :ok = Operate.validate(op, ws)
     {:ok, ops, changes} = Operate.lower(op, ws, %Operate.Config{})
-    changes = maybe_cast_edit(op, ws, changes)
     {:ok, ws} = Workspace.apply_batch(ws, track_id, ws.edit_version, ops, changes)
     ws
   end
-
-  # `edit_note` lowering is a stub (`:touch` marker): the content write is
-  # the caller's business, so the runner plays caller — casts the attrs via
-  # the track module and upserts the element with the batch.
-  defp maybe_cast_edit({:edit_note, track_id, id, attrs}, ws, changes) do
-    track = Map.fetch!(ws.tracks, track_id)
-    {:ok, element} = track.module.cast_element(id, Track.latest_span(track, id), attrs)
-    %{changes | elements: Map.put(changes.elements, id, element)}
-  end
-
-  defp maybe_cast_edit(_op, _ws, changes), do: changes
 
   defp summarize_round(i, op, ws, check) do
     base = %{round: i, op: op, dead: dead_patches(ws)}
@@ -94,7 +82,7 @@ defmodule Coconut.Scenario do
   end
 
   defp dead_patches(ws) do
-    Enum.flat_map(ws.tracks, fn {_id, track} -> track.dead_patches end)
+    Enum.flat_map(Workspace.all_tracks(ws), fn {_id, track} -> track.dead_patches end)
   end
 
   # ---- Scenario authoring helpers ----

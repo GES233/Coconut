@@ -12,18 +12,22 @@ defmodule Coconut.Patch do
   `new/1` enforces construction-time legality: a Metric anchor whose `coord`
   the warp provider cannot serve (v1: only `:tick`) is rejected with
   `{:error, {:unsupported_coord, coord}}` instead of crashing `Resolve` later.
+
+  `id` may be omitted at construction; `Coconut.Workspace.attach_patch/2`
+  mints one (`"Patch_"` prefix) at mount when absent.
   """
 
-  alias Coconut.{Util.Object, WarpProvider}
+  alias Coconut.{Util.ID, Util.Object, WarpProvider}
 
   @type t :: %__MODULE__{
+          id: ID.t() | nil,
           track_id: Coconut.Operate.track_id(),
           anchor: Tamale.Anchor.t(),
           patch: Tamale.Patch.t(),
           channel: atom()
         }
 
-  use Object, keys: [:track_id, :anchor, :patch, channel: :default]
+  use Object, keys: [:id, :track_id, :anchor, :patch, channel: :default]
 
   @doc """
   Construction-time legality: a Metric anchor must name a coordinate system

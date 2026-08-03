@@ -148,11 +148,21 @@ defmodule Coconut.OperateTest do
       assert changes.span_snapshot == %{"n1" => {100, 580}}
     end
 
-    test "edit_note gives no ops, :touch marker", %{ws: ws} do
+    test "edit_note gives no ops, upserts the re-cast element", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operate.lower(
+          {:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}},
+          ws,
+          %Operate.Config{}
+        )
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
       assert {:ok, [], changes} =
                Operate.lower({:edit_note, @track, "n1", %{lyric: "ら"}}, ws, %Operate.Config{})
 
-      assert changes.elements == %{"n1" => :touch}
+      # Partial merge: the lyric is written, the key carries over.
+      assert %{"n1" => %Note{key: %TwelveET{midi: 60}, lyric: "ら"}} = changes.elements
       assert changes.span_snapshot == %{}
     end
 
@@ -357,7 +367,7 @@ defmodule Coconut.OperateTest do
       assert %Note{lyric: "ら"} = ws.tracks[@track].elements_by_id["n1"]
     end
 
-    test "edit_note :touch marker preserves element data", %{ws: ws} do
+    test "edit_note merges changes, preserving untouched fields", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
           {:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}},
@@ -372,13 +382,15 @@ defmodule Coconut.OperateTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, changes)
 
-      assert %Note{key: %TwelveET{midi: 60}} = ws.tracks[@track].elements_by_id["n1"]
+      assert %Note{key: %TwelveET{midi: 60}, lyric: "ら"} =
+               ws.tracks[@track].elements_by_id["n1"]
     end
 
     test "unknown track returns an error tuple, not bare :error", %{ws: ws} do
       changes = %{elements: %{}, span_snapshot: %{}, patches_add: [], patches_remove: []}
 
-      assert {:error, {:unknown_track, "nope"}} = Workspace.apply_batch(ws, "nope", 0, [], changes)
+      assert {:error, {:unknown_track, "nope"}} =
+               Workspace.apply_batch(ws, "nope", 0, [], changes)
     end
   end
 
@@ -399,10 +411,16 @@ defmodule Coconut.OperateTest do
         })
 
       {:ok, ws} = Workspace.attach_patch(ws, cp1)
-      assert ws.tracks[@track].patches == [cp1]
+      assert [%{patch: %Tamale.Patch{base_digest: "a"}, id: id1}] = ws.tracks[@track].patches
+      assert is_binary(id1)
 
       {:ok, ws} = Workspace.attach_patches(ws, [cp2])
-      assert ws.tracks[@track].patches == [cp1, cp2]
+
+      assert [
+               %{patch: %Tamale.Patch{base_digest: "a"}},
+               %{patch: %Tamale.Patch{base_digest: "b"}}
+             ] =
+               ws.tracks[@track].patches
     end
 
     test "latest_span falls back to the newest recorded version", %{ws: ws} do
@@ -779,6 +797,21 @@ defmodule Coconut.OperateTest do
 
       assert ws.tracks[@track].patches == [fresh]
       assert ws.tracks[@track].dead_patches == []
+    end
+
+    test "attach_patch mints an id when absent, keeps an explicit one", %{ws: ws} do
+      anchor = %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: 1}
+      tp = %Tamale.Patch{base_digest: "d", payload: %{}}
+
+      {:ok, p1} = Coconut.Patch.new(%{track_id: @track, anchor: anchor, patch: tp})
+
+      {:ok, p2} =
+        Coconut.Patch.new(%{id: "Patch_explicit", track_id: @track, anchor: anchor, patch: tp})
+
+      {:ok, ws} = Workspace.attach_patches(ws, [p1, p2])
+
+      assert [%{id: minted}, %{id: "Patch_explicit"}] = ws.tracks[@track].patches
+      assert is_binary(minted)
     end
   end
 end

@@ -27,7 +27,7 @@ defmodule Coconut.Scenarios.GInt02 do
     {ws, default_channels()}
   end
 
-  # edit_note 的 attrs 是整个新 element（runner 以 caller 身份 cast 写入）。
+  # edit_note 的 changes 部分合并到现 element 上：pitch 62→65，其余不动。
   @impl true
   def edits(_ws), do: [{:edit_note, "vocal", "n2", %{pitch: 65}}]
 

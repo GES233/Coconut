@@ -50,7 +50,7 @@ defmodule Coconut.Operate do
   | drag_note   | Move + Retime (同批)  | id → new_span        |
   | split_note  | Split                 | parent→left, new→right|
   | merge_notes | Merge                 | into→merged, rest→del|
-  | edit_note   | — (no op)             | via patches_add      |
+  | edit_note   | — (no op)             | id → re-cast element |
 
   `old_span` in `drag_note` is the span captured by the caller at drag-start;
   Retime needs both ends to keep the op log self-contained for warp construction.
@@ -171,9 +171,11 @@ defmodule Coconut.Operate do
     end
   end
 
-  def validate({:edit_note, track_id, id, _changes}, ws) do
+  def validate({:edit_note, track_id, id, changes}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_live?(track, id) do
+         :ok <- id_live?(track, id),
+         {:ok, _element} <-
+           track.module.edit_element(Map.fetch!(track.elements_by_id, id), changes) do
       :ok
     end
   end
@@ -293,27 +295,29 @@ defmodule Coconut.Operate do
     end
   end
 
-  def lower({:edit_note, _track, id, _changes}, _ws, _cfg) do
-    # Content edits do not produce ops. The caller is responsible for
-    # building a Patch with the correct base_digest and adding it via
-    # patches_add. We return an empty stub; the real patch construction
-    # is domain-specific (digest slices, etc.).
-    changes = %{
-      @empty_side_changes
-      | elements: %{id => :touch}
-    }
-
-    {:ok, [], changes}
+  def lower({:edit_note, track_id, id, changes}, ws, _cfg) do
+    # Content edits produce no ops: the track module merges the changes
+    # onto the current element and re-casts it, and the result is written
+    # back via the elements side table. Patch/digest semantics around the
+    # edit (base_digest refresh) remain the caller's business.
+    with {:ok, track} <- track_context(ws, track_id),
+         {:ok, element} <- fetch_element(track, id),
+         {:ok, new_element} <- track.module.edit_element(element, changes) do
+      side = %{@empty_side_changes | elements: %{id => new_element}}
+      {:ok, [], side}
+    end
   end
 
   # ---- Helpers ----
 
-  defp track_context(ws, track_id) do
-    case Map.fetch(ws.tracks, track_id) do
-      {:ok, track} -> {:ok, track}
-      :error -> {:error, {:unknown_track, track_id}}
+  defp fetch_element(track, id) do
+    case Map.fetch(track.elements_by_id, id) do
+      {:ok, element} -> {:ok, element}
+      :error -> {:error, :unreachable}
     end
   end
+
+  defp track_context(ws, track_id), do: Coconut.Workspace.fetch_track(ws, track_id)
 
   defp id_fresh?(space, id) do
     if id in space.ids or MapSet.member?(space.seen, id) do

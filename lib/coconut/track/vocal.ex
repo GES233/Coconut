@@ -20,6 +20,19 @@ defmodule Coconut.Track.Vocal do
   def cast_element(id, _span, attrs), do: Note.from_element(id, attrs)
 
   @impl true
+  def edit_element(%Note{} = element, changes) do
+    {known, metadata} = Map.split(changes, [:pitch, :lyric, :annotation])
+
+    attrs =
+      %{pitch: element.key, lyric: element.lyric, annotation: element.annotation}
+      |> Map.merge(known)
+      |> Map.merge(element.metadata)
+      |> Map.merge(Map.new(metadata, fn {k, v} -> {to_string(k), v} end))
+
+    Note.from_element(element.id, attrs)
+  end
+
+  @impl true
   def split_inherit(%Note{} = parent, new_id), do: %{parent | id: new_id}
 
   @impl true

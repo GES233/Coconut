@@ -56,27 +56,26 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   defp workspace(opts \\ []) do
-    {:ok, ws} =
-      Workspace.new(%{
-        id: ID.generate_id("WSpc_"),
-        edit_version: 0,
-        tracks: maybe_tempo(opts)
-      })
-
-    ws
-  end
-
-  defp maybe_tempo(opts) do
     {:ok, vocal} = Track.new(%{id: "vocal", module: Track.Vocal})
     {:ok, harmony} = Track.new(%{id: "harmony", module: Track.Vocal})
-    base = %{"vocal" => vocal, "harmony" => harmony}
 
-    if Keyword.get(opts, :tempo, true) do
-      {:ok, tempo} = Track.new(%{id: "tempo", module: Track.Tempo})
-      Map.put(base, "tempo", tempo)
-    else
-      base
-    end
+    attrs = %{
+      id: ID.generate_id("WSpc_"),
+      edit_version: 0,
+      tracks: %{"vocal" => vocal, "harmony" => harmony}
+    }
+
+    # tempo: false → default empty tempo track (tempo_map nil, engine fallback).
+    attrs =
+      if Keyword.get(opts, :tempo, true) do
+        {:ok, tempo} = Track.new(%{id: "tempo", module: Track.Tempo})
+        Map.put(attrs, :tempo, tempo)
+      else
+        attrs
+      end
+
+    {:ok, ws} = Workspace.new(attrs)
+    ws
   end
 
   defp insert(ws, track, id, after_id, span, attrs) do

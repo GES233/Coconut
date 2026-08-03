@@ -8,12 +8,13 @@ defmodule Coconut.Workspace do
   track's patches (write-time transport: survivors are persisted with
   up-to-date anchors, the dead move to the track's `dead_patches`).
 
-  A workspace is `id / edit_version / tracks` plus the project-level
+  A workspace is `id / edit_version / tracks / tempo` plus the project-level
   `tpqn` / `time_sigs` (tick resolution and the bar-grid time signature
   events — neither participates in the op/transport machinery).
   Everything else lives on `Coconut.Track` (design doc §11.3). The tempo
-  track is an ordinary track, identified by its module
-  `Coconut.Track.Tempo`.
+  track is a dedicated field — exactly one per workspace, structurally —
+  not an entry of `tracks` (design doc §6); track-id-keyed functions
+  (`fetch_track/2`, `apply_batch/5`, …) route to it transparently.
   """
 
   alias Coconut.{Track, Util.ID, Util.Model, WarpProvider}
@@ -23,23 +24,43 @@ defmodule Coconut.Workspace do
           id: ID.t(t()),
           edit_version: Tamale.version(),
           tracks: %{Coconut.Operate.track_id() => Track.t()},
+          tempo: Track.t(),
           tpqn: pos_integer(),
           time_sigs: [Coconut.Score.TimeSig.time_sig_event(), ...]
         }
   use Model,
-    keys: [:id, :edit_version, tracks: %{}, tpqn: 480, time_sigs: [{1, {4, 4}}]],
+    keys: [
+      :id,
+      :edit_version,
+      tracks: %{},
+      tempo: %Track{id: "tempo", module: Coconut.Track.Tempo},
+      tpqn: 480,
+      time_sigs: [{1, {4, 4}}]
+    ],
     id_prefix: "WSpc_"
 
   # ---- Tracks ----
 
-  @doc "Fetches a track by id."
+  @doc "Fetches a track by id; the tempo track's id routes to the dedicated field."
   @spec fetch_track(t(), Coconut.Operate.track_id()) ::
           {:ok, Track.t()} | {:error, {:unknown_track, term()}}
   def fetch_track(ws, track_id) do
-    case Map.fetch(ws.tracks, track_id) do
-      {:ok, track} -> {:ok, track}
-      :error -> {:error, {:unknown_track, track_id}}
+    cond do
+      track_id == ws.tempo.id -> {:ok, ws.tempo}
+      track = Map.get(ws.tracks, track_id) -> {:ok, track}
+      true -> {:error, {:unknown_track, track_id}}
     end
+  end
+
+  @doc "All tracks as `{id, track}` pairs, tempo track first (fold order is not semantic)."
+  @spec all_tracks(t()) :: [{Coconut.Operate.track_id(), Track.t()}]
+  def all_tracks(ws), do: [{ws.tempo.id, ws.tempo} | Map.to_list(ws.tracks)]
+
+  # Write-back counterpart of fetch_track/2's routing.
+  defp put_track(ws, %{id: id} = track) do
+    if id == ws.tempo.id,
+      do: %{ws | tempo: track},
+      else: %{ws | tracks: Map.put(ws.tracks, id, track)}
   end
 
   # ---- Apply ----
@@ -73,11 +94,8 @@ defmodule Coconut.Workspace do
          {:ok, space} <- Tamale.Space.apply_batch(track.space, ops) do
       track = Track.sync(%{track | space: space}, space.version, side_changes)
 
-      ws = %{
-        ws
-        | tracks: Map.put(ws.tracks, track_id, track),
-          edit_version: ws.edit_version + 1
-      }
+      ws = %{ws | edit_version: ws.edit_version + 1}
+      ws = put_track(ws, track)
 
       {:ok, transport_track_patches(ws, track_id, side_changes.patches_add)}
     end
@@ -106,7 +124,7 @@ defmodule Coconut.Workspace do
           warp_provider :: Tamale.Transport.warp_provider() | nil
         ) :: {:ok, survivors :: [Coconut.Patch.t()], dead :: [term()]}
   def transport_patches(ws, track_id, warp_provider \\ nil) do
-    track = Map.fetch!(ws.tracks, track_id)
+    {:ok, track} = fetch_track(ws, track_id)
 
     {survivors, dead} =
       Enum.reduce(track.patches, {[], []}, fn cp, {surv, dead} ->
@@ -124,7 +142,7 @@ defmodule Coconut.Workspace do
   # are persisted with anchors at the new head, the dead are moved to the
   # graveyard, and this batch's own `patches_add` join untouched.
   defp transport_track_patches(ws, track_id, patches_add) do
-    track = Map.fetch!(ws.tracks, track_id)
+    {:ok, track} = fetch_track(ws, track_id)
     provider = WarpProvider.tick(Track.spans(track), track.patches)
     {:ok, survivors, dead} = transport_patches(ws, track_id, provider)
 
@@ -134,7 +152,7 @@ defmodule Coconut.Workspace do
         dead_patches: track.dead_patches ++ dead
     }
 
-    %{ws | tracks: Map.put(ws.tracks, track_id, track)}
+    put_track(ws, track)
   end
 
   # ---- Transport helpers ----
@@ -177,8 +195,7 @@ defmodule Coconut.Workspace do
           {:ok, t()} | {:error, {:unknown_track, term()}}
   def truncate(ws, track_id, oldest_live_version) do
     with {:ok, track} <- fetch_track(ws, track_id) do
-      {:ok,
-       %{ws | tracks: Map.put(ws.tracks, track_id, Track.truncate(track, oldest_live_version))}}
+      {:ok, put_track(ws, Track.truncate(track, oldest_live_version))}
     end
   end
 
@@ -231,10 +248,18 @@ defmodule Coconut.Workspace do
           {:ok, t()} | {:error, {:unknown_track, term()}}
   def attach_patch(ws, %Coconut.Patch{track_id: track_id} = patch) do
     with {:ok, track} <- fetch_track(ws, track_id) do
+      patch = mint_patch_id(patch)
       track = %{track | patches: track.patches ++ [patch]}
-      {:ok, %{ws | tracks: Map.put(ws.tracks, track_id, track)}}
+      {:ok, put_track(ws, track)}
     end
   end
+
+  # Patch ids are minted at the aggregate boundary: an absent id gets a
+  # fresh `"Patch_"`-prefixed one at mount; explicit ids pass through.
+  defp mint_patch_id(%Coconut.Patch{id: nil} = patch),
+    do: %{patch | id: ID.generate_id("Patch_")}
+
+  defp mint_patch_id(patch), do: patch
 
   @doc "Appends a list of patches. See `attach_patch/2`."
   @spec attach_patches(t(), [Coconut.Patch.t()]) ::
@@ -255,29 +280,34 @@ defmodule Coconut.Workspace do
   """
   @spec take_dead_patches(t()) :: {[{Coconut.Patch.t(), term()}], t()}
   def take_dead_patches(ws) do
-    dead = Enum.flat_map(ws.tracks, fn {_id, track} -> track.dead_patches end)
-    tracks = Map.new(ws.tracks, fn {id, track} -> {id, %{track | dead_patches: []}} end)
-    {dead, %{ws | tracks: tracks}}
+    dead = Enum.flat_map(all_tracks(ws), fn {_id, track} -> track.dead_patches end)
+
+    ws =
+      Enum.reduce(all_tracks(ws), ws, fn {_id, track}, acc ->
+        put_track(acc, %{track | dead_patches: []})
+      end)
+
+    {dead, ws}
   end
 
   @doc """
-  Builds a compiled `TempoMap` from the tempo track (the track whose
-  module is `Coconut.Track.Tempo`), at the workspace's `tpqn`.
+  Builds a compiled `TempoMap` from the tempo track (the dedicated `tempo`
+  field), at the workspace's `tpqn`.
+
+  A tempo track with no events yields `{:error, :no_tempo_track}` — engines
+  apply their own fallback (see `Coconut.Engine.Snapshot`).
   """
   @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
   def tempo_map(ws) do
-    case Enum.find(ws.tracks, fn {_id, track} -> track.module == Coconut.Track.Tempo end) do
-      nil ->
-        {:error, :no_tempo_track}
+    events =
+      ws.tempo.module.view(ws.tempo)
+      |> Enum.map(fn {_id, element, {start, _end}} ->
+        {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: element.bpm / 1000}}}
+      end)
 
-      {_id, track} ->
-        events =
-          track.module.view(track)
-          |> Enum.map(fn {_id, element, {start, _end}} ->
-            {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: element.bpm / 1000}}}
-          end)
-
-        TempoMap.compile(events, tpqn: ws.tpqn)
+    case events do
+      [] -> {:error, :no_tempo_track}
+      _ -> TempoMap.compile(events, tpqn: ws.tpqn)
     end
   end
 
@@ -296,11 +326,22 @@ defmodule Coconut.Workspace do
   end
 
   @impl true
-  def validate(%{time_sigs: time_sigs} = ws) do
-    if valid_time_sigs?(time_sigs) do
-      {:ok, ws}
-    else
-      {:error, {:invalid_time_sigs, time_sigs}}
+  def validate(%{tempo: tempo, time_sigs: time_sigs} = ws) do
+    cond do
+      tempo.module != Coconut.Track.Tempo ->
+        {:error, {:invalid_tempo_track, tempo.module}}
+
+      Map.has_key?(ws.tracks, tempo.id) ->
+        {:error, {:tempo_id_collision, tempo.id}}
+
+      Enum.any?(ws.tracks, fn {_id, track} -> track.module == Coconut.Track.Tempo end) ->
+        {:error, :tempo_track_in_tracks}
+
+      not valid_time_sigs?(time_sigs) ->
+        {:error, {:invalid_time_sigs, time_sigs}}
+
+      true ->
+        {:ok, ws}
     end
   end
 

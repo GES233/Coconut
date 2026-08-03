@@ -15,6 +15,9 @@ defmodule Coconut.Track do
     score tracks; `:frame` for audio tracks, design doc §11.8).
   - `cast_element/3` — raw insert attrs → element payload (`Note` for
     vocal, bpm map for tempo).
+  - `edit_element/2` — content edit: merge `changes` onto the current
+    element and re-cast (`Operate`'s `:edit_note` lowering writes the
+    result back as the element upsert).
   - `validate_gesture/3` — track-type-specific legality beyond the generic
     geometry/sequence checks (e.g. tempo's first-element protection).
   - `split_inherit/2` — the right half of a split's element payload.
@@ -43,15 +46,17 @@ defmodule Coconut.Track do
           dead_patches: [{Coconut.Patch.t(), term()}]
         }
 
-  use Coconut.Util.Model, keys: [
-    :id,
-    :module,
-    space: %Tamale.Space{},
-    spans_by_version: %{},
-    elements_by_id: %{},
-    patches: [],
-    dead_patches: []
-  ], id_prefix: "Track_"
+  use Coconut.Util.Model,
+    keys: [
+      :id,
+      :module,
+      space: %Tamale.Space{},
+      spans_by_version: %{},
+      elements_by_id: %{},
+      patches: [],
+      dead_patches: []
+    ],
+    id_prefix: "Track_"
 
   # ---- Behaviour ----
 
@@ -66,6 +71,15 @@ defmodule Coconut.Track do
   clips derive content addressing from it.
   """
   @callback cast_element(Tamale.id(), span(), attrs :: map()) ::
+              {:ok, term()} | {:error, term()}
+
+  @doc """
+  Merge a content edit onto the current element and re-cast it.
+
+  `changes` is a partial attrs map (same vocabulary as `cast_element/3`'s
+  attrs); untouched fields carry over.
+  """
+  @callback edit_element(element :: term(), changes :: map()) ::
               {:ok, term()} | {:error, term()}
 
   @doc """
