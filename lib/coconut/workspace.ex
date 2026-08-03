@@ -41,15 +41,16 @@ defmodule Coconut.Workspace do
 
   # ---- Tracks ----
 
+  defguardp in_tempo_track(ws, track_id)
+            when is_struct(ws, __MODULE__) and is_struct(ws.tempo, Track) and track_id == ws.tempo.id
+
   @doc "Fetches a track by id; the tempo track's id routes to the dedicated field."
   @spec fetch_track(t(), Track.track_id()) ::
           {:ok, Track.t()} | {:error, {:unknown_track, term()}}
+  def fetch_track(ws, track_id) when in_tempo_track(ws, track_id), do: {:ok, ws.tempo}
+
   def fetch_track(ws, track_id) do
-    cond do
-      track_id == ws.tempo.id -> {:ok, ws.tempo}
-      track = Map.get(ws.tracks, track_id) -> {:ok, track}
-      true -> {:error, {:unknown_track, track_id}}
-    end
+    with :error <- Map.fetch(ws.tracks, track_id), do: {:error, {:unknown_track, track_id}}
   end
 
   @doc "All tracks as `{id, track}` pairs, tempo track first (fold order is not semantic)."
@@ -57,11 +58,11 @@ defmodule Coconut.Workspace do
   def all_tracks(ws), do: [{ws.tempo.id, ws.tempo} | Map.to_list(ws.tracks)]
 
   # Write-back counterpart of fetch_track/2's routing.
-  defp put_track(ws, %{id: id} = track) do
-    if id == ws.tempo.id,
-      do: %{ws | tempo: track},
-      else: %{ws | tracks: Map.put(ws.tracks, id, track)}
-  end
+  defp put_track(ws, %{id: track_id} = track) when in_tempo_track(ws, track_id),
+    do: %{ws | tempo: track}
+
+  defp put_track(ws, %{id: track_id} = track),
+    do: %{ws | tracks: Map.put(ws.tracks, track_id, track)}
 
   # ---- Apply ----
 

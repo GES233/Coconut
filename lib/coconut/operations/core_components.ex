@@ -163,8 +163,9 @@ defmodule Coconut.Operations.CoreComponents do
   """
   @spec within_span?(Workspace.t(), Track.track_id(), Tamale.id(), Tick.numeric_tick()) ::
           :ok
-          | {:error, {:split_out_of_bounds, {Tick.numeric_tick(), Tick.numeric_tick(),
-                      Tick.numeric_tick()}}}
+          | {:error,
+             {:split_out_of_bounds,
+              {Tick.numeric_tick(), Tick.numeric_tick(), Tick.numeric_tick()}}}
           | {:error, {:no_span_for_id, Tamale.id()}}
   def within_span?(ws, track, id, at_tick) do
     case Coconut.Workspace.latest_span(ws, track, id) do
