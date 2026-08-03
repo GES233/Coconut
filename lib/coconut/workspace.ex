@@ -19,10 +19,11 @@ defmodule Coconut.Workspace do
   @type t :: %__MODULE__{
           id: ID.t(t()),
           edit_version: Tamale.version(),
-          tracks: %{Coconut.Operate.track_id() => Track.t()}
+          tracks: %{Coconut.Operate.track_id() => Track.t()},
+          tpqn: pos_integer()
         }
   use Model,
-    keys: [:id, :edit_version, tracks: %{}],
+    keys: [:id, :edit_version, tracks: %{}, tpqn: 480],
     id_prefix: "WSpc_"
 
   # ---- Tracks ----
@@ -257,10 +258,10 @@ defmodule Coconut.Workspace do
 
   @doc """
   Builds a compiled `TempoMap` from the tempo track (the track whose
-  module is `Coconut.Track.Tempo`).
+  module is `Coconut.Track.Tempo`), at the workspace's `tpqn`.
   """
-  @spec tempo_map(t(), keyword()) :: {:ok, TempoMap.t()} | {:error, term()}
-  def tempo_map(ws, opts \\ []) do
+  @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
+  def tempo_map(ws) do
     case Enum.find(ws.tracks, fn {_id, track} -> track.module == Coconut.Track.Tempo end) do
       nil ->
         {:error, :no_tempo_track}
@@ -272,8 +273,7 @@ defmodule Coconut.Workspace do
             {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: element.bpm / 1000}}}
           end)
 
-        tpqn = Keyword.get(opts, :tpqn, 480)
-        TempoMap.compile(events, tpqn: tpqn)
+        TempoMap.compile(events, tpqn: ws.tpqn)
     end
   end
 end

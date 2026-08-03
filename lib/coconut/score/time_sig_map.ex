@@ -3,6 +3,8 @@ defmodule Coconut.Score.TimeSigMap do
   Compiled time signature map from time signature change events.
 
   Delegates to `RecordMap` for compilation and bar-based binary search.
+  The compiled value carries its `tpqn`, so query functions take no
+  resolution argument — compile-time and query-time can never disagree.
   """
 
   alias Coconut.Score.{TimeSig, RecordMap, Record, Tick}
@@ -16,7 +18,9 @@ defmodule Coconut.Score.TimeSigMap do
           end_tick: Tick.t(),
           time_sig: TimeSig.t()
         }
-  @type t :: tuple()
+  @type t :: %__MODULE__{segments: tuple(), tpqn: pos_integer()}
+
+  defstruct [:segments, :tpqn]
 
   @spec compile(TimeSig.time_sig_events(), keyword()) :: {:ok, t()} | {:error, term()}
   def compile(events, opts \\ [])
@@ -74,7 +78,7 @@ defmodule Coconut.Score.TimeSigMap do
 
       case RecordMap.compile({record_events, record_end}, reducer, 0) do
         {:ok, tuple} ->
-          {:ok, tuple}
+          {:ok, %__MODULE__{segments: tuple, tpqn: tpqn}}
 
         {:error, {:first_record_must_start_at_zero, pos}} ->
           {:error, {:first_time_sig_event_must_start_at_one, pos}}
@@ -91,11 +95,11 @@ defmodule Coconut.Score.TimeSigMap do
     end
   end
 
-  @spec bar_to_tick(t(), TimeSig.bar(), pos_integer()) ::
+  @spec bar_to_tick(t(), TimeSig.bar()) ::
           {:ok, Tick.numeric_tick()} | {:error, term()}
-  def bar_to_tick(compiled, target_bar, tpqn) when target_bar >= 1 do
+  def bar_to_tick(%__MODULE__{segments: segments, tpqn: tpqn}, target_bar) when target_bar >= 1 do
     pos = target_bar - 1
-    seg = RecordMap.find_by_position(compiled, pos)
+    seg = RecordMap.find_by_position(segments, pos)
 
     case TimeSig.ticks_per_bar(seg.time_sig, tpqn) do
       nil ->
@@ -107,12 +111,13 @@ defmodule Coconut.Score.TimeSigMap do
     end
   end
 
-  def bar_to_tick(_compiled, bad_bar, _tpqn), do: {:error, {:invalid_bar, bad_bar}}
+  def bar_to_tick(_compiled, bad_bar), do: {:error, {:invalid_bar, bad_bar}}
 
-  @spec tick_to_bar(t(), Tick.numeric_tick(), pos_integer()) ::
+  @spec tick_to_bar(t(), Tick.numeric_tick()) ::
           {:ok, TimeSig.bar()} | {:error, term()}
-  def tick_to_bar(compiled, target_tick, tpqn) when is_numeric_tick(target_tick) do
-    seg = find_by_tick(compiled, target_tick)
+  def tick_to_bar(%__MODULE__{segments: segments, tpqn: tpqn}, target_tick)
+      when is_numeric_tick(target_tick) do
+    seg = find_by_tick(segments, target_tick)
 
     case TimeSig.ticks_per_bar(seg.time_sig, tpqn) do
       nil ->
@@ -125,7 +130,7 @@ defmodule Coconut.Score.TimeSigMap do
     end
   end
 
-  def tick_to_bar(_compiled, bad_tick, _tpqn), do: {:error, {:invalid_tick, bad_tick}}
+  def tick_to_bar(_compiled, bad_tick), do: {:error, {:invalid_tick, bad_tick}}
 
   defp find_by_tick(tuple, target_tick, low, high) when low <= high do
     mid = div(low + high, 2)

@@ -301,7 +301,7 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
 - `Note.to_canonical` 的 key 形状（`%{midi: n}`）是隐性契约：换 tuning
   或改形状 = 全部已挂 patch 的 base_digest 失效。改 canonical 形状视为
   breaking change。
-- `Workspace.tempo_map/2` 每次现编 TempoMap；大工程下考虑缓存
+- `Workspace.tempo_map/1` 每次现编 TempoMap；大工程下考虑缓存
   （与 tempos_by_version 一并想）。
 
 ### 11.8 Track 抽象（已定 2026-08-03，与 11.1–11.3 同期施工；Vocal/Tempo 已落地）

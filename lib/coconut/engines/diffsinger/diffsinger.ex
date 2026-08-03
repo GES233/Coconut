@@ -356,6 +356,6 @@ defmodule Coconut.Engines.DiffSinger do
   defp sec_converter(%{tempo_map: nil}, tpqn),
     do: {:ok, fn tick -> tick / (tpqn * 2.0) end}
 
-  defp sec_converter(%{tempo_map: tempo_map}, tpqn),
-    do: {:ok, fn tick -> TempoMap.tick_to_sec(tempo_map, tick, tpqn) end}
+  defp sec_converter(%{tempo_map: tempo_map}, _tpqn),
+    do: {:ok, fn tick -> TempoMap.tick_to_sec(tempo_map, tick) end}
 end

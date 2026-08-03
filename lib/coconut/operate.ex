@@ -24,11 +24,10 @@ defmodule Coconut.Operate do
     @moduledoc """
     Knobs that influence lowering behaviour.
     """
-    defstruct ripple: false, tpqn: 480
+    defstruct ripple: false
 
     @type t :: %__MODULE__{
-            ripple: boolean(),
-            tpqn: pos_integer()
+            ripple: boolean()
           }
   end
 

@@ -180,7 +180,7 @@ defmodule Coconut.Score.Tempo do
   def duration_sec(segment, tpqn), do: impl(segment).duration_sec(segment, tpqn)
 
   @spec sec_to_tick(Segment.segment(), physical_time(), pos_integer()) ::
-          Segment.duration()
+          Tick.numeric_tick()
   def sec_to_tick(segment, sec, tpqn), do: impl(segment).sec_to_tick(segment, sec, tpqn)
 
   @doc """

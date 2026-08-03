@@ -37,10 +37,8 @@ defmodule Coconut.Engine.Snapshot do
   apply their own fallback (DiffSinger: flat 120 BPM). A present but
   uncompilable tempo track is an `{:error, _}`.
   """
-  @spec from_workspace(Workspace.t(), keyword()) :: {:ok, t()} | {:error, term()}
-  def from_workspace(%Workspace{} = ws, opts \\ []) do
-    tpqn = Keyword.get(opts, :tpqn, 480)
-
+  @spec from_workspace(Workspace.t()) :: {:ok, t()} | {:error, term()}
+  def from_workspace(%Workspace{} = ws) do
     tracks =
       Map.new(ws.tracks, fn {track_id, track} ->
         {track_id,
@@ -51,14 +49,14 @@ defmodule Coconut.Engine.Snapshot do
          }}
       end)
 
-    case Workspace.tempo_map(ws, tpqn: tpqn) do
+    case Workspace.tempo_map(ws) do
       {:ok, tempo_map} ->
         {:ok,
          %__MODULE__{
            tracks: tracks,
            tempo_map: tempo_map,
            edit_version: ws.edit_version,
-           tpqn: tpqn
+           tpqn: ws.tpqn
          }}
 
       {:error, :no_tempo_track} ->
@@ -67,7 +65,7 @@ defmodule Coconut.Engine.Snapshot do
            tracks: tracks,
            tempo_map: nil,
            edit_version: ws.edit_version,
-           tpqn: tpqn
+           tpqn: ws.tpqn
          }}
 
       {:error, _} = error ->

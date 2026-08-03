@@ -28,12 +28,11 @@ defmodule Coconut.Engine.Request do
   @doc """
   Build a Request pinned to the workspace's current edit version.
 
-  Options: `:interventions` / `:globals` (as in the struct), plus any
-  `Coconut.Engine.Snapshot.from_workspace/2` option (`:tpqn`).
+  Options: `:interventions` / `:globals` (as in the struct).
   """
   @spec for_workspace(Workspace.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def for_workspace(%Workspace{} = ws, opts \\ []) do
-    with {:ok, snapshot} <- Snapshot.from_workspace(ws, opts) do
+    with {:ok, snapshot} <- Snapshot.from_workspace(ws) do
       new(%{
         snapshot: snapshot,
         interventions: Keyword.get(opts, :interventions, %{}),

@@ -147,7 +147,7 @@ end
 n1_span = Workspace.latest_span(ws, track, "n1")
 IO.puts("\n=== TempoMap ===")
 if n1_span do
-  sec_start = Coconut.Score.TempoMap.tick_to_sec(tm, elem(n1_span, 0), 480)
+  sec_start = Coconut.Score.TempoMap.tick_to_sec(tm, elem(n1_span, 0))
   IO.puts("n1 at tick #{elem(n1_span, 0)} = #{Float.round(sec_start, 4)} sec")
 end
 

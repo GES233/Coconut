@@ -165,9 +165,9 @@ defmodule Coconut.TempoTest do
 
       {:ok, tm} = Workspace.tempo_map(ws)
       # At tick 0, seconds should be 0
-      assert Score.TempoMap.tick_to_sec(tm, 0, 480) == 0.0
+      assert Score.TempoMap.tick_to_sec(tm, 0) == 0.0
       # At 480 ticks (one quarter at 120 BPM), should be 0.5 seconds
-      assert_in_delta Score.TempoMap.tick_to_sec(tm, 480, 480), 0.5, 0.01
+      assert_in_delta Score.TempoMap.tick_to_sec(tm, 480), 0.5, 0.01
     end
 
     test "handles multiple tempo changes", %{ws: ws} do
@@ -191,10 +191,10 @@ defmodule Coconut.TempoTest do
 
       {:ok, tm} = Workspace.tempo_map(ws)
       # First section: 1920 ticks at 120 BPM = 1920/(120*480/60) = 2.0 sec
-      assert_in_delta Score.TempoMap.tick_to_sec(tm, 1920, 480), 2.0, 0.01
+      assert_in_delta Score.TempoMap.tick_to_sec(tm, 1920), 2.0, 0.01
       # Second section: 1920 ticks at 60 BPM = 1920/(60*480/60) = 4.0 sec
       # Total at tick 3840 = 2.0 + 4.0 = 6.0 sec
-      assert_in_delta Score.TempoMap.tick_to_sec(tm, 3840, 480), 6.0, 0.01
+      assert_in_delta Score.TempoMap.tick_to_sec(tm, 3840), 6.0, 0.01
     end
 
     test "round-trip: sec_to_tick then tick_to_sec", %{ws: ws} do
@@ -208,8 +208,8 @@ defmodule Coconut.TempoTest do
       {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
-      tick = Score.TempoMap.sec_to_tick(tm, 3.5, 480)
-      sec = Score.TempoMap.tick_to_sec(tm, tick, 480)
+      tick = Score.TempoMap.sec_to_tick(tm, 3.5)
+      sec = Score.TempoMap.tick_to_sec(tm, tick)
       assert_in_delta sec, 3.5, 0.01
     end
 
@@ -238,9 +238,9 @@ defmodule Coconut.TempoTest do
       assert ws.tracks["tempo"].space.ids == ["t0", "t2", "t1"]
 
       {:ok, tm} = Workspace.tempo_map(ws)
-      assert tuple_size(tm) == 3
+      assert tuple_size(tm.segments) == 3
       # 1920 ticks @120bpm = 2.0s; +1920 ticks @60bpm = 4.0s; total 6.0s at tick 3840.
-      assert_in_delta Score.TempoMap.tick_to_sec(tm, 3840, 480), 6.0, 0.01
+      assert_in_delta Score.TempoMap.tick_to_sec(tm, 3840), 6.0, 0.01
     end
 
     test "slice returns [] for zero-width ranges", %{ws: ws} do

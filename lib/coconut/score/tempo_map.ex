@@ -3,6 +3,8 @@ defmodule Coconut.Score.TempoMap do
   Compiled tempo map from tempo change events.
 
   Delegates to `RecordMap` for compilation and tick-based binary search.
+  The compiled value carries its `tpqn`, so query functions take no
+  resolution argument — compile-time and query-time can never disagree.
   """
 
   alias Coconut.{Score.Tempo, Score.Tick, Score.RecordMap, Score.Record}
@@ -14,7 +16,9 @@ defmodule Coconut.Score.TempoMap do
           start_sec: Tempo.physical_time(),
           strategy: Tempo.Segment.segment()
         }
-  @type t :: tuple()
+  @type t :: %__MODULE__{segments: tuple(), tpqn: pos_integer()}
+
+  defstruct [:segments, :tpqn]
 
   @spec compile(Tempo.tempo_events(), keyword()) :: {:ok, t()} | {:error, term()}
   def compile(events, opts \\ [])
@@ -45,7 +49,7 @@ defmodule Coconut.Score.TempoMap do
 
     case RecordMap.compile(record_events, reducer, 0.0) do
       {:ok, tuple} ->
-        {:ok, tempoize_tuple(tuple)}
+        {:ok, %__MODULE__{segments: tempoize_tuple(tuple), tpqn: tpqn}}
 
       {:error, {:first_record_must_start_at_zero, pos}} ->
         {:error, {:first_tempo_event_must_start_at_zero, pos}}
@@ -61,28 +65,31 @@ defmodule Coconut.Score.TempoMap do
     end
   end
 
-  def tick_to_sec(compiled_tuple, target_tick, tpqn) when is_numeric_tick(target_tick) do
-    seg = find_by_tick(compiled_tuple, target_tick)
+  @spec tick_to_sec(t(), Tick.numeric_tick()) :: Tempo.physical_time()
+  def tick_to_sec(%__MODULE__{segments: segments, tpqn: tpqn}, target_tick)
+      when is_numeric_tick(target_tick) do
+    seg = find_by_tick(segments, target_tick)
     seg.start_sec + Tempo.tick_to_sec(seg.strategy, target_tick - seg.start_pos, tpqn)
   end
 
-  def sec_to_tick(compiled_tuple, target_sec, tpqn) do
-    seg = find_segment_by_sec(compiled_tuple, target_sec, 0, tuple_size(compiled_tuple) - 1, tpqn)
+  @spec sec_to_tick(t(), Tempo.physical_time()) :: Tick.numeric_tick()
+  def sec_to_tick(%__MODULE__{segments: segments, tpqn: tpqn}, target_sec) do
+    seg = find_segment_by_sec(segments, target_sec, 0, tuple_size(segments) - 1, tpqn)
     offset_sec = target_sec - seg.start_sec
     seg.start_pos + Tempo.sec_to_tick(seg.strategy, offset_sec, tpqn)
   end
 
   @spec slice(t(), Tick.numeric_tick(), Tick.numeric_tick()) :: [compiled_event()]
-  def slice(_compiled_tuple, start_tick, end_tick)
+  def slice(_compiled, start_tick, end_tick)
       when is_numeric_tick(start_tick) and is_numeric_tick(end_tick) and start_tick >= end_tick,
       do: []
 
-  def slice(compiled_tuple, start_tick, end_tick)
+  def slice(%__MODULE__{segments: segments}, start_tick, end_tick)
       when is_numeric_tick(start_tick) and is_numeric_tick(end_tick) do
-    size = tuple_size(compiled_tuple)
+    size = tuple_size(segments)
 
     Enum.reduce_while(0..(size - 1), {:cont, []}, fn i, {:cont, acc} ->
-      seg = elem(compiled_tuple, i)
+      seg = elem(segments, i)
 
       cond do
         is_numeric_tick(seg.start_pos) and seg.start_pos >= end_tick -> {:halt, {:done, acc}}
