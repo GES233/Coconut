@@ -9,7 +9,7 @@ defmodule Coconut.Engine.Snapshot do
   (design doc §11.5; enforcement lands with the server shell).
   """
 
-  alias Coconut.{Util.Object, Workspace}
+  alias Coconut.{Util.Object, Workspace, Track}
 
   @typedoc """
   Per-track flattened view: the track module, its coordinate domain, and
@@ -44,8 +44,8 @@ defmodule Coconut.Engine.Snapshot do
         {track_id,
          %{
            module: track.module,
-           coord: track.module.coord_domain(),
-           elements: track.module.view(track)
+           coord: Track.coord_domain(track),
+           elements: Track.view(track)
          }}
       end)
 

@@ -130,10 +130,11 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 - `:tick` provider 对 tempo log 永远返回 identity；tempo Space 自身几乎
   不会被挂锚，其角色是"序列化容器 + log 发生器"；
 - tempo 轨的存放：已定（2026-08-03）——Workspace 独立 `tempo` 字段，
-  有且仅有一条（结构性保证，`Workspace.validate/1` 把关 module 与 id
-  冲突），不再住 `tracks` map；`fetch_track/2`/`apply_batch/5` 等按
-  track id 透明路由到该字段；空 tempo 轨（无事件）时
-  `Workspace.tempo_map/1` 报 `:no_tempo_track`，引擎走自有回退；
+  有且仅有一条（结构性保证）；绑定按能力不按模块身份：任何导出
+  `tempo_events/1` 的 track module 都可充当 tempo 轨（投影知识在模块上，
+  `Workspace.validate/1` 把关能力与 id 冲突）；`fetch_track/2`/
+  `apply_batch/5` 等按 track id 透明路由到该字段；空 tempo 轨（无事件）
+  时 `Workspace.tempo_map/1` 报 `:no_tempo_track`，引擎走自有回退；
 - 拍号（TimeSig）：已定（2026-08-03）——**不作 track**，落 `Workspace`
   的 `time_sigs` 字段（`[{bar, sig}]` 事件列表，支持曲子中途变拍如
   4/4 → 3/4；bar 是权威坐标，首事件须在 bar 1 且小节序号严格递增，

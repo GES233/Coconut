@@ -18,7 +18,7 @@ defmodule Coconut.Workspace do
   """
 
   alias Coconut.{Track, Util.ID, Util.Model, WarpProvider}
-  alias Coconut.Score.{Tempo, TempoMap, TimeSigMap}
+  alias Coconut.Score.{TempoMap, TimeSigMap}
 
   @type t :: %__MODULE__{
           id: ID.t(t()),
@@ -42,7 +42,8 @@ defmodule Coconut.Workspace do
   # ---- Tracks ----
 
   defguardp in_tempo_track(ws, track_id)
-            when is_struct(ws, __MODULE__) and is_struct(ws.tempo, Track) and track_id == ws.tempo.id
+            when is_struct(ws, __MODULE__) and is_struct(ws.tempo, Track) and
+                   track_id == ws.tempo.id
 
   @doc "Fetches a track by id; the tempo track's id routes to the dedicated field."
   @spec fetch_track(t(), Track.track_id()) ::
@@ -300,15 +301,9 @@ defmodule Coconut.Workspace do
   """
   @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
   def tempo_map(ws) do
-    events =
-      ws.tempo.module.view(ws.tempo)
-      |> Enum.map(fn {_id, element, {start, _end}} ->
-        {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: element.bpm / 1000}}}
-      end)
-
-    case events do
+    case apply(ws.tempo.module, :tempo_events, [ws.tempo]) do
       [] -> {:error, :no_tempo_track}
-      _ -> TempoMap.compile(events, tpqn: ws.tpqn)
+      events -> TempoMap.compile(events, tpqn: ws.tpqn)
     end
   end
 
@@ -329,13 +324,13 @@ defmodule Coconut.Workspace do
   @impl true
   def validate(%{tempo: tempo, time_sigs: time_sigs} = ws) do
     cond do
-      tempo.module != Coconut.Track.Tempo ->
+      not tempo_events_capable?(tempo.module) ->
         {:error, {:invalid_tempo_track, tempo.module}}
 
       Map.has_key?(ws.tracks, tempo.id) ->
         {:error, {:tempo_id_collision, tempo.id}}
 
-      Enum.any?(ws.tracks, fn {_id, track} -> track.module == Coconut.Track.Tempo end) ->
+      Enum.any?(ws.tracks, fn {_id, track} -> tempo_events_capable?(track.module) end) ->
         {:error, :tempo_track_in_tracks}
 
       not valid_time_sigs?(time_sigs) ->
@@ -344,6 +339,13 @@ defmodule Coconut.Workspace do
       true ->
         {:ok, ws}
     end
+  end
+
+  # The tempo field is bound by capability, not module identity: any track
+  # module exporting tempo_events/1 may type the tempo track. The concrete
+  # choice lives here (composition root); the projection lives on the module.
+  defp tempo_events_capable?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :tempo_events, 1)
   end
 
   # The bar is the authoritative coordinate: the first event must sit at

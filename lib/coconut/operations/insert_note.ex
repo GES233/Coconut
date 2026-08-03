@@ -31,8 +31,8 @@ defmodule Coconut.Operations.InsertNote do
          :ok <- id_fresh?(track.space, id),
          :ok <- after_valid?(track.space, after_id),
          :ok <- note_span_valid?(start_t, end_t),
-         {:ok, _element} <- track.module.cast_element(id, {start_t, end_t}, attrs),
-         :ok <- track.module.validate_gesture(:insert, track, %{id: id, span: {start_t, end_t}}) do
+         {:ok, _element} <- Track.cast_element(track, id, {start_t, end_t}, attrs),
+         :ok <- Track.validate_gesture(track, :insert, %{id: id, span: {start_t, end_t}}) do
       :ok
     end
   end
@@ -52,7 +52,7 @@ defmodule Coconut.Operations.InsertNote do
         _cfg
       ) do
     with {:ok, track} <- track_context(ws, track_id),
-         {:ok, element} <- track.module.cast_element(id, span, attrs) do
+         {:ok, element} <- Track.cast_element(track, id, span, attrs) do
       ops = [%Tamale.Op.Insert{id: id, after_id: after_id}]
 
       changes =

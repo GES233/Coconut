@@ -98,7 +98,7 @@ defmodule Coconut.Operate do
   @callback validate(request :: term(), Workspace.t()) :: :ok | {:error, term()}
 
   @callback lower(request :: term(), Workspace.t(), Config.t()) ::
-          {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
+              {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
 
   # ---- Public API ----
 
@@ -118,8 +118,8 @@ defmodule Coconut.Operate do
          :ok <- id_fresh?(track.space, id),
          :ok <- after_valid?(track.space, after_id),
          :ok <- note_span_valid?(start_t, end_t),
-         {:ok, _element} <- track.module.cast_element(id, {start_t, end_t}, attrs),
-         :ok <- track.module.validate_gesture(:insert, track, %{id: id, span: {start_t, end_t}}) do
+         {:ok, _element} <- Track.cast_element(track, id, {start_t, end_t}, attrs),
+         :ok <- Track.validate_gesture(track, :insert, %{id: id, span: {start_t, end_t}}) do
       :ok
     end
   end
@@ -128,7 +128,7 @@ defmodule Coconut.Operate do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- id_live?(track, id),
          :ok <- id_in_space?(track.space, id),
-         :ok <- track.module.validate_gesture(:delete, track, %{id: id}) do
+         :ok <- Track.validate_gesture(track, :delete, %{id: id}) do
       :ok
     end
   end
@@ -178,7 +178,7 @@ defmodule Coconut.Operate do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- id_live?(track, id),
          {:ok, _element} <-
-           track.module.edit_element(Map.fetch!(track.elements_by_id, id), changes) do
+           Track.edit_element(track, Map.fetch!(track.elements_by_id, id), changes) do
       :ok
     end
   end
@@ -198,7 +198,7 @@ defmodule Coconut.Operate do
     # The track module casts the element (Note for vocal, milli-bpm map
     # for tempo); Operate only shapes the op and the span entry.
     with {:ok, track} <- track_context(ws, track_id),
-         {:ok, element} <- track.module.cast_element(id, span, attrs) do
+         {:ok, element} <- Track.cast_element(track, id, span, attrs) do
       ops = [%Insert{id: id, after_id: after_id}]
 
       changes = %{
@@ -259,7 +259,7 @@ defmodule Coconut.Operate do
 
           changes = %{
             empty_side_changes()
-            | elements: %{new_id => track.module.split_inherit(parent, new_id)},
+            | elements: %{new_id => Track.split_inherit(track, parent, new_id)},
               span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
           }
 
@@ -305,7 +305,7 @@ defmodule Coconut.Operate do
     # edit (base_digest refresh) remain the caller's business.
     with {:ok, track} <- track_context(ws, track_id),
          {:ok, element} <- fetch_element(track, id),
-         {:ok, new_element} <- track.module.edit_element(element, changes) do
+         {:ok, new_element} <- Track.edit_element(track, element, changes) do
       side = %{empty_side_changes() | elements: %{id => new_element}}
       {:ok, [], side}
     end

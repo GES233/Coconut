@@ -61,4 +61,21 @@ defmodule Coconut.Track.Tempo do
       end
     end)
   end
+
+  @doc """
+  Projects the track for `Coconut.Score.TempoMap.compile/2`:
+  `{start_tick, Tempo.Event}` pairs in sequence order, bpm denormalized
+  from milli-bpm back to plain bpm.
+
+  This is the tempo track's capability marker — `Coconut.Workspace` binds
+  its `tempo` field by `tempo_events/1` export, not by module identity.
+  """
+  @spec tempo_events(Track.t()) :: [{Coconut.Score.Tick.numeric_tick(), Tempo.Event.t()}]
+  def tempo_events(track) do
+    track
+    |> view()
+    |> Enum.map(fn {_id, element, {start, _end}} ->
+      {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: element.bpm / 1000}}}
+    end)
+  end
 end

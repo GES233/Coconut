@@ -325,4 +325,35 @@ defmodule Coconut.TempoTest do
       assert %{"n1" => %Coconut.Score.Note{lyric: "ら", key: nil}} = changes.elements
     end
   end
+
+  describe "tempo field validation" do
+    test "rejects a tempo-incapable module in the tempo field" do
+      {:ok, vocal} = Track.new(%{id: "tempo", module: Track.Vocal})
+
+      assert {:error, {:invalid_tempo_track, Track.Vocal}} =
+               Workspace.new(%{id: ID.generate_id("WSpc_"), edit_version: 0, tempo: vocal})
+    end
+
+    test "rejects a tempo-capable track inside tracks" do
+      {:ok, tempo} = Track.new(%{id: "tempo2", module: Track.Tempo})
+
+      assert {:error, :tempo_track_in_tracks} =
+               Workspace.new(%{
+                 id: ID.generate_id("WSpc_"),
+                 edit_version: 0,
+                 tracks: %{"tempo2" => tempo}
+               })
+    end
+
+    test "rejects a tracks key colliding with the tempo track id" do
+      {:ok, vocal} = Track.new(%{id: "tempo", module: Track.Vocal})
+
+      assert {:error, {:tempo_id_collision, "tempo"}} =
+               Workspace.new(%{
+                 id: ID.generate_id("WSpc_"),
+                 edit_version: 0,
+                 tracks: %{"tempo" => vocal}
+               })
+    end
+  end
 end

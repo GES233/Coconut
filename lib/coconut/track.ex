@@ -109,6 +109,39 @@ defmodule Coconut.Track do
     end
   end
 
+  # ---- Facade ----
+
+  # Call sites delegate through these rather than touching `track.module`
+  # directly (same convention as `Coconut.Score.Key`'s Facade API).
+  # `tempo_events/1` is deliberately absent: it is a tempo-track capability,
+  # not a behaviour callback, and stays a composition-root concern
+  # (`Coconut.Workspace.tempo_map/1`).
+
+  @doc "The track's coordinate domain (`:tick` | `:frame`)."
+  @spec coord_domain(t()) :: :tick | :frame
+  def coord_domain(track), do: track.module.coord_domain()
+
+  @doc "Cast raw insert attrs into the track's element payload."
+  @spec cast_element(t(), Tamale.id(), span(), attrs :: map()) :: {:ok, term()} | {:error, term()}
+  def cast_element(track, id, span, attrs), do: track.module.cast_element(id, span, attrs)
+
+  @doc "Merge a content edit onto `element` and re-cast it."
+  @spec edit_element(t(), element :: term(), changes :: map()) :: {:ok, term()} | {:error, term()}
+  def edit_element(track, element, changes), do: track.module.edit_element(element, changes)
+
+  @doc "Track-type-specific gesture legality (default: accept everything)."
+  @spec validate_gesture(t(), gesture :: atom(), info :: map()) :: :ok | {:error, term()}
+  def validate_gesture(track, gesture, info),
+    do: track.module.validate_gesture(gesture, track, info)
+
+  @doc "Element payload for the right half of a split."
+  @spec split_inherit(t(), parent_element :: term(), new_id :: Tamale.id()) :: term()
+  def split_inherit(track, parent, new_id), do: track.module.split_inherit(parent, new_id)
+
+  @doc "The flattened score view (see `Coconut.Track.view/1` in the behaviour docs)."
+  @spec view(t()) :: view()
+  def view(track), do: track.module.view(track)
+
   # ---- Span table ----
 
   @doc "The track's versioned span table, for `Coconut.WarpProvider.tick/2`."
