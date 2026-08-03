@@ -93,12 +93,14 @@ defmodule Coconut.Operate do
           patches_remove: [term()]
         }
 
-  # ---- Public API ----
+  # ---- Callbacks ----
 
   @callback validate(request :: term(), Workspace.t()) :: :ok | {:error, term()}
 
   @callback lower(request :: term(), Workspace.t(), Config.t()) ::
           {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
+
+  # ---- Public API ----
 
   @doc """
   Validate a request against the current workspace state.

@@ -15,7 +15,7 @@ defmodule Coconut.Operations.InsertNote do
         }
   use Coconut.Util.Object, keys: [:track_id, :note_id, :after_id, :span, :attrs]
 
-  @impl Coconut.Operate
+  @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}
   def validate(
         %__MODULE__{
@@ -37,7 +37,7 @@ defmodule Coconut.Operations.InsertNote do
     end
   end
 
-  @impl Coconut.Operate
+  @impl true
   @spec lower(t(), Workspace.t(), Operate.Config.t()) ::
           {:ok, [Tamale.Op.t()], Operate.side_changes()} | {:error, term()}
   def lower(

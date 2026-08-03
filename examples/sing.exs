@@ -39,7 +39,7 @@ config = %{
 
 insert = fn ws, track, id, after_id, span, attrs ->
   {:ok, ops, changes} =
-    Operate.lower({:insert_note, track, id, after_id, span, attrs}, ws, %Operate.Config{})
+    Coconut.Operations.InsertNote.lower(%Coconut.Operations.InsertNote{track_id: track, note_id: id, after_id: after_id, span: span, attrs: attrs}, ws, %Operate.Config{})
 
   {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, changes)
   ws
