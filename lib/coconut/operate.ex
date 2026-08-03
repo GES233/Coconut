@@ -18,6 +18,9 @@ defmodule Coconut.Operate do
   alias Coconut.Util.ID
   alias Tamale.Op.{Delete, Insert, Merge, Move, Retime, Split}
 
+  # Shared geometry/sequence checks (with the per-gesture structs).
+  import Coconut.Operations.CoreComponents
+
   # ---- Config ----
 
   defmodule Config do
@@ -90,13 +93,6 @@ defmodule Coconut.Operate do
           patches_remove: [term()]
         }
 
-  @empty_side_changes %{
-    elements: %{},
-    span_snapshot: %{},
-    patches_add: [],
-    patches_remove: []
-  }
-
   # ---- Public API ----
 
   @doc """
@@ -114,7 +110,7 @@ defmodule Coconut.Operate do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- id_fresh?(track.space, id),
          :ok <- after_valid?(track.space, after_id),
-         :ok <- span_valid?(start_t, end_t),
+         :ok <- note_span_valid?(start_t, end_t),
          {:ok, _element} <- track.module.cast_element(id, {start_t, end_t}, attrs),
          :ok <- track.module.validate_gesture(:insert, track, %{id: id, span: {start_t, end_t}}) do
       :ok
@@ -146,7 +142,7 @@ defmodule Coconut.Operate do
          :ok <- id_in_space?(track.space, id),
          :ok <- after_valid?(track.space, new_after),
          :ok <- not_self?(id, new_after),
-         :ok <- span_valid?(new_s, new_e) do
+         :ok <- note_span_valid?(new_s, new_e) do
       :ok
     end
   end
@@ -199,7 +195,7 @@ defmodule Coconut.Operate do
       ops = [%Insert{id: id, after_id: after_id}]
 
       changes = %{
-        @empty_side_changes
+        empty_side_changes()
         | elements: %{id => element},
           span_snapshot: %{id => span}
       }
@@ -212,7 +208,7 @@ defmodule Coconut.Operate do
     ops = [%Delete{id: id}]
 
     changes = %{
-      @empty_side_changes
+      empty_side_changes()
       | elements: %{id => :delete},
         span_snapshot: %{id => :delete}
     }
@@ -223,7 +219,7 @@ defmodule Coconut.Operate do
   def lower({:move_note, _track, id, new_after}, _ws, _cfg) do
     ops = [%Move{id: id, after_id: new_after}]
     # Move only changes order — span_snapshot & elements are identity.
-    {:ok, ops, @empty_side_changes}
+    {:ok, ops, empty_side_changes()}
   end
 
   def lower({:drag_note, _track, id, new_after, old_span, new_span}, _ws, _cfg) do
@@ -233,7 +229,7 @@ defmodule Coconut.Operate do
     ]
 
     changes = %{
-      @empty_side_changes
+      empty_side_changes()
       | span_snapshot: %{id => new_span}
     }
 
@@ -255,7 +251,7 @@ defmodule Coconut.Operate do
           parent = Map.get(track.elements_by_id, id)
 
           changes = %{
-            @empty_side_changes
+            empty_side_changes()
             | elements: %{new_id => track.module.split_inherit(parent, new_id)},
               span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
           }
@@ -285,7 +281,7 @@ defmodule Coconut.Operate do
         deletable = Map.new(rest, &{&1, :delete})
 
         changes = %{
-          @empty_side_changes
+          empty_side_changes()
           | elements: deletable,
             span_snapshot: Map.put(deletable, into, {Enum.min(starts), Enum.max(ends)})
         }
@@ -303,108 +299,8 @@ defmodule Coconut.Operate do
     with {:ok, track} <- track_context(ws, track_id),
          {:ok, element} <- fetch_element(track, id),
          {:ok, new_element} <- track.module.edit_element(element, changes) do
-      side = %{@empty_side_changes | elements: %{id => new_element}}
+      side = %{empty_side_changes() | elements: %{id => new_element}}
       {:ok, [], side}
-    end
-  end
-
-  # ---- Helpers ----
-
-  defp fetch_element(track, id) do
-    case Map.fetch(track.elements_by_id, id) do
-      {:ok, element} -> {:ok, element}
-      :error -> {:error, :unreachable}
-    end
-  end
-
-  defp track_context(ws, track_id), do: Coconut.Workspace.fetch_track(ws, track_id)
-
-  defp id_fresh?(space, id) do
-    if id in space.ids or MapSet.member?(space.seen, id) do
-      {:error, {:id_conflict, id}}
-    else
-      :ok
-    end
-  end
-
-  defp id_live?(track, id) do
-    if Map.has_key?(track.elements_by_id, id) do
-      :ok
-    else
-      {:error, {:unknown_id, id}}
-    end
-  end
-
-  defp id_in_space?(space, id) do
-    if id in space.ids do
-      :ok
-    else
-      {:error, {:id_not_in_space, id}}
-    end
-  end
-
-  defp after_valid?(_space, :head), do: :ok
-
-  defp after_valid?(space, after_id) do
-    if after_id in space.ids do
-      :ok
-    else
-      {:error, {:unknown_after_id, after_id}}
-    end
-  end
-
-  defp not_self?(id, id), do: {:error, {:self_referential, id}}
-  defp not_self?(_id, _after), do: :ok
-
-  defp span_valid?(start_t, end_t)
-       when is_integer(start_t) and is_integer(end_t) and
-              start_t >= 0 and end_t > start_t,
-       do: :ok
-
-  defp span_valid?(start_t, end_t),
-    do: {:error, {:invalid_span, {start_t, end_t}}}
-
-  defp within_span?(ws, track, id, at_tick) do
-    # Split is the only validate that back-reads span data, and only for the
-    # Split identity case (no warp involved).
-    case Coconut.Workspace.latest_span(ws, track, id) do
-      {s, e} when at_tick > s and at_tick < e -> :ok
-      {s, e} -> {:error, {:split_out_of_bounds, {s, e, at_tick}}}
-      nil -> {:error, {:no_span_for_id, id}}
-    end
-  end
-
-  defp all_live?(track, ids) do
-    Enum.find_value(ids, :ok, fn id ->
-      case id_live?(track, id) do
-        :ok -> nil
-        err -> err
-      end
-    end)
-  end
-
-  defp all_in_space?(space, ids) do
-    Enum.find_value(ids, :ok, fn id ->
-      case id_in_space?(space, id) do
-        :ok -> nil
-        err -> err
-      end
-    end)
-  end
-
-  defp adjacent?(space, ids) do
-    # ids must appear consecutively in space.ids in the same order.
-    idxs =
-      ids
-      |> Enum.map(&Enum.find_index(space.ids, fn x -> x == &1 end))
-
-    if Enum.any?(idxs, &is_nil/1) do
-      {:error, {:ids_not_in_space, ids}}
-    else
-      consecutive? =
-        idxs |> Enum.chunk_every(2, 1, :discard) |> Enum.all?(fn [a, b] -> b == a + 1 end)
-
-      if consecutive?, do: :ok, else: {:error, {:ids_not_adjacent, ids}}
     end
   end
 end
