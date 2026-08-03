@@ -15,6 +15,7 @@ defmodule Coconut.Operate do
   """
 
   alias Coconut.Track
+  alias Coconut.Util.ID
   alias Tamale.Op.{Delete, Insert, Merge, Move, Retime, Split}
 
   # ---- Config ----
@@ -34,7 +35,7 @@ defmodule Coconut.Operate do
   # ---- Request ----
 
   @typedoc "Track identity within a workspace."
-  @type track_id :: term()
+  @type track_id :: ID.t(Coconut.Track.t())
 
   @typedoc "A tick span `{start, end}`. Both are non-negative integers, `end > start`."
   @type span :: {non_neg_integer(), non_neg_integer()}

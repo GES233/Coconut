@@ -25,6 +25,7 @@ defmodule Coconut.Track do
   """
 
   alias Coconut.Score.Tick
+  alias Coconut.Util.ID
 
   @typedoc "A span `{start, end}` in the track's coordinate domain."
   @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}
@@ -33,7 +34,7 @@ defmodule Coconut.Track do
   @type view :: [{Tamale.id(), element :: term(), span()}]
 
   @type t :: %__MODULE__{
-          id: term(),
+          id: ID.t(),
           module: module(),
           space: Tamale.Space.t(),
           spans_by_version: %{Tamale.version() => %{Tamale.id() => span()}},

@@ -7,7 +7,7 @@ defmodule Coconut.PatchTest do
 
   defp metric_patch(coord) do
     Patch.new(%{
-      track_id: :vocal,
+      track_id: "vocal",
       channel: :energy,
       anchor: %Tamale.Anchor.Metric{coord: coord, from: 0, to: 480, at_version: 0},
       patch: tamale_patch()
@@ -27,7 +27,7 @@ defmodule Coconut.PatchTest do
     test "Ordinal and Relative anchors carry no coord and pass" do
       assert {:ok, %Patch{}} =
                Patch.new(%{
-                 track_id: :vocal,
+                 track_id: "vocal",
                  channel: :lyric,
                  anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: 0},
                  patch: tamale_patch()
@@ -35,7 +35,7 @@ defmodule Coconut.PatchTest do
 
       assert {:ok, %Patch{}} =
                Patch.new(%{
-                 track_id: :vocal,
+                 track_id: "vocal",
                  channel: :lyric,
                  anchor: %Tamale.Anchor.Relative{ref: "n1", from_offset: 0, to_offset: 480},
                  patch: tamale_patch()

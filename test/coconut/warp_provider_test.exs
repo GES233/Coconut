@@ -144,7 +144,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {0, 480}}}
 
       patch = %Coconut.Patch{
-        track_id: :vocal,
+        track_id: "vocal",
         channel: :energy,
         anchor: %Tamale.Anchor.Metric{coord: :tick, from: 4800, to: 5000, at_version: 1},
         patch: %Tamale.Patch{base_digest: "d", payload: %{}}

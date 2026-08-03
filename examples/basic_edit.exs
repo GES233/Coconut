@@ -9,23 +9,23 @@ alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 
 cfg = %Operate.Config{}
-track = :vocal
+track = "vocal"
 
 # ---- 1. Bootstrap workspace ----
-{:ok, tempo_track} = Track.new(%{id: :tempo, module: Track.Tempo})
+{:ok, tempo_track} = Track.new(%{id: "tempo", module: Track.Tempo})
 {:ok, vocal_track} = Track.new(%{id: track, module: Track.Vocal})
 
 {:ok, ws} =
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tracks: %{:tempo => tempo_track, track => vocal_track}
+    tracks: %{"tempo" => tempo_track, track => vocal_track}
   })
 
 # ---- 2. Insert tempo event ----
 {:ok, ops, ch} =
-  Operate.lower({:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}}, ws, cfg)
-{:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+  Operate.lower({:insert_note, "tempo", "t0", :head, {0, 9600}, %{bpm: 120}}, ws, cfg)
+{:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
 # ---- 3. Insert notes ----
 notes = [

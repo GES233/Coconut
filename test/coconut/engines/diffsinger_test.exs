@@ -67,13 +67,13 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   defp maybe_tempo(opts) do
-    {:ok, vocal} = Track.new(%{id: :vocal, module: Track.Vocal})
-    {:ok, harmony} = Track.new(%{id: :harmony, module: Track.Vocal})
-    base = %{vocal: vocal, harmony: harmony}
+    {:ok, vocal} = Track.new(%{id: "vocal", module: Track.Vocal})
+    {:ok, harmony} = Track.new(%{id: "harmony", module: Track.Vocal})
+    base = %{"vocal" => vocal, "harmony" => harmony}
 
     if Keyword.get(opts, :tempo, true) do
-      {:ok, tempo} = Track.new(%{id: :tempo, module: Track.Tempo})
-      Map.put(base, :tempo, tempo)
+      {:ok, tempo} = Track.new(%{id: "tempo", module: Track.Tempo})
+      Map.put(base, "tempo", tempo)
     else
       base
     end
@@ -94,11 +94,11 @@ defmodule Coconut.Engines.DiffSingerTest do
     ws =
       if opts[:tempo] == false,
         do: ws,
-        else: insert(ws, :tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+        else: insert(ws, "tempo", "t0", :head, {0, 9600}, %{bpm: 120})
 
     ws
-    |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, phonemes: [["zh", "l"], ["zh", "a"]]})
-    |> insert(:vocal, "n2", "n1", {480, 960}, %{pitch: 62, phonemes: [["zh", "z"], ["zh", "i"]]})
+    |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, phonemes: [["zh", "l"], ["zh", "a"]]})
+    |> insert("vocal", "n2", "n1", {480, 960}, %{pitch: 62, phonemes: [["zh", "z"], ["zh", "i"]]})
   end
 
   test "check assembles words from phonemized notes over the tempo map" do
@@ -119,7 +119,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "notes across tracks are merged and sorted by start tick" do
     ws =
       phonemized_ws()
-      |> insert(:harmony, "h1", :head, {0, 960}, %{
+      |> insert("harmony", "h1", :head, {0, 960}, %{
         pitch: 55,
         phonemes: [["zh", "h"], ["zh", "u"]]
       })
@@ -135,8 +135,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "check rejects notes without phonemes before calling the worker" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60})
 
     {:ok, request} = Request.for_workspace(ws)
 
@@ -149,8 +149,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "check rejects notes without pitch" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{phonemes: [["zh", "a"]]})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{phonemes: [["zh", "a"]]})
 
     {:ok, request} = Request.for_workspace(ws)
 
@@ -161,8 +161,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "worker-backed encoder flows lyrics and adapter config through" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "两"})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, lyric: "两"})
 
     config = config(%{encoder: Coconut.Engines.DiffSinger.Encoder})
     {:ok, request} = Request.for_workspace(ws)
@@ -181,8 +181,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "notes without phonemes go through the configured encoder" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "l iang"})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, lyric: "l iang"})
 
     config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
     {:ok, request} = Request.for_workspace(ws)
@@ -196,8 +196,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "a note's :lang key overrides the encoder's configured language" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a", lang: "ja"})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, lyric: "a", lang: "ja"})
 
     config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
     {:ok, request} = Request.for_workspace(ws)
@@ -211,8 +211,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "explicit phonemes win over the encoder" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{
         pitch: 60,
         lyric: "l iang",
         phonemes: [["zh", "manual"]]
@@ -230,10 +230,10 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "the encoder is called once per track with the full score-ordered sequence" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
-      |> insert(:vocal, "n2", "n1", {480, 960}, %{pitch: 62, phonemes: [["zh", "i"]]})
-      |> insert(:harmony, "h1", :head, {0, 960}, %{pitch: 55, lyric: "u"})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
+      |> insert("vocal", "n2", "n1", {480, 960}, %{pitch: 62, phonemes: [["zh", "i"]]})
+      |> insert("harmony", "h1", :head, {0, 960}, %{pitch: 55, lyric: "u"})
 
     config = config(%{encoder: {RecordingEncoder, %{test_pid: self()}}})
     {:ok, request} = Request.for_workspace(ws)
@@ -250,8 +250,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "encoder failure aborts assembly before calling the worker" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: " "})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, lyric: " "})
 
     config = config(%{encoder: Coconut.Engines.Encoders.Literal})
     {:ok, request} = Request.for_workspace(ws)
@@ -265,8 +265,8 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "encoder result not covering every note aborts assembly" do
     ws =
       workspace()
-      |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
+      |> insert("tempo", "t0", :head, {0, 9600}, %{bpm: 120})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
 
     config = config(%{encoder: PartialEncoder})
     {:ok, request} = Request.for_workspace(ws)
@@ -280,7 +280,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "no tempo track falls back to flat 120 BPM" do
     ws =
       workspace(tempo: false)
-      |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, phonemes: [["zh", "a"]]})
+      |> insert("vocal", "n1", :head, {0, 480}, %{pitch: 60, phonemes: [["zh", "a"]]})
 
     {:ok, request} = Request.for_workspace(ws)
 

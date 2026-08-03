@@ -6,7 +6,7 @@ defmodule Coconut.ResolveTest do
   alias Coconut.Engines.Mock
   alias Coconut.Util.ID
 
-  @track :vocal
+  @track "vocal"
 
   setup do
     {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})

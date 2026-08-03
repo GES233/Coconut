@@ -4,7 +4,7 @@ defmodule Coconut.TrackTest do
   alias Coconut.{Operate, Track, Workspace}
   alias Coconut.Util.ID
 
-  @track :vocal
+  @track "vocal"
 
   setup do
     {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})
@@ -69,7 +69,7 @@ defmodule Coconut.TrackTest do
     end
 
     test "unknown track", %{ws: ws} do
-      assert {:error, {:unknown_track, :nope}} = Workspace.truncate(ws, :nope, 1)
+      assert {:error, {:unknown_track, "nope"}} = Workspace.truncate(ws, "nope", 1)
     end
   end
 end

@@ -5,13 +5,13 @@ defmodule Coconut.TempoTest do
   alias Coconut.Util.ID
 
   setup do
-    {:ok, tempo} = Track.new(%{id: :tempo, module: Track.Tempo})
+    {:ok, tempo} = Track.new(%{id: "tempo", module: Track.Tempo})
 
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{tempo: tempo}
+        tracks: %{"tempo" => tempo}
       })
 
     {:ok, ws: ws}
@@ -21,7 +21,7 @@ defmodule Coconut.TempoTest do
     test "inserts tempo event into the tempo track", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
@@ -30,34 +30,34 @@ defmodule Coconut.TempoTest do
       assert changes.elements == %{"t0" => %{bpm: 120_000}}
       assert changes.span_snapshot == %{"t0" => {0, 1920}}
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, changes)
-      assert ws.tracks[:tempo].space.version == 1
-      assert ws.tracks[:tempo].space.ids == ["t0"]
-      assert ws.tracks[:tempo].elements_by_id["t0"] == %{bpm: 120_000}
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
+      assert ws.tracks["tempo"].space.version == 1
+      assert ws.tracks["tempo"].space.ids == ["t0"]
+      assert ws.tracks["tempo"].elements_by_id["t0"] == %{bpm: 120_000}
     end
 
     test "second tempo event inserted after first", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
 
       {:ok, ops2, changes2} =
         Operate.lower(
-          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 140}},
+          {:insert_note, "tempo", "t1", "t0", {1920, 3840}, %{bpm: 140}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 1, ops2, changes2)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, changes2)
 
-      assert ws.tracks[:tempo].space.ids == ["t0", "t1"]
-      assert ws.tracks[:tempo].spans_by_version[2]["t0"] == {0, 1920}
-      assert ws.tracks[:tempo].spans_by_version[2]["t1"] == {1920, 3840}
+      assert ws.tracks["tempo"].space.ids == ["t0", "t1"]
+      assert ws.tracks["tempo"].spans_by_version[2]["t0"] == {0, 1920}
+      assert ws.tracks["tempo"].spans_by_version[2]["t1"] == {1920, 3840}
     end
   end
 
@@ -65,37 +65,37 @@ defmodule Coconut.TempoTest do
     test "rejects delete of first tempo event", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
 
       assert {:error, {:tempo_first_protected, "t0"}} =
-               Operate.validate({:delete_note, :tempo, "t0"}, ws)
+               Operate.validate({:delete_note, "tempo", "t0"}, ws)
     end
 
     test "allows delete of non-first tempo event", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
       {:ok, ops2, ch2} =
         Operate.lower(
-          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 140}},
+          {:insert_note, "tempo", "t1", "t0", {1920, 3840}, %{bpm: 140}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 1, ops2, ch2)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, ch2)
 
-      assert :ok = Operate.validate({:delete_note, :tempo, "t1"}, ws)
+      assert :ok = Operate.validate({:delete_note, "tempo", "t1"}, ws)
     end
   end
 
@@ -103,23 +103,23 @@ defmodule Coconut.TempoTest do
     test "transports patches on tempo track (warp is identity)", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
 
       {:ok, cp} =
         Coconut.Patch.new(%{
-          track_id: :tempo,
+          track_id: "tempo",
           anchor: %Tamale.Anchor.Ordinal{refs: ["t0"], at_version: 1},
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.tracks[:tempo].patches, [cp])
+      ws = put_in(ws.tracks["tempo"].patches, [cp])
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, :tempo)
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, "tempo")
       assert length(survivors) == 1
       assert dead == []
     end
@@ -127,24 +127,24 @@ defmodule Coconut.TempoTest do
     test "metric anchor on tempo track always gets identity warp", %{ws: ws} do
       {:ok, ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
 
       {:ok, cp} =
         Coconut.Patch.new(%{
-          track_id: :tempo,
+          track_id: "tempo",
           anchor: %Tamale.Anchor.Metric{coord: :tick, from: 100, to: 200, at_version: 1},
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.tracks[:tempo].patches, [cp])
+      ws = put_in(ws.tracks["tempo"].patches, [cp])
 
-      wp = WarpProvider.tick(Workspace.track_spans(ws, :tempo))
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, :tempo, wp)
+      wp = WarpProvider.tick(Workspace.track_spans(ws, "tempo"))
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, "tempo", wp)
       assert length(survivors) == 1
       assert dead == []
       # coordinates unchanged (identity warp)
@@ -156,12 +156,12 @@ defmodule Coconut.TempoTest do
     test "builds from default single tempo event", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 9600}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       # At tick 0, seconds should be 0
@@ -173,21 +173,21 @@ defmodule Coconut.TempoTest do
     test "handles multiple tempo changes", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
       {:ok, ops2, ch2} =
         Operate.lower(
-          {:insert_note, :tempo, "t1", "t0", {1920, 3840}, %{bpm: 60}},
+          {:insert_note, "tempo", "t1", "t0", {1920, 3840}, %{bpm: 60}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 1, ops2, ch2)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, ch2)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       # First section: 1920 ticks at 120 BPM = 1920/(120*480/60) = 2.0 sec
@@ -200,12 +200,12 @@ defmodule Coconut.TempoTest do
     test "round-trip: sec_to_tick then tick_to_sec", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 9600}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       tick = Score.TempoMap.sec_to_tick(tm, 3.5, 480)
@@ -223,19 +223,19 @@ defmodule Coconut.TempoTest do
         |> Enum.reduce(ws, fn {id, after_id, span, bpm}, ws ->
           {:ok, ops, ch} =
             Operate.lower(
-              {:insert_note, :tempo, id, after_id, span, %{bpm: bpm}},
+              {:insert_note, "tempo", id, after_id, span, %{bpm: bpm}},
               ws,
               %Operate.Config{}
             )
 
-          {:ok, ws} = Workspace.apply_batch(ws, :tempo, ws.edit_version, ops, ch)
+          {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
           ws
         end)
 
       # Move permutes ids but leaves spans untouched.
-      {:ok, ops, ch} = Operate.lower({:move_note, :tempo, "t2", "t0"}, ws, %Operate.Config{})
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, ws.edit_version, ops, ch)
-      assert ws.tracks[:tempo].space.ids == ["t0", "t2", "t1"]
+      {:ok, ops, ch} = Operate.lower({:move_note, "tempo", "t2", "t0"}, ws, %Operate.Config{})
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
+      assert ws.tracks["tempo"].space.ids == ["t0", "t2", "t1"]
 
       {:ok, tm} = Workspace.tempo_map(ws)
       assert tuple_size(tm) == 3
@@ -246,12 +246,12 @@ defmodule Coconut.TempoTest do
     test "slice returns [] for zero-width ranges", %{ws: ws} do
       {:ok, ops, ch} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}},
+          {:insert_note, "tempo", "t0", :head, {0, 9600}, %{bpm: 120}},
           ws,
           %Operate.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       assert Score.TempoMap.slice(tm, 100, 100) == []
@@ -283,7 +283,7 @@ defmodule Coconut.TempoTest do
     test "lower normalizes tempo insert attrs to milli-bpm", %{ws: ws} do
       {:ok, _ops, changes} =
         Operate.lower(
-          {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: 120.5}},
+          {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: 120.5}},
           ws,
           %Operate.Config{}
         )
@@ -294,30 +294,30 @@ defmodule Coconut.TempoTest do
     test "validate rejects un-castable bpm on tempo insert", %{ws: ws} do
       assert {:error, {:invalid_bpm, "fast"}} =
                Operate.validate(
-                 {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: "fast"}},
+                 {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: "fast"}},
                  ws
                )
 
       assert {:error, {:invalid_bpm, nil}} =
-               Operate.validate({:insert_note, :tempo, "t0", :head, {0, 1920}, %{}}, ws)
+               Operate.validate({:insert_note, "tempo", "t0", :head, {0, 1920}, %{}}, ws)
     end
 
     test "lower rejects un-castable bpm directly", %{ws: ws} do
       assert {:error, {:invalid_bpm, -1.5}} =
                Operate.lower(
-                 {:insert_note, :tempo, "t0", :head, {0, 1920}, %{bpm: -1.5}},
+                 {:insert_note, "tempo", "t0", :head, {0, 1920}, %{bpm: -1.5}},
                  ws,
                  %Operate.Config{}
                )
     end
 
     test "note inserts on regular tracks are untouched by bpm rules", %{ws: ws} do
-      {:ok, vocal} = Track.new(%{id: :vocal, module: Track.Vocal})
-      ws = put_in(ws.tracks[:vocal], vocal)
+      {:ok, vocal} = Track.new(%{id: "vocal", module: Track.Vocal})
+      ws = put_in(ws.tracks["vocal"], vocal)
 
       {:ok, _ops, changes} =
         Operate.lower(
-          {:insert_note, :vocal, "n1", :head, {0, 480}, %{lyric: "ら"}},
+          {:insert_note, "vocal", "n1", :head, {0, 480}, %{lyric: "ら"}},
           ws,
           %Operate.Config{}
         )

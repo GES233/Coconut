@@ -26,14 +26,14 @@ config = %{
 }
 
 # ---- 1. Score: tempo + notes (lyric + pitch, phonemes come from the encoder) ----
-{:ok, tempo_track} = Track.new(%{id: :tempo, module: Track.Tempo})
-{:ok, vocal_track} = Track.new(%{id: :vocal, module: Track.Vocal})
+{:ok, tempo_track} = Track.new(%{id: "tempo", module: Track.Tempo})
+{:ok, vocal_track} = Track.new(%{id: "vocal", module: Track.Vocal})
 
 {:ok, ws} =
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tracks: %{tempo: tempo_track, vocal: vocal_track}
+    tracks: %{"tempo" => tempo_track, "vocal" => vocal_track}
   })
 
 insert = fn ws, track, id, after_id, span, attrs ->
@@ -45,7 +45,7 @@ insert = fn ws, track, id, after_id, span, attrs ->
 end
 
 # 120 BPM → 0.5 s per 480 ticks.
-ws = insert.(ws, :tempo, "t0", :head, {0, 9600}, %{bpm: 120})
+ws = insert.(ws, "tempo", "t0", :head, {0, 9600}, %{bpm: 120})
 
 song = [
   {"两", 60},
@@ -60,7 +60,7 @@ song = [
 {ws, _prev, _tick} =
   Enum.reduce(song, {ws, :head, 0}, fn {lyric, midi}, {ws, prev, tick} ->
     id = "n#{tick}"
-    ws = insert.(ws, :vocal, id, prev, {tick, tick + 480}, %{pitch: midi, lyric: lyric})
+    ws = insert.(ws, "vocal", id, prev, {tick, tick + 480}, %{pitch: midi, lyric: lyric})
     {ws, id, tick + 480}
   end)
 

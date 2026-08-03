@@ -10,7 +10,7 @@ defmodule Coconut.Workspace do
 
   A workspace is just `id / edit_version / tracks` — everything else lives
   on `Coconut.Track` (design doc §11.3). The tempo track is an ordinary
-  track keyed `:tempo` (module `Coconut.Track.Tempo`).
+  track, identified by its module `Coconut.Track.Tempo`.
   """
 
   alias Coconut.{Track, Util.ID, Util.Model, WarpProvider}
@@ -256,15 +256,16 @@ defmodule Coconut.Workspace do
   end
 
   @doc """
-  Builds a compiled `TempoMap` from the tempo track (`tracks[:tempo]`).
+  Builds a compiled `TempoMap` from the tempo track (the track whose
+  module is `Coconut.Track.Tempo`).
   """
   @spec tempo_map(t(), keyword()) :: {:ok, TempoMap.t()} | {:error, term()}
   def tempo_map(ws, opts \\ []) do
-    case fetch_track(ws, :tempo) do
-      {:error, _} ->
+    case Enum.find(ws.tracks, fn {_id, track} -> track.module == Coconut.Track.Tempo end) do
+      nil ->
         {:error, :no_tempo_track}
 
-      {:ok, track} ->
+      {_id, track} ->
         events =
           track.module.view(track)
           |> Enum.map(fn {_id, element, {start, _end}} ->

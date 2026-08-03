@@ -5,7 +5,7 @@ defmodule Coconut.OperateTest do
   alias Coconut.Score.{Key.TwelveET, Note}
   alias Coconut.Util.ID
 
-  @track :vocal
+  @track "vocal"
 
   setup do
     {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})
@@ -22,8 +22,8 @@ defmodule Coconut.OperateTest do
 
   describe "validate" do
     test "rejects unknown track", %{ws: ws} do
-      assert {:error, {:unknown_track, :bad}} =
-               Operate.validate({:insert_note, :bad, "n1", :head, {0, 480}, %{}}, ws)
+      assert {:error, {:unknown_track, "bad"}} =
+               Operate.validate({:insert_note, "bad", "n1", :head, {0, 480}, %{}}, ws)
     end
 
     test "insert: rejects duplicate id", %{ws: ws} do
@@ -378,7 +378,7 @@ defmodule Coconut.OperateTest do
     test "unknown track returns an error tuple, not bare :error", %{ws: ws} do
       changes = %{elements: %{}, span_snapshot: %{}, patches_add: [], patches_remove: []}
 
-      assert {:error, {:unknown_track, :nope}} = Workspace.apply_batch(ws, :nope, 0, [], changes)
+      assert {:error, {:unknown_track, "nope"}} = Workspace.apply_batch(ws, "nope", 0, [], changes)
     end
   end
 
@@ -598,7 +598,7 @@ defmodule Coconut.OperateTest do
     end
 
     test "patches for other tracks pass through", %{ws: ws} do
-      other_track = :harmony
+      other_track = "harmony"
       {:ok, other} = Track.new(%{id: other_track, module: Track.Vocal})
       ws = put_in(ws.tracks[other_track], other)
 
@@ -626,7 +626,7 @@ defmodule Coconut.OperateTest do
       ws = put_in(ws.tracks[@track].patches, [cp1, cp2])
 
       {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
-      # cp1 (track @track) transported, cp2 (track :harmony) passed through
+      # cp1 (track @track) transported, cp2 (track "harmony") passed through
       assert length(survivors) == 2
       assert dead == []
     end

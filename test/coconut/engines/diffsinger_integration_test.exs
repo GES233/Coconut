@@ -87,17 +87,17 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
 
   # 120 BPM → 0.5 s per 480 ticks.
   defp tigers_workspace do
-    {:ok, tempo} = Track.new(%{id: :tempo, module: Track.Tempo})
-    {:ok, vocal} = Track.new(%{id: :vocal, module: Track.Vocal})
+    {:ok, tempo} = Track.new(%{id: "tempo", module: Track.Tempo})
+    {:ok, vocal} = Track.new(%{id: "vocal", module: Track.Vocal})
 
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{tempo: tempo, vocal: vocal}
+        tracks: %{"tempo" => tempo, "vocal" => vocal}
       })
 
-    ws = insert(ws, :tempo, "t0", :head, {0, 20_000}, %{bpm: 120})
+    ws = insert(ws, "tempo", "t0", :head, {0, 20_000}, %{bpm: 120})
 
     {ws, _prev, _tick} =
       Enum.reduce(@tigers, {ws, :head, 0}, fn {lyric, dur_sec, midi}, {ws, prev, tick} ->
@@ -105,7 +105,7 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
         id = "n#{tick}"
 
         ws =
-          insert(ws, :vocal, id, prev, {tick, tick + span_ticks}, %{
+          insert(ws, "vocal", id, prev, {tick, tick + span_ticks}, %{
             pitch: midi,
             lyric: lyric
           })

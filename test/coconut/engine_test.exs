@@ -26,13 +26,13 @@ defmodule Coconut.EngineTest do
   end
 
   defp workspace do
-    {:ok, track} = Track.new(%{id: :vocal, module: Track.Vocal})
+    {:ok, track} = Track.new(%{id: "vocal", module: Track.Vocal})
 
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{vocal: track}
+        tracks: %{"vocal" => track}
       })
 
     ws

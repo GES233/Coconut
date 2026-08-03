@@ -7,10 +7,10 @@ alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 
 cfg = %Operate.Config{}
-track_a = :vocal_a
-track_b = :vocal_b
+track_a = "vocal_a"
+track_b = "vocal_b"
 
-{:ok, tempo_track} = Track.new(%{id: :tempo, module: Track.Tempo})
+{:ok, tempo_track} = Track.new(%{id: "tempo", module: Track.Tempo})
 {:ok, vocal_a} = Track.new(%{id: track_a, module: Track.Vocal})
 {:ok, vocal_b} = Track.new(%{id: track_b, module: Track.Vocal})
 
@@ -19,7 +19,7 @@ track_b = :vocal_b
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
     tracks: %{
-      :tempo => tempo_track,
+      "tempo" => tempo_track,
       track_a => vocal_a,
       track_b => vocal_b
     }
@@ -27,8 +27,8 @@ track_b = :vocal_b
 
 # ---- Tempo ----
 {:ok, ops, ch} =
-  Operate.lower({:insert_note, :tempo, "t0", :head, {0, 9600}, %{bpm: 120}}, ws, cfg)
-{:ok, ws} = Workspace.apply_batch(ws, :tempo, 0, ops, ch)
+  Operate.lower({:insert_note, "tempo", "t0", :head, {0, 9600}, %{bpm: 120}}, ws, cfg)
+{:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
 # ---- Track A: melody ----
 {:ok, ops_a, ch_a} = Operate.lower({:insert_note, track_a, "a1", :head, {0, 480}, %{pitch: 60}}, ws, cfg)
