@@ -42,7 +42,7 @@ defmodule Coconut.Track do
           dead_patches: [{Coconut.Patch.t(), term()}]
         }
 
-  defstruct [
+  use Coconut.Util.Model, keys: [
     :id,
     :module,
     space: %Tamale.Space{},
@@ -50,7 +50,7 @@ defmodule Coconut.Track do
     elements_by_id: %{},
     patches: [],
     dead_patches: []
-  ]
+  ], id_prefix: "Track_"
 
   # ---- Behaviour ----
 
@@ -95,12 +95,12 @@ defmodule Coconut.Track do
   # ---- Constructor ----
 
   @doc "Create a track of the given module, wrapping a fresh `Tamale.Space`."
-  @spec new(term(), module(), keyword()) :: t()
-  def new(id, module, opts \\ []) do
+  @spec new(term(), module(), Tamale.Space.t()) :: t()
+  def new(id, module, space \\ %Tamale.Space{}) do
     %__MODULE__{
       id: id,
       module: module,
-      space: Keyword.get(opts, :space, %Tamale.Space{})
+      space: space
     }
   end
 

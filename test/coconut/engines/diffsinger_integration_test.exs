@@ -82,7 +82,7 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
     # Score timing is authoritative: with per-word renormalization the
     # rendered length matches the notated length (12×0.5 + 2×1.0 s),
     # overrides or not.
-    assert_in_delta artifact.duration_sec, 8.0, 0.05
+    assert_in_delta artifact.payload.duration_sec, 8.0, 0.05
   end
 
   # 120 BPM → 0.5 s per 480 ticks.
