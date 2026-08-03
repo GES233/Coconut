@@ -131,6 +131,46 @@ defmodule Coconut.Track do
     track |> latest_spans() |> Map.get(id)
   end
 
+  # ---- Truncation (design doc §11.3) ----
+
+  @doc """
+  Truncate history below `oldest_live_version` (design doc §11.3).
+
+  The Space's op log is cut via `Tamale.Space.truncate/2`; span snapshots
+  older than the cut are dropped, except the newest pre-cut snapshot —
+  Move-only batches write no spans, so that baseline may be the only
+  source of `latest_spans/1` after truncation.
+  """
+  @spec truncate(t(), Tamale.version()) :: t()
+  def truncate(track, oldest_live_version) do
+    kept =
+      for {version, spans} <- track.spans_by_version,
+          version > oldest_live_version,
+          into: %{},
+          do: {version, spans}
+
+    # Snapshots are sparse (Move-only batches write none), so warp
+    # construction for the oldest retained log entries — `spans_at(v - 1)`
+    # in `Coconut.WarpProvider` — can resolve below the cut. Always keep
+    # the newest snapshot at or below it as the baseline.
+    baseline =
+      track.spans_by_version
+      |> Enum.filter(fn {version, _} -> version <= oldest_live_version end)
+      |> Enum.max_by(fn {version, _} -> version end, fn -> nil end)
+
+    spans_by_version =
+      case baseline do
+        nil -> kept
+        {version, spans} -> Map.put(kept, version, spans)
+      end
+
+    %{
+      track
+      | space: Tamale.Space.truncate(track.space, oldest_live_version),
+        spans_by_version: spans_by_version
+    }
+  end
+
   # ---- Sync (the write side of `Workspace.apply_batch/5`) ----
 
   @doc """

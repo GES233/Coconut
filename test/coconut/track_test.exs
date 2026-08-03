@@ -1,0 +1,73 @@
+defmodule Coconut.TrackTest do
+  use ExUnit.Case, async: true
+
+  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.Util.ID
+
+  @track :vocal
+
+  setup do
+    {:ok, ws} =
+      Workspace.new(%{
+        id: ID.generate_id("WSpc_"),
+        edit_version: 0,
+        tracks: %{@track => Track.new(@track, Track.Vocal)}
+      })
+
+    {:ok, ws: ws}
+  end
+
+  defp apply_request(ws, request) do
+    {:ok, ops, changes} = Operate.lower(request, ws, %Operate.Config{})
+    {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
+    ws
+  end
+
+  describe "truncate/2" do
+    test "cuts the op log and old span snapshots, keeps the baseline", %{ws: ws} do
+      ws =
+        ws
+        |> apply_request({:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}})
+        |> apply_request({:insert_note, @track, "n2", "n1", {480, 960}, %{pitch: 62}})
+        |> apply_request({:drag_note, @track, "n1", :head, {0, 480}, {100, 580}})
+
+      track = ws.tracks[@track]
+      assert track.space.version == 3
+      assert Map.has_key?(track.spans_by_version, 1)
+
+      {:ok, ws} = Workspace.truncate(ws, @track, 2)
+      track = ws.tracks[@track]
+
+      # op log cut: version 1's Insert entry is gone, base_version moved up
+      assert track.space.base_version == 2
+      assert Enum.all?(track.space.log, fn {version, _ops} -> version > 2 end)
+
+      # span snapshots: the pre-cut baseline (version 2) survives so
+      # latest_spans/1 still resolves; version 1 is pruned
+      refute Map.has_key?(track.spans_by_version, 1)
+      assert Map.has_key?(track.spans_by_version, 2)
+      assert Track.latest_span(track, "n2") == {480, 960}
+      assert Track.latest_span(track, "n1") == {100, 580}
+    end
+
+    test "a Move-only tail still has a span baseline after truncation", %{ws: ws} do
+      ws =
+        ws
+        |> apply_request({:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}})
+        |> apply_request({:insert_note, @track, "n2", "n1", {480, 960}, %{pitch: 62}})
+        |> apply_request({:move_note, @track, "n2", :head})
+
+      # version 3 (Move) wrote no span snapshot; truncating at 3 must keep
+      # version 2's snapshot as the baseline
+      {:ok, ws} = Workspace.truncate(ws, @track, 3)
+      track = ws.tracks[@track]
+
+      assert track.spans_by_version == %{2 => %{"n1" => {0, 480}, "n2" => {480, 960}}}
+      assert Track.latest_span(track, "n1") == {0, 480}
+    end
+
+    test "unknown track", %{ws: ws} do
+      assert {:error, {:unknown_track, :nope}} = Workspace.truncate(ws, :nope, 1)
+    end
+  end
+end

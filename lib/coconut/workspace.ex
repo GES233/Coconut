@@ -164,6 +164,20 @@ defmodule Coconut.Workspace do
   end
 
   @doc """
+  Truncate a track's history below `oldest_live_version`, cutting both the
+  op log and the old span snapshots (design doc §11.3 — the "synchronous
+  pruning" that keeps `spans_by_version` bounded).
+  """
+  @spec truncate(t(), Coconut.Operate.track_id(), Tamale.version()) ::
+          {:ok, t()} | {:error, {:unknown_track, term()}}
+  def truncate(ws, track_id, oldest_live_version) do
+    with {:ok, track} <- fetch_track(ws, track_id) do
+      {:ok,
+       %{ws | tracks: Map.put(ws.tracks, track_id, Track.truncate(track, oldest_live_version))}}
+    end
+  end
+
+  @doc """
   Returns the track's versioned span table, for `WarpProvider.tick/2`.
   """
   @spec track_spans(t(), Coconut.Operate.track_id()) :: %{

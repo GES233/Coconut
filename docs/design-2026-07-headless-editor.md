@@ -209,9 +209,16 @@ digest 投影、float 归一化）与隐式约定密集，而非代码量。
 确认的存量问题，按实质程度排序；未标注「已定」的方向均未拍板，改动前
 需先在这里更新结论。
 
-### 11.1 Request 直塞 Workspace 内部结构；Snapshot/Artifact 空壳（优先立项）
+### 11.1 Request 直塞 Workspace 内部结构；Snapshot/Artifact 空壳（已落地 2026-08-03）
 
-**现象**：`Coconut.Engine.Request` 把整个 `Workspace` 交给引擎，引擎各自
+**已落地**：`Snapshot.from_workspace/1` 拍扁各轨 view（`Track.view/1`）+ 编好
+`TempoMap` + 钉 `edit_version`；`Request` 携带 Snapshot（`for_workspace/2` 构造），
+引擎不再见 Workspace。`Artifact{engine, edit_version, payload, globals,
+overrides}` 为渲染产物正式形状，DiffSinger/Mock 已采用。三份"拍扁乐谱"
+（DiffSinger.collect_notes / Mock.collect_latest_spans / Workspace.latest_spans
+外泄）收敛为 `Track.view/1`。
+
+**现象**（原问题，存档）：`Coconut.Engine.Request` 把整个 `Workspace` 交给引擎，引擎各自
 解析 `side` 的内部结构——`DiffSinger.collect_notes`、`MockEngine.
 collect_latest_spans`、`Workspace.latest_spans` 三份"拍扁乐谱"的逻辑并存。
 `lib/coconut/engine/snapshot.ex` / `artifact.ex` 至今是占位空壳。
@@ -225,7 +232,7 @@ side 结构一变所有引擎跟着碎。Map → Note 管线落地后，下游�
 同
 期定义为渲染产物的正式形状（为不落盘渲染铺路）。引擎只读 Snapshot。
 
-### 11.2 时间双真相：Note tick vs spans 表（与 11.1 同期）
+### 11.2 时间双真相：Note tick vs spans 表（已落地 2026-08-03，方案 a）
 
 **现象**：`Note.start_tick/duration_tick` 是插入时快照，`spans_by_version`
 才是时间权威；transport 只更新后者，split 继承时手工同步前者。
@@ -237,9 +244,17 @@ metadata），时间一律走 spans 表。核实依据：lib 内无任何引擎�
 `Note.start_tick`（DiffSinger 组包用 spans 表），tick 字段事实上已是
 write-only；`Note.split/merge` 的几何校验改为由调用方注入 span。
 
-### 11.3 side 杂物抽屉（随 11.1 顺带）
+**已落地**：Note 去 tick 完成；split/merge 改签名注入 span；Operate 的
+split 继承变为纯 id 置换（`Track.Vocal.split_inherit/2`）。
 
-**现象**：`Side` 一个 struct 装 spans_by_version / elements_by_id / patches
+### 11.3 side 杂物抽屉（已落地 2026-08-03）
+
+**已落地**：Side struct 整个删除——spans/elements/patches/dead_patches
+随 `Coconut.Track` 下沉（tempos_by_version 占位随之消失，v2 变 tempo 需要时
+再议）；`Track.truncate/2` + `Workspace.truncate/3` 已接入同步裁剪
+（span 快照保留 cut 处最新一份作 baseline，warp 的 `spans_at(v-1)` 需要它）。
+
+**现象**（原问题，存档）：`Side` 一个 struct 装 spans_by_version / elements_by_id / patches
 / dead_patches / tempos_by_version（占位从未写入）；`spans_by_version`
 无界增长，`Space.truncate` 的"同步裁剪"未实现。
 
@@ -257,13 +272,17 @@ write-only；`Note.split/merge` 的几何校验改为由调用方注入 span。
 port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认领在多引擎
 并存前要有注册/声明处（配合 capability 声明）。
 
-### 11.5 check → render 无版本钉
+### 11.5 check → render 无版本钉（部分落地）
 
 **现象**：`Request` 是值快照，checked 之后 workspace 变了无人发现，全靠
 调用方顺序自觉。
 
 **方向**：`edit_version` 钉进 `Request`/`checked`，`run_render` 校验一致
 （随 GenServer 壳一起做）。
+
+**进展（2026-08-03）**：钉已随 Snapshot 落地（`Snapshot.edit_version`，
+`Request.for_workspace/2` 构造即钉；`Artifact.edit_version` 记录渲染来源版本）。
+强制校验仍随 GenServer 壳。
 
 ### 11.6 PortClient 无监督 + key 切换队列污染
 
@@ -285,11 +304,16 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
 - `Workspace.tempo_map/2` 每次现编 TempoMap；大工程下考虑缓存
   （与 tempos_by_version 一并想）。
 
-### 11.8 Track 抽象（已定 2026-08-03，与 11.1–11.3 同期施工）
+### 11.8 Track 抽象（已定 2026-08-03，与 11.1–11.3 同期施工；Vocal/Tempo 已落地）
 
 **已定方案**：引入 `Coconut.Track`（struct + behaviour），与 11.1–11.3
 合并为一次重构（"Track-ification"），避免 side/spans 归属代码二次搬迁。
 Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收的东西。
+
+**已落地（2026-08-03）**：Track struct + behaviour + `Track.Vocal` /
+`Track.Tempo`；Side 删除；Operate 只剩通用几何/序列校验，元素政策全部
+走 track module 回调；`validate_gesture` 的 `:insert` 钩子是 v2 人声轨
+不重叠约束的挂载点。`Track.Audio`（帧域）与 `Track.Synth` 未实现。
 
 - `%Track{id, module, space, spans_by_version, elements_by_id, patches,
   dead_patches}`——Side 整个删除，Workspace 只剩 `id/edit_version/tracks`。
