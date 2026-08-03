@@ -8,22 +8,26 @@ defmodule Coconut.Workspace do
   track's patches (write-time transport: survivors are persisted with
   up-to-date anchors, the dead move to the track's `dead_patches`).
 
-  A workspace is just `id / edit_version / tracks` — everything else lives
-  on `Coconut.Track` (design doc §11.3). The tempo track is an ordinary
-  track, identified by its module `Coconut.Track.Tempo`.
+  A workspace is `id / edit_version / tracks` plus the project-level
+  `tpqn` / `time_sigs` (tick resolution and the bar-grid time signature
+  events — neither participates in the op/transport machinery).
+  Everything else lives on `Coconut.Track` (design doc §11.3). The tempo
+  track is an ordinary track, identified by its module
+  `Coconut.Track.Tempo`.
   """
 
   alias Coconut.{Track, Util.ID, Util.Model, WarpProvider}
-  alias Coconut.Score.{Tempo, TempoMap}
+  alias Coconut.Score.{Tempo, TempoMap, TimeSigMap}
 
   @type t :: %__MODULE__{
           id: ID.t(t()),
           edit_version: Tamale.version(),
           tracks: %{Coconut.Operate.track_id() => Track.t()},
-          tpqn: pos_integer()
+          tpqn: pos_integer(),
+          time_sigs: [Coconut.Score.TimeSig.time_sig_event(), ...]
         }
   use Model,
-    keys: [:id, :edit_version, tracks: %{}, tpqn: 480],
+    keys: [:id, :edit_version, tracks: %{}, tpqn: 480, time_sigs: [{1, {4, 4}}]],
     id_prefix: "WSpc_"
 
   # ---- Tracks ----
@@ -275,5 +279,43 @@ defmodule Coconut.Workspace do
 
         TempoMap.compile(events, tpqn: ws.tpqn)
     end
+  end
+
+  @doc """
+  Builds a compiled `TimeSigMap` from the workspace's `time_sigs` events,
+  at the workspace's `tpqn`.
+
+  Time signatures are display/grid data (bar ruler, snapping), not an
+  editable track — they live outside the op/transport machinery, with
+  the bar number as the authoritative coordinate (mid-song meter changes
+  are ordinary list entries).
+  """
+  @spec time_sig_map(t()) :: {:ok, TimeSigMap.t()} | {:error, term()}
+  def time_sig_map(ws) do
+    TimeSigMap.compile(ws.time_sigs, tpqn: ws.tpqn)
+  end
+
+  @impl true
+  def validate(%{time_sigs: time_sigs} = ws) do
+    if valid_time_sigs?(time_sigs) do
+      {:ok, ws}
+    else
+      {:error, {:invalid_time_sigs, time_sigs}}
+    end
+  end
+
+  # The bar is the authoritative coordinate: the first event must sit at
+  # bar 1, and bar numbers must be positive and strictly ascending.
+  defp valid_time_sigs?([{1, _sig} | _] = events) do
+    Enum.all?(events, &match?({bar, _sig} when is_integer(bar) and bar >= 1, &1)) and
+      strictly_ascending?(Enum.map(events, &elem(&1, 0)))
+  end
+
+  defp valid_time_sigs?(_other), do: false
+
+  defp strictly_ascending?(bars) do
+    bars
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.all?(fn [a, b] -> b > a end)
   end
 end

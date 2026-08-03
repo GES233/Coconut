@@ -126,7 +126,13 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   不可删除；
 - `:tick` provider 对 tempo log 永远返回 identity；tempo Space 自身几乎
   不会被挂锚，其角色是"序列化容器 + log 发生器"；
-- 拍号（TimeSig）同模式可做，但 v1 只当侧表数据甚至常量。
+- 拍号（TimeSig）：已定（2026-08-03）——**不作 track**，落 `Workspace`
+  的 `time_sigs` 字段（`[{bar, sig}]` 事件列表，支持曲子中途变拍如
+  4/4 → 3/4；bar 是权威坐标，首事件须在 bar 1 且小节序号严格递增，
+  `Workspace.validate/1` 把关）。它是 tick 之上的显示/网格叠层（小节
+  标尺、吸附），不移动 tick、无锚、无 transport，进 Space 是纯开销；
+  `TimeSigMap` 读时编译（`Workspace.time_sig_map/1`，按 `ws.tpqn`）。
+  散拍子 `:san` 暂不考虑。
 
 ## 7. Op 覆盖评估
 
