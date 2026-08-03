@@ -14,7 +14,7 @@ defmodule Coconut.Operate do
   - lowering does NOT apply anything; `Workspace.apply_batch/2` is the writer.
   """
 
-  alias Coconut.Track
+  alias Coconut.{Track, Workspace}
   alias Coconut.Util.ID
   alias Tamale.Op.{Delete, Insert, Merge, Move, Retime, Split}
 
@@ -94,6 +94,11 @@ defmodule Coconut.Operate do
         }
 
   # ---- Public API ----
+
+  @callback validate(request :: term(), Workspace.t()) :: :ok | {:error, term()}
+
+  @callback lower(request :: term(), Workspace.t(), Config.t()) ::
+          {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
 
   @doc """
   Validate a request against the current workspace state.
