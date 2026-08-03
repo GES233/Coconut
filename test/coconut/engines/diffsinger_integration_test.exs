@@ -10,7 +10,7 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
   """
   use ExUnit.Case, async: false
 
-  alias Coconut.{Engine, Operate, Workspace}
+  alias Coconut.{Engine, Operate, Track, Workspace}
   alias Coconut.Engine.Request
   alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
@@ -92,9 +92,8 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tempo_space: %Tamale.Space{},
-        tracks: %{vocal: %Tamale.Space{}},
-        side: %Workspace.Side{}
+        tracks: %{tempo: Track.new(:tempo, Track.Tempo), vocal: Track.new(:vocal, Track.Vocal)}
+
       })
 
     ws = insert(ws, :tempo, "t0", :head, {0, 20_000}, %{bpm: 120})

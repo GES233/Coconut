@@ -107,18 +107,18 @@ defmodule Coconut.Operate do
   # Tempo inserts additionally require a castable bpm (normalized at lower time).
   def validate({:insert_note, :tempo, id, after_id, {start_t, end_t}, attrs}, ws) do
     with {:ok, _milli_bpm} <- Tempo.cast_bpm(Map.get(attrs, :bpm)),
-         {:ok, space, _side} <- track_context(ws, :tempo),
-         :ok <- id_fresh?(space, id),
-         :ok <- after_valid?(space, after_id),
+         {:ok, track} <- track_context(ws, :tempo),
+         :ok <- id_fresh?(track.space, id),
+         :ok <- after_valid?(track.space, after_id),
          :ok <- span_valid?(start_t, end_t) do
       :ok
     end
   end
 
-  def validate({:insert_note, track, id, after_id, {start_t, end_t}, attrs}, ws) do
-    with {:ok, space, _side} <- track_context(ws, track),
-         :ok <- id_fresh?(space, id),
-         :ok <- after_valid?(space, after_id),
+  def validate({:insert_note, track_id, id, after_id, {start_t, end_t}, attrs}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
+         :ok <- id_fresh?(track.space, id),
+         :ok <- after_valid?(track.space, after_id),
          :ok <- span_valid?(start_t, end_t),
          {:ok, _note} <- Note.from_element(id, attrs) do
       :ok
@@ -126,66 +126,66 @@ defmodule Coconut.Operate do
   end
 
   def validate({:delete_note, :tempo, id}, ws) do
-    with {:ok, space, side} <- track_context(ws, :tempo),
-         :ok <- id_live?(side, id),
-         :ok <- id_in_space?(space, id),
-         :ok <- not_first?(space, id) do
+    with {:ok, track} <- track_context(ws, :tempo),
+         :ok <- id_live?(track, id),
+         :ok <- id_in_space?(track.space, id),
+         :ok <- not_first?(track.space, id) do
       :ok
     end
   end
 
-  def validate({:delete_note, track, id}, ws) do
-    with {:ok, space, side} <- track_context(ws, track),
-         :ok <- id_live?(side, id),
-         :ok <- id_in_space?(space, id) do
+  def validate({:delete_note, track_id, id}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
+         :ok <- id_live?(track, id),
+         :ok <- id_in_space?(track.space, id) do
       :ok
     end
   end
 
-  def validate({:move_note, track, id, new_after}, ws) do
-    with {:ok, space, side} <- track_context(ws, track),
-         :ok <- id_live?(side, id),
-         :ok <- id_in_space?(space, id),
-         :ok <- after_valid?(space, new_after),
+  def validate({:move_note, track_id, id, new_after}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
+         :ok <- id_live?(track, id),
+         :ok <- id_in_space?(track.space, id),
+         :ok <- after_valid?(track.space, new_after),
          :ok <- not_self?(id, new_after) do
       :ok
     end
   end
 
-  def validate({:drag_note, track, id, new_after, _old_span, {new_s, new_e}}, ws) do
-    with {:ok, space, side} <- track_context(ws, track),
-         :ok <- id_live?(side, id),
-         :ok <- id_in_space?(space, id),
-         :ok <- after_valid?(space, new_after),
+  def validate({:drag_note, track_id, id, new_after, _old_span, {new_s, new_e}}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
+         :ok <- id_live?(track, id),
+         :ok <- id_in_space?(track.space, id),
+         :ok <- after_valid?(track.space, new_after),
          :ok <- not_self?(id, new_after),
          :ok <- span_valid?(new_s, new_e) do
       :ok
     end
   end
 
-  def validate({:split_note, track, id, at_tick, new_id}, ws) do
-    with {:ok, space, side} <- track_context(ws, track),
-         :ok <- id_live?(side, id),
-         :ok <- id_in_space?(space, id),
-         :ok <- id_fresh?(space, new_id),
-         :ok <- within_span?(ws, track, id, at_tick) do
+  def validate({:split_note, track_id, id, at_tick, new_id}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
+         :ok <- id_live?(track, id),
+         :ok <- id_in_space?(track.space, id),
+         :ok <- id_fresh?(track.space, new_id),
+         :ok <- within_span?(ws, track_id, id, at_tick) do
       :ok
     end
   end
 
-  def validate({:merge_notes, track, ids}, ws) do
-    with {:ok, space, side} <- track_context(ws, track),
+  def validate({:merge_notes, track_id, ids}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
          [_ | _] = ids,
-         :ok <- all_live?(side, ids),
-         :ok <- all_in_space?(space, ids),
-         :ok <- adjacent?(space, ids) do
+         :ok <- all_live?(track, ids),
+         :ok <- all_in_space?(track.space, ids),
+         :ok <- adjacent?(track.space, ids) do
       :ok
     end
   end
 
-  def validate({:edit_note, track, id, _changes}, ws) do
-    with {:ok, _space, side} <- track_context(ws, track),
-         :ok <- id_live?(side, id) do
+  def validate({:edit_note, track_id, id, _changes}, ws) do
+    with {:ok, track} <- track_context(ws, track_id),
+         :ok <- id_live?(track, id) do
       :ok
     end
   end
@@ -277,7 +277,7 @@ defmodule Coconut.Operate do
         changes = %{
           @empty_side_changes
           | elements: %{
-              new_id => inherit_element(Map.get(ws.side.elements_by_id, id), new_id, at_tick, e)
+              new_id => inherit_element(Map.get(ws.tracks[track].elements_by_id, id), new_id, at_tick, e)
             },
             span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
         }
@@ -337,16 +337,9 @@ defmodule Coconut.Operate do
 
   defp inherit_element(element, _new_id, _start_tick, _end_tick), do: element || %{}
 
-  defp track_context(ws, :tempo) do
-    case ws.tempo_space do
-      nil -> {:error, :no_tempo_track}
-      space -> {:ok, space, ws.side}
-    end
-  end
-
   defp track_context(ws, track_id) do
     case Map.fetch(ws.tracks, track_id) do
-      {:ok, space} -> {:ok, space, ws.side}
+      {:ok, track} -> {:ok, track}
       :error -> {:error, {:unknown_track, track_id}}
     end
   end
@@ -359,8 +352,8 @@ defmodule Coconut.Operate do
     end
   end
 
-  defp id_live?(side, id) do
-    if Map.has_key?(side.elements_by_id, id) do
+  defp id_live?(track, id) do
+    if Map.has_key?(track.elements_by_id, id) do
       :ok
     else
       {:error, {:unknown_id, id}}
@@ -414,9 +407,9 @@ defmodule Coconut.Operate do
     end
   end
 
-  defp all_live?(side, ids) do
+  defp all_live?(track, ids) do
     Enum.find_value(ids, :ok, fn id ->
-      case id_live?(side, id) do
+      case id_live?(track, id) do
         :ok -> nil
         err -> err
       end

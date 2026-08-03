@@ -1,7 +1,7 @@
 defmodule Coconut.Engines.DiffSingerTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Operate, Workspace}
+  alias Coconut.{Engine, Operate, Track, Workspace}
   alias Coconut.Engine.Request
   alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
@@ -60,12 +60,20 @@ defmodule Coconut.Engines.DiffSingerTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tempo_space: if(Keyword.get(opts, :tempo, true), do: %Tamale.Space{}, else: nil),
-        tracks: %{vocal: %Tamale.Space{}, harmony: %Tamale.Space{}},
-        side: %Workspace.Side{}
+        tracks: maybe_tempo(opts)
       })
 
     ws
+  end
+
+  defp maybe_tempo(opts) do
+    base = %{vocal: Track.new(:vocal, Track.Vocal), harmony: Track.new(:harmony, Track.Vocal)}
+
+    if Keyword.get(opts, :tempo, true) do
+      Map.put(base, :tempo, Track.new(:tempo, Track.Tempo))
+    else
+      base
+    end
   end
 
   defp insert(ws, track, id, after_id, span, attrs) do

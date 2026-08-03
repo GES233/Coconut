@@ -1,7 +1,7 @@
 defmodule Coconut.ResolveTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Operate, Patch, Resolve, Workspace}
+  alias Coconut.{Engine, Operate, Patch, Resolve, Track, Workspace}
   alias Coconut.Engine.Request
   alias Coconut.Engines.Mock
   alias Coconut.Util.ID
@@ -13,8 +13,7 @@ defmodule Coconut.ResolveTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{@track => %Tamale.Space{}},
-        side: %Workspace.Side{}
+        tracks: %{@track => Track.new(@track, Track.Vocal)}
       })
 
     {:ok, ws: ws}
@@ -33,24 +32,25 @@ defmodule Coconut.ResolveTest do
   # Mounts a :lyric patch on `note_id`, capturing the current element's
   # canonical projection as base — same as a real mount-at-edit-time flow.
   defp attach_lyric_patch(ws, note_id, payload) do
-    data = Map.fetch!(ws.side.elements_by_id, note_id)
+    data = Map.fetch!(ws.tracks[@track].elements_by_id, note_id)
     {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), payload)
 
     {:ok, cp} =
       Patch.new(%{
         track_id: @track,
         channel: :lyric,
-        anchor: %Tamale.Anchor.Ordinal{refs: [note_id], at_version: ws.tracks[@track].version},
+        anchor: %Tamale.Anchor.Ordinal{refs: [note_id], at_version: ws.tracks[@track].space.version},
         patch: tp
       })
 
-    Workspace.attach_patch(ws, cp)
+    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    ws
   end
 
   # Rewrites a note's element data in place (simulating a content edit).
   defp rewrite_note(ws, note_id, attrs) do
     {:ok, note} = Coconut.Score.Note.from_element(note_id, attrs)
-    put_in(ws.side.elements_by_id[note_id], note)
+    put_in(ws.tracks[@track].elements_by_id[note_id], note)
   end
 
   defp lyric_channel do
@@ -58,7 +58,7 @@ defmodule Coconut.ResolveTest do
       projection: fn ws, %Patch{} = patch ->
         case patch.anchor do
           %Tamale.Anchor.Ordinal{refs: [id | _]} ->
-            with {:ok, element} <- Map.fetch(ws.side.elements_by_id, id) do
+            with {:ok, element} <- Map.fetch(ws.tracks[@track].elements_by_id, id) do
               {:ok, Coconut.Score.Note.to_canonical(element)}
             end
 
@@ -130,8 +130,8 @@ defmodule Coconut.ResolveTest do
 
     # Write-time transport moved the patch to the graveyard during
     # apply_batch — the check no longer sees it at all.
-    assert ws.side.patches == []
-    assert [{_cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
+    assert ws.tracks[@track].patches == []
+    assert [{_cp, {:undefined, {:deleted, "n1"}}}] = ws.tracks[@track].dead_patches
 
     assert {:ok, %{passed: true, interventions: %{}, survivors: []}} =
              Resolve.run_check(ws, channels())
@@ -144,11 +144,11 @@ defmodule Coconut.ResolveTest do
       Patch.new(%{
         track_id: @track,
         channel: :pitch,
-        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].version},
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].space.version},
         patch: %Tamale.Patch{base_digest: "whatever", payload: %{}}
       })
 
-    ws = Workspace.attach_patch(ws, cp)
+      {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: false, entries: [entry]}} = Resolve.run_check(ws, channels())
     assert entry.kind == :unknown_channel
@@ -158,18 +158,18 @@ defmodule Coconut.ResolveTest do
   test "patch-aware channel target folds to per-note ports", %{ws: ws} do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
 
-    data = Map.fetch!(ws.side.elements_by_id, "n1")
+    data = Map.fetch!(ws.tracks[@track].elements_by_id, "n1")
     {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), [[0, 60], [480, 62]])
 
     {:ok, cp} =
       Patch.new(%{
         track_id: @track,
         channel: :pitch,
-        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].version},
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].space.version},
         patch: tp
       })
 
-    ws = Workspace.attach_patch(ws, cp)
+      {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
              Resolve.run_check(ws, %{pitch: Coconut.Engines.Channels.Pitch})
@@ -180,18 +180,18 @@ defmodule Coconut.ResolveTest do
   test "duration channel folds to per-note duration ports", %{ws: ws} do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
 
-    data = Map.fetch!(ws.side.elements_by_id, "n1")
+    data = Map.fetch!(ws.tracks[@track].elements_by_id, "n1")
     {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), [[0, 96], [1, 384]])
 
     {:ok, cp} =
       Patch.new(%{
         track_id: @track,
         channel: :duration,
-        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].version},
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].space.version},
         patch: tp
       })
 
-    ws = Workspace.attach_patch(ws, cp)
+      {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
              Resolve.run_check(ws, %{duration: Coconut.Engines.Channels.Duration})

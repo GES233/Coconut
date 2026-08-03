@@ -3,7 +3,7 @@
 # Creates a workspace with a note track and tempo track, inserts notes,
 # mounts patches, edits, transports, and runs a Resolve + Engine round.
 
-alias Coconut.{Engine, Operate, Patch, Resolve, WarpProvider, Workspace}
+alias Coconut.{Engine, Operate, Patch, Resolve, Track, WarpProvider, Workspace}
 alias Coconut.Engine.Request
 alias Coconut.Engines.Mock
 alias Coconut.Util.ID
@@ -16,9 +16,7 @@ track = :vocal
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tempo_space: %Tamale.Space{},
-    tracks: %{track => %Tamale.Space{}},
-    side: %Workspace.Side{}
+    tracks: %{:tempo => Track.new(:tempo, Track.Tempo), track => Track.new(track, Track.Vocal)}
   })
 
 # ---- 2. Insert tempo event ----
@@ -42,7 +40,7 @@ ws =
   |> elem(0)
 
 IO.puts("=== After insert ===")
-IO.inspect(ws.tracks[track].ids, label: "order")
+IO.inspect(ws.tracks[track].space.ids, label: "order")
 {:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 
@@ -55,12 +53,21 @@ end
 # Toy channel projection — the "base slice" a patch guards. Ordinal/Relative
 # guard their element; Metric guards the elements overlapping its span.
 projection = fn ws, %Patch{} = cp ->
+  canonicalize = fn
+    %Coconut.Score.Note{} = note -> Coconut.Score.Note.to_canonical(note)
+    other -> other
+  end
+
   case cp.anchor do
     %Tamale.Anchor.Ordinal{refs: [id | _]} ->
-      Map.fetch(ws.side.elements_by_id, id)
+      with {:ok, element} <- Map.fetch(ws.tracks[track].elements_by_id, id) do
+        {:ok, canonicalize.(element)}
+      end
 
     %Tamale.Anchor.Relative{ref: id} ->
-      Map.fetch(ws.side.elements_by_id, id)
+      with {:ok, element} <- Map.fetch(ws.tracks[track].elements_by_id, id) do
+        {:ok, canonicalize.(element)}
+      end
 
     %Tamale.Anchor.Metric{from: f, to: t} ->
       from_t = to_tick.(f)
@@ -70,14 +77,14 @@ projection = fn ws, %Patch{} = cp ->
         for {id, {s, e}} <- Workspace.latest_spans(ws, cp.track_id),
             s < to_t and e > from_t,
             into: %{} do
-          {id, Map.get(ws.side.elements_by_id, id)}
+          {id, canonicalize.(Map.get(ws.tracks[track].elements_by_id, id))}
         end
 
       {:ok, overlapping}
   end
 end
 
-ver = ws.tracks[track].version
+ver = ws.tracks[track].space.version
 
 mount = fn anchor, channel, payload ->
   probe = %Patch{track_id: track, anchor: anchor, channel: channel}
@@ -91,7 +98,7 @@ cp1 = mount.(%Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ver}, :lyric, %{ly
 cp2 = mount.(%Tamale.Anchor.Metric{coord: :tick, from: 600, to: 800, at_version: ver}, :energy, %{energy: 80})
 cp3 = mount.(%Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100, at_version: ver}, :breath, %{breathiness: 30})
 
-ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
+{:ok, ws} = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
 # ---- 5. Edit: drag n1 (Move + Retime) ----
 {:ok, ops, ch} =
@@ -99,7 +106,7 @@ ws = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
 IO.puts("\n=== After drag n1 (0..480 -> 100..580) ===")
-IO.inspect(ws.tracks[track].ids, label: "order")
+IO.inspect(ws.tracks[track].space.ids, label: "order")
 {:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render")
 

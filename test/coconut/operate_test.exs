@@ -1,7 +1,7 @@
 defmodule Coconut.OperateTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Operate, Workspace}
+  alias Coconut.{Operate, Track, Workspace}
   alias Coconut.Score.{Key.TwelveET, Note}
   alias Coconut.Util.ID
 
@@ -12,8 +12,7 @@ defmodule Coconut.OperateTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{@track => %Tamale.Space{}},
-        side: %Workspace.Side{}
+        tracks: %{@track => Track.new(@track, Track.Vocal)}
       })
 
     {:ok, ws: ws}
@@ -233,14 +232,14 @@ defmodule Coconut.OperateTest do
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       # Space updated
-      space = ws.tracks[@track]
+      space = ws.tracks[@track].space
       assert space.version == 1
       assert space.ids == ["n1"]
 
       # Side updated
       assert ws.edit_version == 1
-      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
-      assert ws.side.spans_by_version[@track][1] == %{"n1" => {0, 480}}
+      assert %Note{key: %TwelveET{midi: 60}} = ws.tracks[@track].elements_by_id["n1"]
+      assert ws.tracks[@track].spans_by_version[1] == %{"n1" => {0, 480}}
     end
 
     test "full insert-then-delete cycle", %{ws: ws} do
@@ -253,18 +252,18 @@ defmodule Coconut.OperateTest do
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
-      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
+      assert %Note{key: %TwelveET{midi: 60}} = ws.tracks[@track].elements_by_id["n1"]
 
       # Delete
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # Gone from elements, span marked deleted
-      refute Map.has_key?(ws.side.elements_by_id, "n1")
-      refute Map.has_key?(ws.side.spans_by_version[@track][2], "n1")
+      refute Map.has_key?(ws.tracks[@track].elements_by_id, "n1")
+      refute Map.has_key?(ws.tracks[@track].spans_by_version[2], "n1")
 
       # Space has empty ids, "n1" in seen
-      space = ws.tracks[@track]
+      space = ws.tracks[@track].space
       assert space.ids == []
       assert MapSet.member?(space.seen, "n1")
     end
@@ -291,11 +290,11 @@ defmodule Coconut.OperateTest do
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # Element unchanged
-      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
+      assert %Note{key: %TwelveET{midi: 60}} = ws.tracks[@track].elements_by_id["n1"]
       # Span updated
-      assert ws.side.spans_by_version[@track][2]["n1"] == {100, 580}
+      assert ws.tracks[@track].spans_by_version[2]["n1"] == {100, 580}
       # Old version's span preserved
-      assert ws.side.spans_by_version[@track][1]["n1"] == {0, 480}
+      assert ws.tracks[@track].spans_by_version[1]["n1"] == {0, 480}
     end
 
     test "split closes the loop: both halves get spans, re-split validates", %{ws: ws} do
@@ -319,7 +318,7 @@ defmodule Coconut.OperateTest do
       assert Workspace.latest_span(ws, @track, "n2") == {240, 480}
 
       assert %Note{id: "n2", key: %TwelveET{midi: 60}} =
-               ws.side.elements_by_id["n2"]
+               ws.tracks[@track].elements_by_id["n2"]
 
       # The right half used to have no span at all — a second split validates now.
       assert :ok = Operate.validate({:split_note, @track, "n2", 360, "n3"}, ws)
@@ -351,9 +350,9 @@ defmodule Coconut.OperateTest do
 
       assert Workspace.latest_span(ws, @track, "n1") == {0, 960}
       assert Workspace.latest_span(ws, @track, "n2") == nil
-      refute Map.has_key?(ws.side.elements_by_id, "n2")
+      refute Map.has_key?(ws.tracks[@track].elements_by_id, "n2")
       # `into` keeps its own payload — content merging is domain policy.
-      assert %Note{lyric: "ら"} = ws.side.elements_by_id["n1"]
+      assert %Note{lyric: "ら"} = ws.tracks[@track].elements_by_id["n1"]
     end
 
     test "edit_note :touch marker preserves element data", %{ws: ws} do
@@ -371,7 +370,7 @@ defmodule Coconut.OperateTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, changes)
 
-      assert %Note{key: %TwelveET{midi: 60}} = ws.side.elements_by_id["n1"]
+      assert %Note{key: %TwelveET{midi: 60}} = ws.tracks[@track].elements_by_id["n1"]
     end
 
     test "unknown track returns an error tuple, not bare :error", %{ws: ws} do
@@ -397,11 +396,11 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "b", payload: %{}}
         })
 
-      ws = Workspace.attach_patch(ws, cp1)
-      assert ws.side.patches == [cp1]
+        {:ok, ws} = Workspace.attach_patch(ws, cp1)
+      assert ws.tracks[@track].patches == [cp1]
 
-      ws = Workspace.attach_patches(ws, [cp2])
-      assert ws.side.patches == [cp1, cp2]
+        {:ok, ws} = Workspace.attach_patches(ws, [cp2])
+      assert ws.tracks[@track].patches == [cp1, cp2]
     end
 
     test "latest_span falls back to the newest recorded version", %{ws: ws} do
@@ -421,8 +420,8 @@ defmodule Coconut.OperateTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
 
-      assert ws.tracks[@track].version == 3
-      refute Map.has_key?(ws.side.spans_by_version[@track], 3)
+      assert ws.tracks[@track].space.version == 3
+      refute Map.has_key?(ws.tracks[@track].spans_by_version, 3)
       assert Workspace.latest_span(ws, @track, "n1") == {0, 480}
       assert Workspace.latest_spans(ws, @track) == %{"n1" => {0, 480}, "n2" => {480, 960}}
       assert Workspace.latest_span(ws, @track, "nope") == nil
@@ -448,7 +447,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{lyric: "ら"}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
       assert length(survivors) == 1
@@ -470,14 +469,14 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       # Delete the note — write-time transport inside apply_batch kills it.
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
-      assert ws.side.patches == []
-      assert [{^cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
+      assert ws.tracks[@track].patches == []
+      assert [{^cp, {:undefined, {:deleted, "n1"}}}] = ws.tracks[@track].dead_patches
     end
 
     test "ordinal anchor survives move (identity follows)", %{ws: ws} do
@@ -498,7 +497,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       # Move n1 after n2
       {:ok, ops3, changes3} =
@@ -531,7 +530,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
       assert survivors == []
@@ -551,7 +550,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} =
         Operate.lower(
@@ -562,7 +561,7 @@ defmodule Coconut.OperateTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
-      wp = Coconut.WarpProvider.tick(Workspace.track_spans(ws, @track), ws.side.patches)
+      wp = Coconut.WarpProvider.tick(Workspace.track_spans(ws, @track), ws.tracks[@track].patches)
       {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
 
       assert dead == []
@@ -585,20 +584,20 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # Write-time transport folds the delete's warp hole: the anchor dies
       # inside apply_batch, no explicit transport_patches call needed.
-      assert ws.side.patches == []
-      assert [{^cp, {:undefined, :outside_warp}}] = ws.side.dead_patches
+      assert ws.tracks[@track].patches == []
+      assert [{^cp, {:undefined, :outside_warp}}] = ws.tracks[@track].dead_patches
     end
 
     test "patches for other tracks pass through", %{ws: ws} do
       other_track = :harmony
-      ws = put_in(ws.tracks[other_track], %Tamale.Space{})
+      ws = put_in(ws.tracks[other_track], Track.new(other_track, Track.Vocal))
 
       # Insert in @track
       {:ok, ops, changes} =
@@ -621,7 +620,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "b", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp1, cp2])
+      ws = put_in(ws.tracks[@track].patches, [cp1, cp2])
 
       {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
       # cp1 (track @track) transported, cp2 (track :harmony) passed through
@@ -652,7 +651,7 @@ defmodule Coconut.OperateTest do
         patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
       })
 
-    ws = put_in(ws.side.patches, [cp])
+    ws = put_in(ws.tracks[@track].patches, [cp])
 
     # Move n1 after n2
     {:ok, ops3, changes3} = Operate.lower({:move_note, @track, "n1", "n2"}, ws, %Operate.Config{})
@@ -684,14 +683,14 @@ defmodule Coconut.OperateTest do
         patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
       })
 
-    ws = put_in(ws.side.patches, [cp])
+    ws = put_in(ws.tracks[@track].patches, [cp])
 
     {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
     # Write-time transport inside apply_batch kills it on the spot.
-    assert ws.side.patches == []
-    assert [{^cp, {:undefined, {:deleted, "n1"}}}] = ws.side.dead_patches
+    assert ws.tracks[@track].patches == []
+    assert [{^cp, {:undefined, {:deleted, "n1"}}}] = ws.tracks[@track].dead_patches
   end
 
   describe "write-time transport" do
@@ -708,7 +707,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} =
         Operate.lower({:insert_note, @track, "n2", "n1", {480, 960}, %{}}, ws, %Operate.Config{})
@@ -716,8 +715,8 @@ defmodule Coconut.OperateTest do
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # No explicit transport_patches call — the batch itself folded.
-      assert [%{anchor: %{at_version: 2}}] = ws.side.patches
-      assert ws.side.dead_patches == []
+      assert [%{anchor: %{at_version: 2}}] = ws.tracks[@track].patches
+      assert ws.tracks[@track].dead_patches == []
     end
 
     test "take_dead_patches returns the graveyard and clears it", %{ws: ws} do
@@ -733,14 +732,14 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [cp])
+      ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       {dead, ws} = Workspace.take_dead_patches(ws)
       assert [{^cp, {:undefined, {:deleted, "n1"}}}] = dead
-      assert ws.side.dead_patches == []
+      assert ws.tracks[@track].dead_patches == []
     end
 
     test "patches_add minted by a batch join untransported, removes land first", %{ws: ws} do
@@ -763,7 +762,7 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "fresh", payload: %{}}
         })
 
-      ws = put_in(ws.side.patches, [old])
+      ws = put_in(ws.tracks[@track].patches, [old])
 
       # A content-edit-style batch: no ops, removes the old patch, mints one.
       changes = %{
@@ -775,8 +774,8 @@ defmodule Coconut.OperateTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, [], changes)
 
-      assert ws.side.patches == [fresh]
-      assert ws.side.dead_patches == []
+      assert ws.tracks[@track].patches == [fresh]
+      assert ws.tracks[@track].dead_patches == []
     end
   end
 end

@@ -1,7 +1,7 @@
 # Spike: multi-track edit pipeline
 # Two sub-tracks share overlapping tick spans without conflict.
 
-alias Coconut.{Engine, Operate, Patch, WarpProvider, Workspace}
+alias Coconut.{Engine, Operate, Patch, Track, WarpProvider, Workspace}
 alias Coconut.Engine.Request
 alias Coconut.Engines.Mock
 alias Coconut.Util.ID
@@ -14,9 +14,11 @@ track_b = :vocal_b
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tempo_space: %Tamale.Space{},
-    tracks: %{track_a => %Tamale.Space{}, track_b => %Tamale.Space{}},
-    side: %Workspace.Side{}
+    tracks: %{
+      :tempo => Track.new(:tempo, Track.Tempo),
+      track_a => Track.new(track_a, Track.Vocal),
+      track_b => Track.new(track_b, Track.Vocal)
+    }
   })
 
 # ---- Tempo ----
@@ -35,18 +37,18 @@ track_b = :vocal_b
 {:ok, ws} = Workspace.apply_batch(ws, track_b, 3, ops_b, ch_b)
 
 IO.puts("=== After insert (both tracks) ===")
-IO.inspect(ws.tracks[track_a].ids, label: "#{track_a} order")
-IO.inspect(ws.tracks[track_b].ids, label: "#{track_b} order")
+IO.inspect(ws.tracks[track_a].space.ids, label: "#{track_a} order")
+IO.inspect(ws.tracks[track_b].space.ids, label: "#{track_b} order")
 {:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
 IO.inspect(art.notes, label: "render (flat)")
 
 # ---- Attach patches to A ----
 {:ok, cp_a} = Patch.new(%{
   track_id: track_a,
-  anchor: %Tamale.Anchor.Ordinal{refs: ["a1"], at_version: ws.tracks[track_a].version},
+  anchor: %Tamale.Anchor.Ordinal{refs: ["a1"], at_version: ws.tracks[track_a].space.version},
   patch: %Tamale.Patch{base_digest: "aaa", payload: %{}}
 })
-ws = Workspace.attach_patch(ws, cp_a)
+{:ok, ws} = Workspace.attach_patch(ws, cp_a)
 
 # ---- Drag a1 (overlaps b1) ----
 {:ok, ops, ch} =
@@ -64,7 +66,7 @@ wp = WarpProvider.tick(Workspace.track_spans(ws, track_a))
 IO.puts("\nTransport track A: survivors=#{length(survivors)} dead=#{length(dead)}")
 
 # ---- Transport (track B -- no patches, but verify Space isolation) ----
-IO.inspect(ws.tracks[track_b].ids, label: "#{track_b} unchanged")
-IO.inspect(ws.tracks[track_b].version, label: "#{track_b} version")
+IO.inspect(ws.tracks[track_b].space.ids, label: "#{track_b} unchanged")
+IO.inspect(ws.tracks[track_b].space.version, label: "#{track_b} version")
 
 IO.puts("\nDone.")

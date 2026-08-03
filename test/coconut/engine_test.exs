@@ -1,7 +1,7 @@
 defmodule Coconut.EngineTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Workspace}
+  alias Coconut.{Engine, Track, Workspace}
   alias Coconut.Engine.Request
   alias Coconut.Engines.Mock
   alias Coconut.Util.ID
@@ -30,8 +30,7 @@ defmodule Coconut.EngineTest do
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{vocal: %Tamale.Space{}},
-        side: %Workspace.Side{}
+        tracks: %{vocal: Track.new(:vocal, Track.Vocal)}
       })
 
     ws

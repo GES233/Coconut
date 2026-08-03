@@ -7,7 +7,7 @@
 # Paths are machine-specific; override with env vars when they differ:
 # DS_VOICEBANK, DS_PYTHON.
 
-alias Coconut.{Engine, Operate, Workspace}
+alias Coconut.{Engine, Operate, Track, Workspace}
 alias Coconut.Engine.Request
 alias Coconut.Engines.DiffSinger
 alias Coconut.Util.ID
@@ -30,9 +30,7 @@ config = %{
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tempo_space: %Tamale.Space{},
-    tracks: %{vocal: %Tamale.Space{}},
-    side: %Workspace.Side{}
+    tracks: %{tempo: Track.new(:tempo, Track.Tempo), vocal: Track.new(:vocal, Track.Vocal)}
   })
 
 insert = fn ws, track, id, after_id, span, attrs ->

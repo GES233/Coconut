@@ -89,34 +89,24 @@ defmodule Coconut.Resolve do
 
   # ---- Transport stage ----
 
+  # Patches live on their track, so "every patch in the workspace" is
+  # every track's patch list; an out-of-band mount on an unknown track is
+  # rejected at `Workspace.attach_patch/2` and cannot occur here.
   defp transport_all(ws) do
-    track_ids = ws.side.patches |> Enum.map(& &1.track_id) |> Enum.uniq()
+    Enum.reduce(ws.tracks, {[], []}, fn {track_id, track}, {surv_acc, entry_acc} ->
+      case track.patches do
+        [] ->
+          {surv_acc, entry_acc}
 
-    Enum.reduce(track_ids, {[], []}, fn track_id, {surv_acc, entry_acc} ->
-      if known_track?(ws, track_id) do
-        track_patches = Enum.filter(ws.side.patches, &(&1.track_id == track_id))
-        warp_provider = WarpProvider.tick(Workspace.track_spans(ws, track_id), track_patches)
-        {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, warp_provider)
+        patches ->
+          warp_provider = WarpProvider.tick(Coconut.Track.spans(track), patches)
+          {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, warp_provider)
+          entries = Enum.map(dead, &transport_entry(elem(&1, 0), elem(&1, 1)))
 
-        # transport_patches returns the full patch list with only this
-        # track's patches transported; keep just this track's results.
-        own = Enum.filter(survivors, &(&1.track_id == track_id))
-        entries = Enum.map(dead, &transport_entry(elem(&1, 0), elem(&1, 1)))
-
-        {surv_acc ++ own, entry_acc ++ entries}
-      else
-        entries =
-          ws.side.patches
-          |> Enum.filter(&(&1.track_id == track_id))
-          |> Enum.map(&transport_entry(&1, {:unknown_track, track_id}))
-
-        {surv_acc, entry_acc ++ entries}
+          {surv_acc ++ survivors, entry_acc ++ entries}
       end
     end)
   end
-
-  defp known_track?(ws, :tempo), do: not is_nil(ws.tempo_space)
-  defp known_track?(ws, track_id), do: Map.has_key?(ws.tracks, track_id)
 
   defp transport_entry(%Patch{} = patch, reason) do
     %{

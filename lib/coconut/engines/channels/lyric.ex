@@ -3,22 +3,23 @@ defmodule Coconut.Engines.Channels.Lyric do
   Built-in channel guarding element content (lyric and friends).
 
   The base slice is the current element's canonical projection: notes are
-  fetched from `ws.side.elements_by_id` by the anchor's first Ordinal ref
-  and reduced via `Coconut.Score.Note.to_canonical/1` (digests reject
-  structs). The payload folds to the conventional `{:port, :synth, :lyric}`
-  port. Callers wiring a different port can pass an ad-hoc spec map (or
-  their own module) instead.
+  fetched from the patch's own track (`elements_by_id`) by the anchor's
+  first Ordinal ref and reduced via `Coconut.Score.Note.to_canonical/1`
+  (digests reject structs). The payload folds to the conventional
+  `{:port, :synth, :lyric}` port. Callers wiring a different port can pass
+  an ad-hoc spec map (or their own module) instead.
   """
 
   @behaviour Coconut.Channel
 
-  alias Coconut.{Patch, Score.Note}
+  alias Coconut.{Patch, Score.Note, Workspace}
 
   @impl true
-  def projection(%Coconut.Workspace{} = ws, %Patch{} = patch) do
+  def projection(%Workspace{} = ws, %Patch{} = patch) do
     case patch.anchor do
       %Tamale.Anchor.Ordinal{refs: [id | _]} ->
-        with {:ok, element} <- Map.fetch(ws.side.elements_by_id, id) do
+        with {:ok, track} <- Workspace.fetch_track(ws, patch.track_id),
+             {:ok, element} <- Map.fetch(track.elements_by_id, id) do
           {:ok, canonicalize(element)}
         end
 

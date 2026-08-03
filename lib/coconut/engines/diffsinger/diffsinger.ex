@@ -266,13 +266,16 @@ defmodule Coconut.Engines.DiffSinger do
 
   # Notes are collected per track (phrase context lives within a track),
   # phonemes resolved there (explicit `:phonemes` win; the rest go to the
-  # configured encoder), then merged into one score-ordered list.
+  # configured encoder), then merged into one score-ordered list. Only
+  # note-bearing tracks contribute — the tempo track is not a score.
   defp collect_notes(ws, config) do
     per_track =
-      Map.new(ws.tracks, fn {track_id, _space} ->
+      ws.tracks
+      |> Map.reject(fn {_track_id, track} -> track.module == Coconut.Track.Tempo end)
+      |> Map.new(fn {track_id, track} ->
         notes =
-          for {id, span} <- Workspace.latest_spans(ws, track_id),
-              data = Map.get(ws.side.elements_by_id, id, %{}),
+          for {id, span} <- Coconut.Track.latest_spans(track),
+              data = Map.get(track.elements_by_id, id, %{}),
               is_map(data),
               do: {id, data, span}
 

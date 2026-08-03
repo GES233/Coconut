@@ -33,28 +33,15 @@ defmodule Coconut.Engines.Mock do
   @impl true
   def render(%Request{} = request, _checked, _config) do
     ws = request.workspace
-    all_spans = collect_latest_spans(ws.side.spans_by_version)
 
     notes =
-      ws.side.elements_by_id
-      |> Enum.map(fn {id, data} ->
-        span = Map.get(all_spans, id)
+      for {_track_id, track} <- ws.tracks,
+          {id, span} <- Coconut.Track.latest_spans(track),
+          into: %{} do
+        data = Map.get(track.elements_by_id, id, %{})
         {id, Map.put(data, :span, span)}
-      end)
-      |> Map.new()
+      end
 
     {:ok, %{notes: notes, overrides: request.interventions, globals: request.globals}}
-  end
-
-  defp collect_latest_spans(spans_by_track) do
-    Enum.reduce(spans_by_track, %{}, fn {_track_id, track_spans}, acc ->
-      latest =
-        case Enum.max(Map.keys(track_spans), fn -> nil end) do
-          nil -> %{}
-          v -> Map.get(track_spans, v, %{})
-        end
-
-      Map.merge(acc, latest)
-    end)
   end
 end

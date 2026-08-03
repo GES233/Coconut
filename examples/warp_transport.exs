@@ -10,10 +10,10 @@
 # Anchors that cannot survive coherently die loudly — never silently
 # misplace. Write-time transport: every apply_batch folds the fresh log
 # entry and persists up-to-date anchors; the dead move to the graveyard
-# (side.dead_patches) for the policy layer. The explicit transport calls
+# (track.dead_patches) for the policy layer. The explicit transport calls
 # below therefore re-fold nothing — they just re-verify the persisted state.
 
-alias Coconut.{Operate, Patch, Resolve, WarpProvider, Workspace}
+alias Coconut.{Operate, Patch, Resolve, Track, WarpProvider, Workspace}
 alias Coconut.Util.ID
 alias Tamale.Warp
 
@@ -35,7 +35,7 @@ show_pieces = fn %Warp{pieces: pieces} ->
 end
 
 transport_and_report = fn ws, label ->
-  wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.side.patches)
+  wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
   {:ok, survivors, dead} = Workspace.transport_patches(ws, track, wp)
 
   IO.puts("\n=== #{label} ===")
@@ -66,7 +66,15 @@ projection = fn ws, %Patch{} = cp ->
     for {id, {s, e}} <- Workspace.latest_spans(ws, cp.track_id),
         s < to_t and e > from_t,
         into: %{} do
-      {id, Map.get(ws.side.elements_by_id, id)}
+      element = Map.get(ws.tracks[track].elements_by_id, id)
+
+      canonical =
+        case element do
+          %Coconut.Score.Note{} = note -> Coconut.Score.Note.to_canonical(note)
+          other -> other
+        end
+
+      {id, canonical}
     end
 
   {:ok, overlapping}
@@ -77,9 +85,7 @@ end
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tempo_space: %Tamale.Space{},
-    tracks: %{track => %Tamale.Space{}},
-    side: %Workspace.Side{}
+    tracks: %{:tempo => Track.new(:tempo, Track.Tempo), track => Track.new(track, Track.Vocal)}
   })
 
 notes = [
@@ -99,7 +105,7 @@ IO.puts("=== Setup ===")
 IO.inspect(Workspace.latest_spans(ws, track), label: "spans")
 
 # ---- 2. Mount Metric patches (base digest captured at mount) ----
-ver = ws.tracks[track].version
+ver = ws.tracks[track].space.version
 
 mount = fn from, to, channel, payload ->
   anchor = %Tamale.Anchor.Metric{coord: :tick, from: from, to: to, at_version: ver}
@@ -117,7 +123,7 @@ patches = [
   mount.(2100, 2200, :space, %{mark: true})
 ]
 
-ws = Workspace.attach_patches(ws, patches)
+{:ok, ws} = Workspace.attach_patches(ws, patches)
 
 IO.puts("\n=== Mounted at v#{ver} ===")
 IO.puts("  energy  [120, 360]    on n1")
@@ -134,8 +140,8 @@ IO.puts("  space   [2100, 2200]  past the end (empty space)")
 IO.puts("\n=== Act 1: drag n3 [960, 1440] -> [1440, 1920] ===")
 IO.puts("warp pieces for the batch:")
 
-wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.side.patches)
-w = wp.(:tick, {ws.tracks[track].version, ops})
+wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
+w = wp.(:tick, {ws.tracks[track].space.version, ops})
 show_pieces.(w)
 
 IO.puts("sample points:")
@@ -155,8 +161,8 @@ transport_and_report.(ws, "transport after act 1 (curve follows n3)")
 IO.puts("\n=== Act 2: shrink n2 [480, 960] -> [480, 640] (slope 1/3) ===")
 IO.puts("warp pieces for the batch:")
 
-wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.side.patches)
-w = wp.(:tick, {ws.tracks[track].version, ops})
+wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
+w = wp.(:tick, {ws.tracks[track].space.version, ops})
 show_pieces.(w)
 
 IO.puts("sample points (exact rationals, no float dust):")
@@ -189,15 +195,15 @@ end
 IO.puts("\n=== Act 3: delete n3 (now at [1440, 1920]) ===")
 IO.puts("warp pieces for the batch:")
 
-wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.side.patches)
-w = wp.(:tick, {ws.tracks[track].version, ops})
+wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
+w = wp.(:tick, {ws.tracks[track].space.version, ops})
 show_pieces.(w)
 
 transport_and_report.(ws, "transport after act 3 (live set already folded by apply_batch)")
 
-IO.puts("surfaced at write time (side.dead_patches):")
+IO.puts("surfaced at write time (track.dead_patches):")
 
-Enum.each(ws.side.dead_patches, fn {cp, reason} ->
+Enum.each(ws.tracks[track].dead_patches, fn {cp, reason} ->
   IO.puts("  DIES      #{cp.channel}: #{inspect(reason)}")
 end)
 
