@@ -120,7 +120,7 @@ defmodule Coconut.Operate do
          :ok <- id_fresh?(space, id),
          :ok <- after_valid?(space, after_id),
          :ok <- span_valid?(start_t, end_t),
-         {:ok, _note} <- Note.from_element(id, {start_t, end_t}, attrs) do
+         {:ok, _note} <- Note.from_element(id, attrs) do
       :ok
     end
   end
@@ -219,7 +219,7 @@ defmodule Coconut.Operate do
   def lower({:insert_note, _track, id, after_id, span, attrs}, _ws, _cfg) do
     # Note tracks store Score.Note structs (Map → Note); extra attrs are
     # carried in the note's metadata.
-    with {:ok, note} <- Note.from_element(id, span, attrs) do
+    with {:ok, note} <- Note.from_element(id, attrs) do
       ops = [%Insert{id: id, after_id: after_id}]
 
       changes = %{
@@ -329,14 +329,11 @@ defmodule Coconut.Operate do
 
   # ---- Helpers ----
 
-  # The right half inherits the parent's payload. Note structs get the
-  # new id and the right half's span snapshot.
-  defp inherit_element(%Note{} = parent, new_id, start_tick, end_tick) do
-    {:ok, child} =
-      Note.update(parent, start_tick: start_tick, duration_tick: end_tick - start_tick)
-
-    %{child | id: new_id}
-  end
+  # The right half inherits the parent's payload; content is timing-free
+  # (Note holds no tick), so inheriting is just an id swap. Lyric/tuning
+  # policy after a split is the caller's business (see :edit_note).
+  defp inherit_element(%Note{} = parent, new_id, _start_tick, _end_tick),
+    do: %{parent | id: new_id}
 
   defp inherit_element(element, _new_id, _start_tick, _end_tick), do: element || %{}
 

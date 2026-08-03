@@ -3,6 +3,8 @@ defmodule Coconut.Score.TimeSig do
 
   alias Coconut.Score.Record
 
+  @type tpqn :: pos_integer()
+
   # Simple meters
   @type standard ::
           {numerator :: pos_integer(), denominator :: pos_integer()}
@@ -12,6 +14,7 @@ defmodule Coconut.Score.TimeSig do
   @type compound :: {:compound, groupings :: [pos_integer()], denominator :: pos_integer()}
 
   # 散拍子 (free meter)
+  # 其实可以当成动态拍子来做（但前面插入了音符，后面也跟着变了）
   @type free :: :san
 
   @typedoc "Number of bars"

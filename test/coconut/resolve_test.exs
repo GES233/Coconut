@@ -49,8 +49,7 @@ defmodule Coconut.ResolveTest do
 
   # Rewrites a note's element data in place (simulating a content edit).
   defp rewrite_note(ws, note_id, attrs) do
-    {start_t, end_t} = Workspace.latest_span(ws, @track, note_id)
-    {:ok, note} = Coconut.Score.Note.from_element(note_id, {start_t, end_t}, attrs)
+    {:ok, note} = Coconut.Score.Note.from_element(note_id, attrs)
     put_in(ws.side.elements_by_id[note_id], note)
   end
 

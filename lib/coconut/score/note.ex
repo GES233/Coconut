@@ -1,6 +1,11 @@
 defmodule Coconut.Score.Note do
   @moduledoc """
   Domain models and structures related to musical notes.
+
+  A Note is a pure content carrier (design doc §11.2, settled 2026-08-03):
+  it holds pitch/lyric/metadata and **no timing**. Timing lives in the
+  track's spans table, which remains the single timing authority across
+  transport — there is no snapshot to drift out of sync.
   """
   alias Coconut.{Util.ID, Util.Model, Score.Key}
   alias Coconut.Score.Tick
@@ -17,8 +22,6 @@ defmodule Coconut.Score.Note do
   use Model,
     keys: [
       :id,
-      :start_tick,
-      :duration_tick,
       :key,
       :lyric,
       annotation: nil,
@@ -26,10 +29,11 @@ defmodule Coconut.Score.Note do
     ],
     id_prefix: "Note_"
 
+  @typedoc "A tick span `{start, end}` from the track's spans table."
+  @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}
+
   @type t :: %__MODULE__{
           id: ID.t(),
-          start_tick: Tick.t(),
-          duration_tick: Tick.t(),
           key: Key.t(),
           lyric: String.t() | nil,
           annotation: String.t() | nil,
@@ -45,18 +49,16 @@ defmodule Coconut.Score.Note do
   existing `Score.Key` struct), `:lyric` and `:annotation`; every other
   key is carried in `metadata` with stringified keys.
 
-  `start_tick` / `duration_tick` snapshot the insert span — the workspace
-  spans table remains the timing authority after transport.
+  Timing is *not* accepted here: the span is recorded in the track's spans
+  table by the lowering layer, never on the Note.
 
   ## Examples
 
-      iex> from_element("n1", {0, 480}, %{pitch: 60, lyric: "ら", phonemes: [["zh", "a"]]})
-      {:ok, %Note{id: "n1", start_tick: 0, duration_tick: 480, lyric: "ら",
-                  metadata: %{"phonemes" => [["zh", "a"]]}}}
+      iex> from_element("n1", %{pitch: 60, lyric: "ら", phonemes: [["zh", "a"]]})
+      {:ok, %Note{id: "n1", lyric: "ら", metadata: %{"phonemes" => [["zh", "a"]]}}}
   """
-  @spec from_element(Tamale.id(), {non_neg_integer(), non_neg_integer()}, map()) ::
-          {:ok, t()} | {:error, term()}
-  def from_element(id, {start_tick, end_tick}, attrs) do
+  @spec from_element(Tamale.id(), map()) :: {:ok, t()} | {:error, term()}
+  def from_element(id, attrs) do
     {pitch, attrs} = Map.pop(attrs, :pitch)
     {lyric, attrs} = Map.pop(attrs, :lyric)
     {annotation, attrs} = Map.pop(attrs, :annotation)
@@ -64,8 +66,6 @@ defmodule Coconut.Score.Note do
     with {:ok, key} <- cast_key(pitch) do
       new(%{
         id: id,
-        start_tick: start_tick,
-        duration_tick: end_tick - start_tick,
         key: key,
         lyric: lyric,
         annotation: annotation,
@@ -130,16 +130,9 @@ defmodule Coconut.Score.Note do
 
   The following are invalid:
 
-  * `start_tick` or `duration_tick` is negative
   * `lyric` is neither `nil` nor a string
   """
   @impl true
-  def validate(%__MODULE__{start_tick: start_tick}) when start_tick < 0,
-    do: {:error, {:invalid_negative_tick, start_tick}}
-
-  def validate(%__MODULE__{duration_tick: duration_tick}) when duration_tick < 0,
-    do: {:error, {:invalid_negative_tick, duration_tick}}
-
   def validate(%__MODULE__{lyric: lyric}) when not (is_nil(lyric) or is_binary(lyric)),
     do: {:error, {:lyric_not_support, lyric}}
 
@@ -148,38 +141,27 @@ defmodule Coconut.Score.Note do
   # ---- Business functions ----
 
   @doc """
-  Drags a note to a new key and/or start tick.
+  Drags a note to a new key.
 
-  Only modifies the note itself; overlap constraints are enforced downstream.
+  Only modifies the note itself; timing moves are span-table business
+  (see `Coconut.Operate`'s `:drag_note` request).
 
   ## Options
 
   Accepts a map or keyword list. Only the following keys are recognised:
 
-  - `:start_tick` — new start tick
   - `:key` — new pitch
   """
-  @spec drag_note(
-          t(),
-          %{optional(:start_tick) => Tick.t(), optional(:key) => Key.t()}
-          | keyword(Tick.t() | Key.t())
-        ) ::
+  @spec drag_note(t(), %{optional(:key) => Key.t()} | keyword(Key.t())) ::
           {:ok, t()} | {:error, term()}
-  def drag_note(note, new_key_or_tick) do
-    {new_key, new_key_or_tick} = new_key_or_tick |> Map.new() |> Map.pop(:key, note.key)
-    {new_start_tick, new_key_or_tick} = Map.pop(new_key_or_tick, :start_tick, note.start_tick)
+  def drag_note(note, new_key) do
+    {new_key, rest} = new_key |> Map.new() |> Map.pop(:key, note.key)
 
-    with 0 <- map_size(new_key_or_tick) do
-      update(note, key: new_key, start_tick: new_start_tick)
+    with 0 <- map_size(rest) do
+      update(note, key: new_key)
     else
-      _num -> {:error, {:extra_fields_exist, new_key_or_tick}}
+      _num -> {:error, {:extra_fields_exist, rest}}
     end
-  end
-
-  @doc "Update note's duration."
-  @spec drag_duration(t(), non_neg_integer()) :: {:ok, t()} | {:error, term()}
-  def drag_duration(note, new_duraion) do
-    update(note, duration_tick: new_duraion)
   end
 
   @doc "Update note's lyric."
@@ -243,39 +225,36 @@ defmodule Coconut.Score.Note do
   # ---- Split and Merge Note ----
 
   @doc """
-  Splits a note at an absolute tick position.
+  Splits a note's content at an absolute tick position.
 
-  Returns `{:ok, note_before, note_after}`. The trailing note gets a new ID.
-  `split_tick` must fall strictly inside the note (`start_tick < split_tick < end_tick`).
+  The span is injected by the caller (the track's spans table is the timing
+  authority); `split_tick` must fall strictly inside it
+  (`start < split_tick < end`).
 
-  `attrs` optionally overrides fields on the trailing note (e.g. a different lyric).
+  Returns `{:ok, note_before, note_after}`. Content is timing-free, so
+  `note_before` is the note itself; `note_after` gets `new_id` plus the
+  parent's content, overridable via `attrs` (e.g. a different lyric).
   """
-  @spec split(t(), Tick.t(), ID.t(t()), map() | keyword()) :: {:ok, t(), t()} | {:error, term()}
-  def split(note, split_tick, new_id, attrs \\ []) do
-    note_end = note.start_tick + note.duration_tick
-
+  @spec split(t(), span(), Tick.numeric_tick(), ID.t(t()), map() | keyword()) ::
+          {:ok, t(), t()} | {:error, term()}
+  def split(note, {start_tick, end_tick}, split_tick, new_id, attrs \\ []) do
     cond do
-      split_tick <= note.start_tick ->
-        {:error, {:split_tick_before_note, split_tick, note.start_tick}}
+      split_tick <= start_tick ->
+        {:error, {:split_tick_before_note, split_tick, start_tick}}
 
-      split_tick >= note_end ->
-        {:error, {:split_tick_after_note, split_tick, note_end}}
+      split_tick >= end_tick ->
+        {:error, {:split_tick_after_note, split_tick, end_tick}}
 
       true ->
-        {:ok, before} = update(note, duration_tick: split_tick - note.start_tick)
-
         extra_attrs =
           attrs
           |> Enum.into(%{})
-          # Ensure NoteID and tick exist
           |> Map.take([:key, :lyric, :annotation, :metadata])
 
         after_attrs =
           Map.merge(
             %{
               id: new_id,
-              start_tick: split_tick,
-              duration_tick: note_end - split_tick,
               key: note.key,
               lyric: note.lyric,
               annotation: note.annotation,
@@ -285,35 +264,35 @@ defmodule Coconut.Score.Note do
           )
 
         case new(after_attrs) do
-          {:ok, after_note} -> {:ok, before, after_note}
+          {:ok, after_note} -> {:ok, note, after_note}
           {:error, _} = err -> err
         end
     end
   end
 
   @doc """
-  Merges two notes.
+  Merges two notes' content into one.
 
-  `merged_id` is injected by the caller — Note does not generate IDs.
+  Spans are injected by the caller (same authority argument as `split/5`)
+  and used only for the gap check. `merged_id` is injected by the caller —
+  Note does not generate IDs.
 
   ## Options
 
-  - `:gap_tolerance` — maximum allowed gap between notes in ticks (default 0: must be adjacent or overlapping)
+  - `:gap_tolerance` — maximum allowed gap between the two spans in ticks (default 0: must be adjacent or overlapping)
   - `:lyric_merger` — pluggable lyric concatenation function (`({Note.t(), Note.t()} -> {:ok, term()} | {:error, term()})`); defaults to concatenating when both are non-nil
   - `:annotation_merger` — pluggable annotation merge function (`({Note.t(), Note.t()} -> {:ok, term()} | {:error, term()})`); defaults to the first non-nil value
 
   ## Behaviour
 
   - Both notes must share the same pitch (compared via `Key.to_midi/1`)
-  - Must overlap, or gap ≤ `gap_tolerance`
+  - Spans must overlap, or the gap ≤ `gap_tolerance`
   - Returns `{:ok, merged_note}` with the given `merged_id`
   - Merged annotation takes the first non-nil value
   """
-  @spec merge(t(), t(), ID.t(t()), keyword()) :: {:ok, t()} | {:error, term()}
-  def merge(note1, note2, merged_id, opts \\ []) do
+  @spec merge(t(), span(), t(), span(), ID.t(t()), keyword()) :: {:ok, t()} | {:error, term()}
+  def merge(note1, {s1, e1}, note2, {s2, e2}, merged_id, opts \\ []) do
     gap_tolerance = Keyword.get(opts, :gap_tolerance, 0)
-    note1_end = note1.start_tick + note1.duration_tick
-    note2_end = note2.start_tick + note2.duration_tick
 
     lyric_merger =
       Keyword.get(opts, :lyric_merger, fn note1, note2 ->
@@ -336,28 +315,22 @@ defmodule Coconut.Score.Note do
       Key.to_midi(note1.key) != Key.to_midi(note2.key) ->
         {:error, {:key_mismatch, Key.to_midi(note1.key), Key.to_midi(note2.key)}}
 
-      note1_end + gap_tolerance < note2.start_tick or
-          note2_end + gap_tolerance < note1.start_tick ->
-        {:error, {:gap_too_large, note1_end, note2.start_tick, gap_tolerance}}
+      e1 + gap_tolerance < s2 or e2 + gap_tolerance < s1 ->
+        {:error, {:gap_too_large, e1, s2, gap_tolerance}}
 
       true ->
-        do_merge(note1, note1_end, note2, note2_end, merged_id, lyric_merger, annotation_merger)
+        do_merge(note1, note2, merged_id, lyric_merger, annotation_merger)
     end
   end
 
   # ---- Toolkit functions ----
 
   # Execute merge
-  defp do_merge(note1, note1_end, note2, note2_end, merged_id, lyric_merger, annotation_merger) do
-    start_tick = min(note1.start_tick, note2.start_tick)
-    end_tick = max(note1_end, note2_end)
-
+  defp do_merge(note1, note2, merged_id, lyric_merger, annotation_merger) do
     with {:ok, lyric} <- lyric_merger.(note1, note2),
          {:ok, annotation} <- annotation_merger.(note1, note2) do
       %{
         id: merged_id,
-        start_tick: start_tick,
-        duration_tick: end_tick - start_tick,
         key: note1.key,
         lyric: lyric,
         annotation: annotation,

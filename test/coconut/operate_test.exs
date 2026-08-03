@@ -173,8 +173,6 @@ defmodule Coconut.OperateTest do
       assert %{
                "n2" => %Note{
                  id: "n2",
-                 start_tick: 240,
-                 duration_tick: 240,
                  key: %TwelveET{midi: 60}
                }
              } = changes.elements
@@ -320,7 +318,7 @@ defmodule Coconut.OperateTest do
       assert Workspace.latest_span(ws, @track, "n1") == {0, 240}
       assert Workspace.latest_span(ws, @track, "n2") == {240, 480}
 
-      assert %Note{id: "n2", start_tick: 240, key: %TwelveET{midi: 60}} =
+      assert %Note{id: "n2", key: %TwelveET{midi: 60}} =
                ws.side.elements_by_id["n2"]
 
       # The right half used to have no span at all — a second split validates now.

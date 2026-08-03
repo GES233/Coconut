@@ -232,9 +232,10 @@ side 结构一变所有引擎跟着碎。Map → Note 管线落地后，下游�
 
 **为什么痛**：两处都"像真的"，读错一处就是静默错位。
 
-**方向**（二选一，未拍）：a) Note 不存 tick，只做内容载体（key/lyric/
-metadata），时间一律走 spans；b) span 写回时同步 Note（apply_batch 里
-加同步点）。倾向 a，Note 更纯。
+**已定（2026-08-03）：方案 a**——Note 不存 tick，只做内容载体（key/lyric/
+metadata），时间一律走 spans 表。核实依据：lib 内无任何引擎读
+`Note.start_tick`（DiffSinger 组包用 spans 表），tick 字段事实上已是
+write-only；`Note.split/merge` 的几何校验改为由调用方注入 span。
 
 ### 11.3 side 杂物抽屉（随 11.1 顺带）
 
@@ -283,3 +284,36 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
   breaking change。
 - `Workspace.tempo_map/2` 每次现编 TempoMap；大工程下考虑缓存
   （与 tempos_by_version 一并想）。
+
+### 11.8 Track 抽象（已定 2026-08-03，与 11.1–11.3 同期施工）
+
+**已定方案**：引入 `Coconut.Track`（struct + behaviour），与 11.1–11.3
+合并为一次重构（"Track-ification"），避免 side/spans 归属代码二次搬迁。
+Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收的东西。
+
+- `%Track{id, module, space, spans_by_version, elements_by_id, patches,
+  dead_patches}`——Side 整个删除，Workspace 只剩 `id/edit_version/tracks`。
+- behaviour 回调（克制，不含 Audio 占位共 5 个）：`coord_domain/0`、
+  `cast_element/3`、`validate_gesture/3`、`split_inherit/2`、`view/1`。
+- 首发模块：`Track.Vocal`（Note 元素，tick 域）、`Track.Tempo`（bpm 裸 map，
+  tick 域，首元素删除保护落 validate_gesture）。`Track.Audio` 紧随其后，
+  `Track.Synth` 留位（参数面比 Vocal 简单，不预留实现）。
+- **Audio = 帧域轨道（已定）**：clip 的位置与内容都在帧/采样域——
+  `source_offset_frames`/`duration_frames`，Space 的 span 也是帧。
+  若用 tick 定位，span 随 tempo 编辑漂移，破坏 §4 "tick warp 与 tempo
+  无关"硬约定；v1 不做 time-stretch（DAW 的 musical/linear 之辩以
+  "帧域固定"收尾）。导入时经 TempoMap 换算落帧，之后 tempo 编辑不影响。
+  音量自动化等介入 = 将来的帧域 Metric 锚 channel（接 v2 帧空间锚）。
+- tempo 编辑的 Operation 同步：跨轨拖动 = 两轨各一次 apply_batch，
+  `edit_version` 全局每批 +1，客户端两批之间需重读版本；多轨原子入口
+  `apply_batches` 待跨轨拖动真做时再加。
+- 渲染管线形状向 `CheckRequest -> Artifact[Conflict] -> RenderRequest`
+  演进；本轮先做 Snapshot（11.1）+ edit_version 钉（11.5 的钉部分，
+  强制校验留给 GenServer 壳）。
+- 曲线模块与曲线参数的合并：留待 Audio 落地时一并评（音量自动化即曲线）。
+- 在接 Oi（主要是 orchid_stratum）前，不用考虑数据缓存，唯一要考虑的是
+  乐句分割。
+
+**Track.Audio 操作集**（实现时展开）：insert/delete/drag/split（右半
+`source_offset += split - start`，纯整数帧算术）/trim（拖缘 = Retime +
+offset 反向补偿，Track 元素钩子，不进 Operate 通用层）；merge v1 拒绝。
