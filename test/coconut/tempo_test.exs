@@ -10,7 +10,6 @@ defmodule Coconut.TempoTest do
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
         tracks: %{tempo: Track.new(:tempo, Track.Tempo)}
-
       })
 
     {:ok, ws: ws}

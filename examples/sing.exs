@@ -68,7 +68,7 @@ interventions = %{
 }
 
 {:ok, request} =
-  Request.new(%{workspace: ws, globals: %{steps: 20}, interventions: interventions})
+  Request.for_workspace(ws, globals: %{steps: 20}, interventions: interventions)
 
 # ---- 3. Check, then render ----
 IO.puts("check...")
@@ -77,8 +77,8 @@ case Engine.run_check({DiffSinger, config}, request) do
   {:ok, %{passed: true, checked: checked}} ->
     IO.puts("render... (diffusion takes a while)")
     {:ok, artifact} = Engine.run_render({DiffSinger, config}, request, checked)
-    IO.puts("wav:      #{artifact.path}")
-    IO.puts("duration: #{Float.round(artifact.duration_sec, 2)} s")
+    IO.puts("wav:      #{artifact.payload.path}")
+    IO.puts("duration: #{Float.round(artifact.payload.duration_sec, 2)} s")
 
   {:ok, %{passed: false, entries: entries}} ->
     IO.puts("vetoed:")

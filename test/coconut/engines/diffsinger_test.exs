@@ -99,7 +99,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   test "check assembles words from phonemized notes over the tempo map" do
-    {:ok, request} = Request.new(%{workspace: phonemized_ws()})
+    {:ok, request} = Request.for_workspace(phonemized_ws())
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
@@ -121,7 +121,7 @@ defmodule Coconut.Engines.DiffSingerTest do
         phonemes: [["zh", "h"], ["zh", "u"]]
       })
 
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
@@ -135,7 +135,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60})
 
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:error, {:missing_phonemes, ["n1"]}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -149,7 +149,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:tempo, "t0", :head, {0, 9600}, %{bpm: 120})
       |> insert(:vocal, "n1", :head, {0, 480}, %{phonemes: [["zh", "a"]]})
 
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:error, {:missing_pitch, ["n1"]}} = Engine.run_check({DiffSinger, config()}, request)
     refute_received {:fake_call, _}
@@ -162,7 +162,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "两"})
 
     config = config(%{encoder: Coconut.Engines.DiffSinger.Encoder})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
@@ -182,7 +182,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "l iang"})
 
     config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
@@ -197,7 +197,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a", lang: "ja"})
 
     config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
@@ -216,7 +216,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       })
 
     config = config(%{encoder: {Coconut.Engines.Encoders.Literal, %{lang: "zh"}}})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
@@ -233,7 +233,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:harmony, "h1", :head, {0, 960}, %{pitch: 55, lyric: "u"})
 
     config = config(%{encoder: {RecordingEncoder, %{test_pid: self()}}})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config}, request)
 
@@ -251,7 +251,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: " "})
 
     config = config(%{encoder: Coconut.Engines.Encoders.Literal})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:error, {:encoder_failed, {:empty_lyric, "n1"}}} =
              Engine.run_check({DiffSinger, config}, request)
@@ -266,7 +266,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, lyric: "a"})
 
     config = config(%{encoder: PartialEncoder})
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:error, {:encoder_incomplete, ["n1"]}} =
              Engine.run_check({DiffSinger, config}, request)
@@ -279,7 +279,7 @@ defmodule Coconut.Engines.DiffSingerTest do
       workspace(tempo: false)
       |> insert(:vocal, "n1", :head, {0, 480}, %{pitch: 60, phonemes: [["zh", "a"]]})
 
-    {:ok, request} = Request.new(%{workspace: ws})
+    {:ok, request} = Request.for_workspace(ws)
 
     assert {:ok, %{passed: true}} = Engine.run_check({DiffSinger, config()}, request)
 
@@ -294,7 +294,7 @@ defmodule Coconut.Engines.DiffSingerTest do
     interventions = %{{:port, :synth, :lyric} => %{input: "x"}}
 
     {:ok, request} =
-      Request.new(%{workspace: phonemized_ws(), globals: globals, interventions: interventions})
+      Request.for_workspace(phonemized_ws(), globals: globals, interventions: interventions)
 
     assert {:ok, %{passed: true, checked: checked}} =
              Engine.run_check({DiffSinger, config}, request)
@@ -303,15 +303,15 @@ defmodule Coconut.Engines.DiffSingerTest do
 
     assert artifact.globals == globals
     assert artifact.overrides == interventions
-    assert artifact.total_frames == 480
-    assert String.starts_with?(artifact.path, tmp_dir)
+    assert artifact.payload.total_frames == 480
+    assert String.starts_with?(artifact.payload.path, tmp_dir)
 
     # The check-stage probe (words + dur/pitch forwards) is handed to
     # render so the worker skips recomputing them.
     assert_received {:fake_call,
                      %{action: "render", out_path: out_path, globals: ^globals} = payload}
 
-    assert out_path == artifact.path
+    assert out_path == artifact.payload.path
     assert payload.words == checked.words
     assert payload.ph_dur == [10, 20]
     assert payload.pitch_pred_midi == [60.0, 62.0]
@@ -320,7 +320,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "pitch intervention becomes a second-domain override in the render payload" do
     interventions = %{{:port, "n2", :pitch} => %{input: [[480, 62], [960, 64]]}}
 
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), interventions: interventions)
 
     assert {:ok, %{passed: true, checked: checked}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -339,7 +339,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
   test "intervention on an unknown note vetoes at check before calling the worker" do
     interventions = %{{:port, "nope", :pitch} => %{input: [[0, 60.0]]}}
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), interventions: interventions)
 
     assert {:ok, %{passed: false, entries: [entry], checked: nil}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -351,7 +351,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "duration intervention becomes second-domain pins in the render payload" do
     interventions = %{{:port, "n1", :duration} => %{input: [[0, 96]]}}
 
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), interventions: interventions)
 
     assert {:ok, %{passed: true, checked: checked}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -367,7 +367,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
   test "duration pin with out-of-range phoneme index vetoes at check" do
     interventions = %{{:port, "n1", :duration} => %{input: [[5, 96]]}}
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), interventions: interventions)
 
     assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -379,7 +379,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   test "duration pins exceeding the note span veto at check" do
     # n1 spans 0.5 s; 0.5 + 0.25 s of pins overflows
     interventions = %{{:port, "n1", :duration} => %{input: [[0, 480], [1, 240]]}}
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), interventions: interventions)
 
     assert {:ok, %{passed: false, entries: [entry]}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -390,7 +390,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
   test "foreign ports are ignored" do
     interventions = %{{:port, :synth, :lyric} => %{input: "x"}}
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), interventions: interventions})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), interventions: interventions)
 
     assert {:ok, %{passed: true, checked: checked}} =
              Engine.run_check({DiffSinger, config()}, request)
@@ -401,13 +401,13 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   test "worker error propagates" do
-    {:ok, request} = Request.new(%{workspace: phonemized_ws()})
+    {:ok, request} = Request.for_workspace(phonemized_ws())
 
     assert {:error, :boom} = Engine.run_check({DiffSinger, config(%{fail: true})}, request)
   end
 
   test "missing voicebank_root is rejected before calling the worker" do
-    {:ok, request} = Request.new(%{workspace: phonemized_ws()})
+    {:ok, request} = Request.for_workspace(phonemized_ws())
     config = config() |> Map.delete(:voicebank_root)
 
     assert {:error, {:missing_config, :voicebank_root}} =
@@ -417,7 +417,7 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   test "globals gate rejects undeclared knobs before any worker call" do
-    {:ok, request} = Request.new(%{workspace: phonemized_ws(), globals: %{breathiness: 1}})
+    {:ok, request} = Request.for_workspace(phonemized_ws(), globals: %{breathiness: 1})
 
     assert {:ok, %{passed: false, entries: [%{kind: :global, key: :breathiness} | _]}} =
              Engine.run_check({DiffSinger, config()}, request)

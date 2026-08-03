@@ -2,8 +2,11 @@ defmodule Coconut.Engine.Request do
   @moduledoc """
   Input bundle for one engine check/render round.
 
-  Carries the workspace snapshot plus the folded interventions produced by
-  `Coconut.Resolve.run_check/3`.
+  Carries the flattened `Coconut.Engine.Snapshot` (never the workspace
+  itself, design doc §11.1) plus the folded interventions produced by
+  `Coconut.Resolve.run_check/3`. The snapshot pins the workspace's
+  `edit_version` — a `checked` bundle is only valid for the version it was
+  checked against (design doc §11.5).
 
   `globals` holds engine-level knobs not anchored to any note (gender,
   depth, quality steps, ...). They bypass the patch/digest/transport axis
@@ -12,13 +15,30 @@ defmodule Coconut.Engine.Request do
   engine's declared `:globals` spec before `check/2` is consulted.
   """
 
-  alias Coconut.Util.Object
+  alias Coconut.{Engine.Snapshot, Util.Object, Workspace}
 
   @type t :: %__MODULE__{
-          workspace: Coconut.Workspace.t(),
+          snapshot: Snapshot.t(),
           interventions: %{Coconut.Resolve.port_ref() => %{input: term()}},
           globals: %{atom() => term()}
         }
 
-  use Object, keys: [:workspace, interventions: %{}, globals: %{}]
+  use Object, keys: [:snapshot, interventions: %{}, globals: %{}]
+
+  @doc """
+  Build a Request pinned to the workspace's current edit version.
+
+  Options: `:interventions` / `:globals` (as in the struct), plus any
+  `Coconut.Engine.Snapshot.from_workspace/2` option (`:tpqn`).
+  """
+  @spec for_workspace(Workspace.t(), keyword()) :: {:ok, t()} | {:error, term()}
+  def for_workspace(%Workspace{} = ws, opts \\ []) do
+    with {:ok, snapshot} <- Snapshot.from_workspace(ws, opts) do
+      new(%{
+        snapshot: snapshot,
+        interventions: Keyword.get(opts, :interventions, %{}),
+        globals: Keyword.get(opts, :globals, %{})
+      })
+    end
+  end
 end

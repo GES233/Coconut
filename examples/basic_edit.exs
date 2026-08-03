@@ -41,8 +41,9 @@ ws =
 
 IO.puts("=== After insert ===")
 IO.inspect(ws.tracks[track].space.ids, label: "order")
-{:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
-IO.inspect(art.notes, label: "render")
+{:ok, request} = Request.for_workspace(ws)
+{:ok, art} = Engine.run_render(Mock, request, nil)
+IO.inspect(art.payload.notes, label: "render")
 
 # ---- 4. Mount patches (mount = capture base via projection) ----
 to_tick = fn
@@ -107,8 +108,9 @@ cp3 = mount.(%Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100,
 
 IO.puts("\n=== After drag n1 (0..480 -> 100..580) ===")
 IO.inspect(ws.tracks[track].space.ids, label: "order")
-{:ok, art} = Engine.run_render(Mock, %Request{workspace: ws}, nil)
-IO.inspect(art.notes, label: "render")
+{:ok, request} = Request.for_workspace(ws)
+{:ok, art} = Engine.run_render(Mock, request, nil)
+IO.inspect(art.payload.notes, label: "render")
 
 # ---- 6. Transport patches ----
 wp = WarpProvider.tick(Workspace.track_spans(ws, track))
@@ -160,7 +162,7 @@ case Resolve.run_check(ws, channels) do
     IO.puts("resolved #{length(resolved)} patches")
     IO.inspect(interventions, label: "interventions")
 
-    {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
+    {:ok, request} = Request.for_workspace(ws, interventions: interventions)
     {:ok, %{checked: checked}} = Engine.run_check(Mock, request)
     {:ok, artifact} = Engine.run_render(Mock, request, checked)
     IO.inspect(artifact.overrides, label: "engine overrides")

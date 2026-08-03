@@ -12,7 +12,7 @@ defmodule Coconut.Engines.Mock do
 
   @behaviour Coconut.Engine
 
-  alias Coconut.Engine.Request
+  alias Coconut.{Engine.Artifact, Engine.Request}
 
   @impl true
   def info(_),
@@ -32,16 +32,20 @@ defmodule Coconut.Engines.Mock do
 
   @impl true
   def render(%Request{} = request, _checked, _config) do
-    ws = request.workspace
-
     notes =
-      for {_track_id, track} <- ws.tracks,
-          {id, span} <- Coconut.Track.latest_spans(track),
+      for {_track_id, view} <- request.snapshot.tracks,
+          {id, element, span} <- view.elements,
           into: %{} do
-        data = Map.get(track.elements_by_id, id, %{})
-        {id, Map.put(data, :span, span)}
+        {id, Map.put(element, :span, span)}
       end
 
-    {:ok, %{notes: notes, overrides: request.interventions, globals: request.globals}}
+    {:ok,
+     %Artifact{
+       engine: "Mock Engine",
+       edit_version: request.snapshot.edit_version,
+       globals: request.globals,
+       overrides: request.interventions,
+       payload: %{notes: notes}
+     }}
   end
 end

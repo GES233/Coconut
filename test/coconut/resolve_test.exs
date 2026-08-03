@@ -39,7 +39,10 @@ defmodule Coconut.ResolveTest do
       Patch.new(%{
         track_id: @track,
         channel: :lyric,
-        anchor: %Tamale.Anchor.Ordinal{refs: [note_id], at_version: ws.tracks[@track].space.version},
+        anchor: %Tamale.Anchor.Ordinal{
+          refs: [note_id],
+          at_version: ws.tracks[@track].space.version
+        },
         patch: tp
       })
 
@@ -148,7 +151,7 @@ defmodule Coconut.ResolveTest do
         patch: %Tamale.Patch{base_digest: "whatever", payload: %{}}
       })
 
-      {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: false, entries: [entry]}} = Resolve.run_check(ws, channels())
     assert entry.kind == :unknown_channel
@@ -169,7 +172,7 @@ defmodule Coconut.ResolveTest do
         patch: tp
       })
 
-      {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
              Resolve.run_check(ws, %{pitch: Coconut.Engines.Channels.Pitch})
@@ -191,7 +194,7 @@ defmodule Coconut.ResolveTest do
         patch: tp
       })
 
-      {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
              Resolve.run_check(ws, %{duration: Coconut.Engines.Channels.Duration})
@@ -222,12 +225,12 @@ defmodule Coconut.ResolveTest do
     ws = attach_lyric_patch(ws, "n1", %{lyric: "らん"})
 
     {:ok, %{passed: true, interventions: interventions}} = Resolve.run_check(ws, channels())
-    {:ok, request} = Request.new(%{workspace: ws, interventions: interventions})
+    {:ok, request} = Request.for_workspace(ws, interventions: interventions)
 
     assert {:ok, %{passed: true, checked: nil}} = Engine.run_check(Mock, request)
     assert {:ok, artifact} = Engine.run_render(Mock, request, nil)
     assert artifact.overrides == interventions
-    assert artifact.notes["n1"].span == {0, 480}
-    assert artifact.notes["n1"].lyric == "ら"
+    assert artifact.payload.notes["n1"].span == {0, 480}
+    assert artifact.payload.notes["n1"].lyric == "ら"
   end
 end

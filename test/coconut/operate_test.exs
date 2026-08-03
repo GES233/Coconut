@@ -396,10 +396,10 @@ defmodule Coconut.OperateTest do
           patch: %Tamale.Patch{base_digest: "b", payload: %{}}
         })
 
-        {:ok, ws} = Workspace.attach_patch(ws, cp1)
+      {:ok, ws} = Workspace.attach_patch(ws, cp1)
       assert ws.tracks[@track].patches == [cp1]
 
-        {:ok, ws} = Workspace.attach_patches(ws, [cp2])
+      {:ok, ws} = Workspace.attach_patches(ws, [cp2])
       assert ws.tracks[@track].patches == [cp1, cp2]
     end
 

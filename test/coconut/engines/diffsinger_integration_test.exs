@@ -67,17 +67,16 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
     }
 
     {:ok, request} =
-      Request.new(%{
-        workspace: ws,
+      Request.for_workspace(ws,
         globals: %{gender: 0.2, steps: 10},
         interventions: interventions
-      })
+      )
 
     assert {:ok, %{passed: true, checked: checked}} =
              Engine.run_check({DiffSinger, config}, request)
 
     assert {:ok, artifact} = Engine.run_render({DiffSinger, config}, request, checked)
-    assert File.exists?(artifact.path)
+    assert File.exists?(artifact.payload.path)
     assert artifact.globals == %{gender: 0.2, steps: 10}
 
     # Score timing is authoritative: with per-word renormalization the
@@ -93,7 +92,6 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
         tracks: %{tempo: Track.new(:tempo, Track.Tempo), vocal: Track.new(:vocal, Track.Vocal)}
-
       })
 
     ws = insert(ws, :tempo, "t0", :head, {0, 20_000}, %{bpm: 120})

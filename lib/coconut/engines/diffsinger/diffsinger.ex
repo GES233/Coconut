@@ -14,8 +14,8 @@ defmodule Coconut.Engines.DiffSinger do
     note sequence so melisma and context-dependent readings have their
     phrase. Notes with neither are rejected at assembly time
     (`:missing_phonemes`, `:encoder_failed`, `:encoder_incomplete`).
-  - **tick → second conversion** — via the workspace tempo map when a tempo
-    track exists, else a flat 120 BPM fallback (the only place float
+  - **tick → second conversion** — via the snapshot's tempo map when a
+    tempo track exists, else a flat 120 BPM fallback (the only place float
     seconds enter; design doc §4).
   - **globals** — `gender` / `velocity` / `depth` / `steps` are declared in
     `info/1` and forwarded to the worker from `Request.globals`.
@@ -55,7 +55,6 @@ defmodule Coconut.Engines.DiffSinger do
       the voicebank's dsdict) and `Coconut.Engines.Encoders.Literal`.
       Manual for v1; voicebank-derived auto-selection waits for the
       voicebank declaration layer.
-    * `:tpqn` — ticks per quarter note (default 480)
 
   Client contract: `call(payload :: map(), config :: map()) ::
   {:ok, map()} | {:error, term()}`.
@@ -63,10 +62,9 @@ defmodule Coconut.Engines.DiffSinger do
 
   @behaviour Coconut.Engine
 
-  alias Coconut.{Engine.Request, Score.Key, Score.TempoMap, Workspace}
+  alias Coconut.{Engine.Artifact, Engine.Request, Score.Key, Score.TempoMap}
 
   @default_client Coconut.Engines.DiffSinger.PortClient
-  @default_tpqn 480
 
   @impl true
   def info(_config) do
@@ -116,12 +114,16 @@ defmodule Coconut.Engines.DiffSinger do
          payload = render_payload(bundle, checked, request.globals, out_path),
          {:ok, result} <- call_client(payload, config) do
       {:ok,
-       %{
-         path: Map.get(result, "path", out_path),
-         total_frames: Map.get(result, "total_frames"),
-         duration_sec: Map.get(result, "duration_sec"),
+       %Artifact{
+         engine: "DiffSinger",
+         edit_version: request.snapshot.edit_version,
          globals: request.globals,
-         overrides: request.interventions
+         overrides: request.interventions,
+         payload: %{
+           path: Map.get(result, "path", out_path),
+           total_frames: Map.get(result, "total_frames"),
+           duration_sec: Map.get(result, "duration_sec")
+         }
        }}
     end
   end
@@ -177,11 +179,11 @@ defmodule Coconut.Engines.DiffSinger do
   # Assembles everything the worker needs from a Request: the word list
   # and the frame-bound overrides, plus any override validation errors.
   defp assemble(%Request{} = request, config) do
-    tpqn = Map.get(config, :tpqn, @default_tpqn)
-    ws = request.workspace
+    snapshot = request.snapshot
+    tpqn = snapshot.tpqn
 
-    with {:ok, to_sec} <- sec_converter(ws, tpqn),
-         {:ok, notes} <- collect_notes(ws, config) do
+    with {:ok, to_sec} <- sec_converter(snapshot, tpqn),
+         {:ok, notes} <- collect_notes(snapshot, config) do
       words =
         Enum.map(notes, fn {_id, data, {start_tick, end_tick}} ->
           [phonemes_of(data), to_sec.(end_tick) - to_sec.(start_tick), Key.to_midi(data.key)]
@@ -264,24 +266,16 @@ defmodule Coconut.Engines.DiffSinger do
     end
   end
 
-  # Notes are collected per track (phrase context lives within a track),
-  # phonemes resolved there (explicit `:phonemes` win; the rest go to the
-  # configured encoder), then merged into one score-ordered list. Only
-  # note-bearing tracks contribute — the tempo track is not a score.
-  defp collect_notes(ws, config) do
+  # Notes come from the snapshot's per-track views (phrase context lives
+  # within a track), phonemes resolved there (explicit `:phonemes` win;
+  # the rest go to the configured encoder), then merged into one
+  # score-ordered list. Only note-bearing tracks contribute — the tempo
+  # track is not a score.
+  defp collect_notes(snapshot, config) do
     per_track =
-      ws.tracks
-      |> Map.reject(fn {_track_id, track} -> track.module == Coconut.Track.Tempo end)
-      |> Map.new(fn {track_id, track} ->
-        notes =
-          for {id, span} <- Coconut.Track.latest_spans(track),
-              data = Map.get(track.elements_by_id, id, %{}),
-              is_map(data),
-              do: {id, data, span}
-
-        {track_id,
-         Enum.sort_by(notes, fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)}
-      end)
+      snapshot.tracks
+      |> Map.reject(fn {_track_id, view} -> view.module == Coconut.Track.Tempo end)
+      |> Map.new(fn {track_id, view} -> {track_id, view.elements} end)
 
     with {:ok, per_track} <- resolve_phonemes(per_track, Map.get(config, :encoder), config) do
       notes =
@@ -357,12 +351,11 @@ defmodule Coconut.Engines.DiffSinger do
 
   defp phonemes_of(%Coconut.Score.Note{metadata: %{"phonemes" => phonemes}}), do: phonemes
 
-  # tick→sec via the tempo map when available; flat 120 BPM otherwise.
-  defp sec_converter(ws, tpqn) do
-    case Workspace.tempo_map(ws, tpqn: tpqn) do
-      {:ok, tempo_map} -> {:ok, fn tick -> TempoMap.tick_to_sec(tempo_map, tick, tpqn) end}
-      {:error, :no_tempo_track} -> {:ok, fn tick -> tick / (tpqn * 2.0) end}
-      {:error, _} = error -> error
-    end
-  end
+  # tick→sec via the snapshot's tempo map when available; flat 120 BPM
+  # otherwise (the only place float seconds enter; design doc §4).
+  defp sec_converter(%{tempo_map: nil}, tpqn),
+    do: {:ok, fn tick -> tick / (tpqn * 2.0) end}
+
+  defp sec_converter(%{tempo_map: tempo_map}, tpqn),
+    do: {:ok, fn tick -> TempoMap.tick_to_sec(tempo_map, tick, tpqn) end}
 end

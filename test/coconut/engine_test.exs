@@ -21,7 +21,7 @@ defmodule Coconut.EngineTest do
   end
 
   defp request(globals) do
-    {:ok, request} = Request.new(%{workspace: nil, globals: globals})
+    {:ok, request} = Request.new(%{snapshot: nil, globals: globals})
     request
   end
 
@@ -88,7 +88,7 @@ defmodule Coconut.EngineTest do
   end
 
   test "render passes globals through untouched" do
-    {:ok, request} = Request.new(%{workspace: workspace(), globals: %{depth: 1.5}})
+    {:ok, request} = Request.for_workspace(workspace(), globals: %{depth: 1.5})
 
     assert {:ok, %{passed: true, checked: nil}} = Engine.run_check(Mock, request)
     assert {:ok, artifact} = Engine.run_render(Mock, request, nil)
