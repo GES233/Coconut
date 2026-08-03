@@ -32,8 +32,10 @@ defmodule Coconut.Score.Note do
   @typedoc "A tick span `{start, end}` from the track's spans table."
   @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}
 
+  @type note_id :: ID.t(__MODULE__)
+
   @type t :: %__MODULE__{
-          id: ID.t(),
+          id: note_id(),
           key: Key.t(),
           lyric: String.t() | nil,
           annotation: String.t() | nil,

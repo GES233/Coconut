@@ -23,7 +23,7 @@ defmodule Coconut.Workspace do
   @type t :: %__MODULE__{
           id: ID.t(t()),
           edit_version: Tamale.version(),
-          tracks: %{Coconut.Operate.track_id() => Track.t()},
+          tracks: %{Track.track_id() => Track.t()},
           tempo: Track.t(),
           tpqn: pos_integer(),
           time_sigs: [Coconut.Score.TimeSig.time_sig_event(), ...]
@@ -42,7 +42,7 @@ defmodule Coconut.Workspace do
   # ---- Tracks ----
 
   @doc "Fetches a track by id; the tempo track's id routes to the dedicated field."
-  @spec fetch_track(t(), Coconut.Operate.track_id()) ::
+  @spec fetch_track(t(), Track.track_id()) ::
           {:ok, Track.t()} | {:error, {:unknown_track, term()}}
   def fetch_track(ws, track_id) do
     cond do
@@ -53,7 +53,7 @@ defmodule Coconut.Workspace do
   end
 
   @doc "All tracks as `{id, track}` pairs, tempo track first (fold order is not semantic)."
-  @spec all_tracks(t()) :: [{Coconut.Operate.track_id(), Track.t()}]
+  @spec all_tracks(t()) :: [{Track.track_id(), Track.t()}]
   def all_tracks(ws), do: [{ws.tempo.id, ws.tempo} | Map.to_list(ws.tracks)]
 
   # Write-back counterpart of fetch_track/2's routing.
@@ -83,7 +83,7 @@ defmodule Coconut.Workspace do
   """
   @spec apply_batch(
           t(),
-          Coconut.Operate.track_id(),
+          Track.track_id(),
           expected_version :: Tamale.version(),
           [Tamale.Op.t()],
           Coconut.Operate.side_changes()
@@ -120,7 +120,7 @@ defmodule Coconut.Workspace do
   """
   @spec transport_patches(
           t(),
-          Coconut.Operate.track_id(),
+          Track.track_id(),
           warp_provider :: Tamale.Transport.warp_provider() | nil
         ) :: {:ok, survivors :: [Coconut.Patch.t()], dead :: [term()]}
   def transport_patches(ws, track_id, warp_provider \\ nil) do
@@ -191,7 +191,7 @@ defmodule Coconut.Workspace do
   op log and the old span snapshots (design doc §11.3 — the "synchronous
   pruning" that keeps `spans_by_version` bounded).
   """
-  @spec truncate(t(), Coconut.Operate.track_id(), Tamale.version()) ::
+  @spec truncate(t(), Track.track_id(), Tamale.version()) ::
           {:ok, t()} | {:error, {:unknown_track, term()}}
   def truncate(ws, track_id, oldest_live_version) do
     with {:ok, track} <- fetch_track(ws, track_id) do
@@ -202,7 +202,7 @@ defmodule Coconut.Workspace do
   @doc """
   Returns the track's versioned span table, for `WarpProvider.tick/2`.
   """
-  @spec track_spans(t(), Coconut.Operate.track_id()) :: %{
+  @spec track_spans(t(), Track.track_id()) :: %{
           Tamale.version() => %{Tamale.id() => Track.span()}
         }
   def track_spans(ws, track_id) do
@@ -215,7 +215,7 @@ defmodule Coconut.Workspace do
   @doc """
   Returns the track's latest recorded span table. See `Track.latest_spans/1`.
   """
-  @spec latest_spans(t(), Coconut.Operate.track_id()) :: %{Tamale.id() => Track.span()}
+  @spec latest_spans(t(), Track.track_id()) :: %{Tamale.id() => Track.span()}
   def latest_spans(ws, track_id) do
     case fetch_track(ws, track_id) do
       {:ok, track} -> Track.latest_spans(track)
@@ -227,7 +227,7 @@ defmodule Coconut.Workspace do
   Returns the latest recorded span for a single element, or `nil`.
   See `Track.latest_span/2`.
   """
-  @spec latest_span(t(), Coconut.Operate.track_id(), Tamale.id()) :: Track.span() | nil
+  @spec latest_span(t(), Track.track_id(), Tamale.id()) :: Track.span() | nil
   def latest_span(ws, track_id, id) do
     case fetch_track(ws, track_id) do
       {:ok, track} -> Track.latest_span(track, id)

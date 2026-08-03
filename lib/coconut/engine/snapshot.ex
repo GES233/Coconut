@@ -22,7 +22,7 @@ defmodule Coconut.Engine.Snapshot do
         }
 
   @type t :: %__MODULE__{
-          tracks: %{Coconut.Operate.track_id() => track_view()},
+          tracks: %{Coconut.Track.track_id() => track_view()},
           tempo_map: Coconut.Score.TempoMap.t() | nil,
           edit_version: Tamale.version(),
           tpqn: pos_integer()

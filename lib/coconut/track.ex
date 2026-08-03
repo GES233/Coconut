@@ -36,8 +36,10 @@ defmodule Coconut.Track do
   @typedoc "The flattened score view: `[{id, element, span}]` ordered by `{start, id}`."
   @type view :: [{Tamale.id(), element :: term(), span()}]
 
+  @type track_id :: ID.t(__MODULE__)
+
   @type t :: %__MODULE__{
-          id: ID.t(),
+          id: track_id(),
           module: module(),
           space: Tamale.Space.t(),
           spans_by_version: %{Tamale.version() => %{Tamale.id() => span()}},

@@ -21,7 +21,7 @@ defmodule Coconut.Patch do
 
   @type t :: %__MODULE__{
           id: ID.t() | nil,
-          track_id: Coconut.Operate.track_id(),
+          track_id: Coconut.Track.track_id(),
           anchor: Tamale.Anchor.t(),
           patch: Tamale.Patch.t(),
           channel: atom()

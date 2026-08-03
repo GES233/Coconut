@@ -49,7 +49,7 @@ defmodule Coconut.Resolve do
   @typedoc "A single check failure. Entries are aggregated before vetoing."
   @type check_entry :: %{
           :kind => :conflict | :transport | :unknown_channel | :projection_failed,
-          :track_id => Coconut.Operate.track_id(),
+          :track_id => Coconut.Track.track_id(),
           :patch => Patch.t(),
           optional(:channel) => atom(),
           optional(:reason) => term()
