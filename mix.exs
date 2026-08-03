@@ -10,11 +10,15 @@ defmodule Coconut.MixProject do
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       aliases: [precommit: ["compile --warnings-as-errors", "format", "test"]],
       deps: deps(),
       description: @description
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   def application do
     []

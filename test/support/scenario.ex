@@ -1,0 +1,148 @@
+defmodule Coconut.Scenario do
+  @moduledoc """
+  Golden scenario contract, ported from zongzi_feasibility's
+  Scenario/Measurer pattern (design doc §10 item 2).
+
+  Only the contract and the adversarial-round driver came over — the
+  Measurer's PNG/HTML report stayed behind: it was bound to a real engine
+  projection producing plots, and coconut's projections are channel-supplied
+  digest slices with nothing to draw.
+
+  Flow (driven by `run_scenario/1`):
+
+  1. `setup/0` — build a workspace, mount patches, supply check channels.
+  2. round 1 — baseline check (no edit).
+  3. `edits/1` — each op one adversarial round: `Operate` lower →
+     `Workspace.apply_batch` → `Resolve.run_check`.
+  4. `expect/1` — judges all rounds, `:ok` or `{:miss, message}`.
+
+  The round record handed to `expect/1`:
+
+      %{
+        round: pos_integer(),
+        op: :baseline | Coconut.Operate.request(),
+        passed: boolean(),
+        survivors: [Coconut.Patch.t()],   # check-time survivors (pass only)
+        dead: [{Coconut.Patch.t(), term()}],  # write-time graveyard
+        entries: [Coconut.Resolve.check_entry()]
+      }
+  """
+
+  alias Coconut.{Operate, Resolve, Track, Workspace}
+  alias Coconut.Util.ID
+
+  @vocal_track "vocal"
+
+  @callback id() :: String.t()
+  @callback title() :: String.t()
+  @callback setup() :: {Workspace.t(), %{atom() => Resolve.channel_spec()}}
+  @callback edits(Workspace.t()) :: [Operate.request()]
+  @callback expect(%{rounds: [map()], final_ws: Workspace.t()}) :: :ok | {:miss, String.t()}
+
+  @doc "Runs one scenario, returning `%{id, title, verdict, rounds}`."
+  def run_scenario(scenario) do
+    {ws, channels} = scenario.setup()
+    ops = [:baseline | scenario.edits(ws)]
+
+    {rounds, final_ws} =
+      ops
+      |> Enum.with_index(1)
+      |> Enum.map_reduce(ws, fn {op, i}, ws ->
+        ws = apply_edit(ws, op)
+        {:ok, check} = Resolve.run_check(ws, channels)
+        {summarize_round(i, op, ws, check), ws}
+      end)
+
+    verdict = scenario.expect(%{rounds: rounds, final_ws: final_ws})
+    %{id: scenario.id(), title: scenario.title(), verdict: verdict, rounds: rounds}
+  end
+
+  # ---- Round driving ----
+
+  defp apply_edit(ws, :baseline), do: ws
+
+  defp apply_edit(ws, op) do
+    track_id = elem(op, 1)
+    :ok = Operate.validate(op, ws)
+    {:ok, ops, changes} = Operate.lower(op, ws, %Operate.Config{})
+    changes = maybe_cast_edit(op, ws, changes)
+    {:ok, ws} = Workspace.apply_batch(ws, track_id, ws.edit_version, ops, changes)
+    ws
+  end
+
+  # `edit_note` lowering is a stub (`:touch` marker): the content write is
+  # the caller's business, so the runner plays caller — casts the attrs via
+  # the track module and upserts the element with the batch.
+  defp maybe_cast_edit({:edit_note, track_id, id, attrs}, ws, changes) do
+    track = Map.fetch!(ws.tracks, track_id)
+    {:ok, element} = track.module.cast_element(id, Track.latest_span(track, id), attrs)
+    %{changes | elements: Map.put(changes.elements, id, element)}
+  end
+
+  defp maybe_cast_edit(_op, _ws, changes), do: changes
+
+  defp summarize_round(i, op, ws, check) do
+    base = %{round: i, op: op, dead: dead_patches(ws)}
+
+    case check do
+      %{passed: true, survivors: survivors} ->
+        Map.merge(base, %{passed: true, survivors: survivors, entries: []})
+
+      %{passed: false, entries: entries} ->
+        Map.merge(base, %{passed: false, survivors: [], entries: entries})
+    end
+  end
+
+  defp dead_patches(ws) do
+    Enum.flat_map(ws.tracks, fn {_id, track} -> track.dead_patches end)
+  end
+
+  # ---- Scenario authoring helpers ----
+
+  @doc "An empty workspace with a single vocal track `\"vocal\"`."
+  def base_workspace do
+    {:ok, track} = Track.new(%{id: @vocal_track, module: Track.Vocal})
+
+    {:ok, ws} =
+      Workspace.new(%{
+        id: ID.generate_id("WSpc_"),
+        edit_version: 0,
+        tracks: %{@vocal_track => track}
+      })
+
+    ws
+  end
+
+  @doc "Inserts a note into the vocal track through the full Operate path."
+  def insert_note(ws, id, after_id, span, attrs) do
+    req = {:insert_note, @vocal_track, id, after_id, span, attrs}
+    :ok = Operate.validate(req, ws)
+    {:ok, ops, changes} = Operate.lower(req, ws, %Operate.Config{})
+    {:ok, ws} = Workspace.apply_batch(ws, @vocal_track, ws.edit_version, ops, changes)
+    ws
+  end
+
+  @doc """
+  Mounts a note-anchored patch, capturing the current element's canonical
+  projection as the base — the mount-at-edit-time flow.
+  """
+  def mount_note_patch(ws, note_id, channel, payload) do
+    track = Map.fetch!(ws.tracks, @vocal_track)
+    element = Map.fetch!(track.elements_by_id, note_id)
+    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(element), payload)
+
+    {:ok, cp} =
+      Coconut.Patch.new(%{
+        track_id: @vocal_track,
+        channel: channel,
+        anchor: %Tamale.Anchor.Ordinal{refs: [note_id], at_version: track.space.version},
+        patch: tp
+      })
+
+    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    ws
+  end
+
+  @doc "The default check channels: lyric on the vocal track."
+  def default_channels, do: %{lyric: Coconut.Engines.Channels.Lyric}
+end

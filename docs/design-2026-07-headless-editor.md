@@ -2,8 +2,8 @@
 
 > 2026-07-29 调研讨论存档。来源：对 Qy 下 tamale / oi / equinox / zongzi /
 > zongzi_feasibility 五个项目的调研结论与架构决策。状态：部分实现
-> （2026-08-02 更新：Workspace 内核、WarpProvider、TempoMap、桥接层
-> Resolve 与 Engine 两段式已落地，逐项进度见第 10 节标注）。
+> （2026-08-03 更新：Track-ification（§11.1–11.3、11.8）、拍号入 Workspace、
+> golden 场景最小集已落地，逐项进度见第 10 节标注）。
 
 ## 1. 定位与选型
 
@@ -16,8 +16,8 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 - **集成参照 = equinox**（`Qy/equinox`）：domain + kernel 两层（去掉 ui_shell）
   即 headless editor 的骨架；Runner 的"两段式 check + 装配 + Blackboard 增量
   缓存"架构照搬，其中 zongzi Declaration 部分换成 tamale。
-- zongzi / zongzi_feasibility 不再直接使用；后者的 Scenario + Measurer
-  golden 场景验证台模式移植为 coconut 的验收测试。
+- zongzi / zongzi_feasibility 不再直接使用；后者的 Scenario 模式已移植为
+  coconut 的验收测试（最小集，Measurer 报告台不搬，见 §10 第 2 条）。
 
 ## 2. 总体架构
 
@@ -25,9 +25,10 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 接口层（Elixir API / JSON-RPC stdio / CLI / MCP，可扩展）
   → command 翻译 + dispatch（按 workspace_id 路由）
   → Workspace（聚合根，GenServer，单写者，命令全序点）
-      tempo_space: Space.t()              # tempo 轨（全工程一条）
-      tracks: %{track_id => Space.t()}    # 音符轨
-      side: 版本化 tempo 快照 / span 表 / elements_by_id / patches
+      tracks: %{track_id => Track.t()}    # tempo 轨是普通 track（Track.Tempo）
+      tpqn / time_sigs                    # 工程级：tick 分辨率 + 拍号事件
+      Track = Space.t() + 侧表（版本化 span 表 / elements_by_id）
+              + patches / dead_patches（坟场）
     命令处理流程：
       1. 校验 + base version 检查（过期拒绝，幂等）
       2. lowering：编辑手势 → op 批次（拖音符 = Move+Retime 同批）
@@ -122,8 +123,9 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 - bpm 以 milli-bpm 整数存储（有理数）；请求侧收普通 bpm 数值，由
   `Tempo.cast_bpm/1` 在 lower 时归一化（float 只在此一处舍入）；
 - tempo 编辑自动落 op log（Insert/Delete/Retime），为帧 warp 提供原料；
-- 平铺约定（待定，倾向宽松）：洞 = 继承前一元素 bpm，且首元素受保护
-  不可删除；
+- 平铺约定：已定（2026-08-03），宽松——洞由阶梯语义自然继承前一元素
+  bpm（TempoMap 段持续至下一事件），首元素受保护不可删除（已落
+  `Track.Tempo.validate_gesture/3`）；
 - `:tick` provider 对 tempo log 永远返回 identity；tempo Space 自身几乎
   不会被挂锚，其角色是"序列化容器 + log 发生器"；
 - 拍号（TimeSig）：已定（2026-08-03）——**不作 track**，落 `Workspace`
@@ -144,8 +146,8 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 - 撤销/重做 = 追加逆批次（append-only，不写回滚）——inverse batch 生成
   逻辑需自写；
 - 跨轨拖动 = 源 Space Delete + 目标 Space Insert，锚判死由策略层重挂
-  （"Relocation is policy, not transport"；死 patch 在 `side.dead_patches`
-  等策略层收取）；
+  （"Relocation is policy, not transport"；死 patch 在各轨的
+  `track.dead_patches` 等策略层经 `Workspace.take_dead_patches/1` 收取）；
 - 跨 Space 原子性由 Workspace 串行化 + 校验前置保证；
 - 非单调碰撞（扩张/右移压过邻域）的 Metric 锚按旧域序水位线裁决：先到
   先得像，后续 identity 截断、冲突段成洞，受影响锚死于 transport
@@ -171,8 +173,9 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    `Coconut.Engines.DiffSinger` + `lib/coconut/engines/diffsinger/worker.py`（NDJSON stdio）
    接入；UTAU classic 备选，歌词→请求 token 的 Encoder 层单开；
 2. 坐标基准：已定（tick 权威 + 帧 + 微秒，见第 4 节）；
-3. 首发 channel 清单——方向已定（2026-08-02）：抽象为 `Coconut.Channel`
-   behaviour，不写死；首发候选音素 / 音素时长 / 音高（对齐 DiffSinger 的
+3. 首发 channel 清单——已定（2026-08-02）：抽象为 `Coconut.Channel`
+   behaviour，不写死；首发音素 / 音素时长 / 音高三路已落地
+   （`Engines.Channels.Lyric` / `Duration` / `Pitch`，对齐 DiffSinger 的
    tokens/durations/f0 三路模型输入），每 channel 一个 adapter：warp_payload
    + digest 投影，是工作量乘数；
 4. API 边界形状：首发建议 Elixir API + JSON-RPC/stdio + CLI 三件套，
@@ -183,8 +186,19 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
 1. Workspace 纯函数内核：lowering + transport（命令流第 2、4 步）——已完成
    （`Coconut.Workspace` / `Coconut.Operate`，写时 transport + 死 patch 坟场）；
-2. golden 场景验证台（移植 zongzi_feasibility 的 Scenario/Measurer 模式，
-   先翻 G-INT 家族）——未开始；
+2. golden 场景验证台（移植 zongzi_feasibility 的 Scenario 模式）——
+   已落地最小集，暂停扩家族（已定 2026-08-03）：只搬 Scenario 契约 +
+   对抗轮驱动（`test/support/scenario.ex`，runner 直接走
+   `Operate → apply_batch → Resolve.run_check`），Measurer 的 PNG/HTML
+   报告不搬（绑真引擎投影出图，coconut 的投影是 channel digest 切片，
+   无图可画）；G-INT-01/02 已落地（`test/support/scenarios/`，挂
+   `test/coconut/scenarios_test.exs`，不挂 :integration）。
+   G-INT-01 按 coconut 语义重写：zongzi 的 split 裂子干预不搬，
+   patch 存活于左半、右半天然无 patch 钉为验收点。
+   暂停理由：验证台初衷是"没有编辑器时的假编辑器"，如今编辑回路
+   已成型、机制面由常规 ExUnit 覆盖；难场景（G-PRE 族、相对曲线）
+   需引擎投影级 snapshot，等真实投影/曲线落地后直接对 coconut
+   语义写新验收，不再回翻 zongzi；
 3. tamale 接入 + warp_provider（:tick 非 ripple 版）——已完成
    （`Coconut.WarpProvider`）；
 4. Tempo Track Space + TempoMap fold——已完成（`Coconut.Score.Tempo` /
@@ -322,7 +336,8 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
 不重叠约束的挂载点。`Track.Audio`（帧域）与 `Track.Synth` 未实现。
 
 - `%Track{id, module, space, spans_by_version, elements_by_id, patches,
-  dead_patches}`——Side 整个删除，Workspace 只剩 `id/edit_version/tracks`。
+  dead_patches}`——Side 整个删除，Workspace 只剩 `id/edit_version/tracks`
+  + 工程级 `tpqn/time_sigs`（§6 拍号条）。
 - behaviour 回调（克制，不含 Audio 占位共 5 个）：`coord_domain/0`、
   `cast_element/3`、`validate_gesture/3`、`split_inherit/2`、`view/1`。
 - 首发模块：`Track.Vocal`（Note 元素，tick 域）、`Track.Tempo`（bpm 裸 map，
