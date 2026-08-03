@@ -14,7 +14,7 @@ defmodule Coconut.Operate do
   - lowering does NOT apply anything; `Workspace.apply_batch/2` is the writer.
   """
 
-  alias Coconut.Score.{Tempo, Note}
+  alias Coconut.Track
   alias Tamale.Op.{Delete, Insert, Merge, Move, Retime, Split}
 
   # ---- Config ----
@@ -55,8 +55,10 @@ defmodule Coconut.Operate do
   `old_span` in `drag_note` is the span captured by the caller at drag-start;
   Retime needs both ends to keep the op log self-contained for warp construction.
 
-  For `:tempo` inserts, `attrs.bpm` is a plain bpm number (floats allowed) and
-  is normalized to exact milli-bpm during lowering (`Coconut.Score.Tempo.cast_bpm/1`).
+  For `:tempo` inserts, `attrs.bpm` is a plain bpm number (floats allowed),
+  normalized to exact milli-bpm by the tempo track module's `cast_element/3`
+  (the single rounding point). Element casting in general is the track
+  module's business; Operate only shapes ops and span entries.
   """
   @type request ::
           {:insert_note, track_id, Tamale.id(), Tamale.id() | :head, span(), attrs :: map()}
@@ -104,32 +106,17 @@ defmodule Coconut.Operate do
   adjacent, etc. Returns `:ok` or `{:error, reason}`.
   """
   @spec validate(request(), Coconut.Workspace.t()) :: :ok | {:error, term()}
-  # Tempo inserts additionally require a castable bpm (normalized at lower time).
-  def validate({:insert_note, :tempo, id, after_id, {start_t, end_t}, attrs}, ws) do
-    with {:ok, _milli_bpm} <- Tempo.cast_bpm(Map.get(attrs, :bpm)),
-         {:ok, track} <- track_context(ws, :tempo),
-         :ok <- id_fresh?(track.space, id),
-         :ok <- after_valid?(track.space, after_id),
-         :ok <- span_valid?(start_t, end_t) do
-      :ok
-    end
-  end
-
+  # Element casting (Note for vocal, bpm normalization for tempo) and
+  # track-type-specific legality (e.g. tempo's first-element protection)
+  # live on the track module — Operate owns only generic geometry and
+  # sequence checks.
   def validate({:insert_note, track_id, id, after_id, {start_t, end_t}, attrs}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- id_fresh?(track.space, id),
          :ok <- after_valid?(track.space, after_id),
          :ok <- span_valid?(start_t, end_t),
-         {:ok, _note} <- Note.from_element(id, attrs) do
-      :ok
-    end
-  end
-
-  def validate({:delete_note, :tempo, id}, ws) do
-    with {:ok, track} <- track_context(ws, :tempo),
-         :ok <- id_live?(track, id),
-         :ok <- id_in_space?(track.space, id),
-         :ok <- not_first?(track.space, id) do
+         {:ok, _element} <- track.module.cast_element(id, {start_t, end_t}, attrs),
+         :ok <- track.module.validate_gesture(:insert, track, %{id: id, span: {start_t, end_t}}) do
       :ok
     end
   end
@@ -137,7 +124,8 @@ defmodule Coconut.Operate do
   def validate({:delete_note, track_id, id}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- id_live?(track, id),
-         :ok <- id_in_space?(track.space, id) do
+         :ok <- id_in_space?(track.space, id),
+         :ok <- track.module.validate_gesture(:delete, track, %{id: id}) do
       :ok
     end
   end
@@ -201,30 +189,16 @@ defmodule Coconut.Operate do
   """
   @spec lower(request(), Coconut.Workspace.t(), Config.t()) ::
           {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
-  def lower({:insert_note, :tempo, id, after_id, span, attrs}, _ws, _cfg) do
-    # bpm enters as a plain number and is stored as exact milli-bpm.
-    with {:ok, milli_bpm} <- Tempo.cast_bpm(Map.get(attrs, :bpm)) do
+  def lower({:insert_note, track_id, id, after_id, span, attrs}, ws, _cfg) do
+    # The track module casts the element (Note for vocal, milli-bpm map
+    # for tempo); Operate only shapes the op and the span entry.
+    with {:ok, track} <- track_context(ws, track_id),
+         {:ok, element} <- track.module.cast_element(id, span, attrs) do
       ops = [%Insert{id: id, after_id: after_id}]
 
       changes = %{
         @empty_side_changes
-        | elements: %{id => Map.put(attrs, :bpm, milli_bpm)},
-          span_snapshot: %{id => span}
-      }
-
-      {:ok, ops, changes}
-    end
-  end
-
-  def lower({:insert_note, _track, id, after_id, span, attrs}, _ws, _cfg) do
-    # Note tracks store Score.Note structs (Map → Note); extra attrs are
-    # carried in the note's metadata.
-    with {:ok, note} <- Note.from_element(id, attrs) do
-      ops = [%Insert{id: id, after_id: after_id}]
-
-      changes = %{
-        @empty_side_changes
-        | elements: %{id => note},
+        | elements: %{id => element},
           span_snapshot: %{id => span}
       }
 
@@ -264,53 +238,58 @@ defmodule Coconut.Operate do
     {:ok, ops, changes}
   end
 
-  def lower({:split_note, track, id, at_tick, new_id}, ws, _cfg) do
+  def lower({:split_note, track_id, id, at_tick, new_id}, ws, _cfg) do
     ops = [%Split{id: id, children: [id, new_id]}]
 
-    # Split reads the old span from workspace state — this is NOT the same
+    # Split reads the old span from track state — this is NOT the same
     # as back-reading for Retime. Split is identity-shaped (no warp), so
     # the span cut is pure geometry, not a warp ingredient.
-    case Coconut.Workspace.latest_span(ws, track, id) do
-      {s, e} when s < at_tick and at_tick < e ->
-        # The right half inherits the parent's payload; lyric/tuning policy
-        # after a split is the caller's business (see :edit_note).
-        changes = %{
-          @empty_side_changes
-          | elements: %{
-              new_id => inherit_element(Map.get(ws.tracks[track].elements_by_id, id), new_id, at_tick, e)
-            },
-            span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
-        }
+    with {:ok, track} <- track_context(ws, track_id) do
+      case Track.latest_span(track, id) do
+        {s, e} when s < at_tick and at_tick < e ->
+          # The right half's payload policy belongs to the track module
+          # (vocal inherits the parent's content; lyric/tuning after a
+          # split is the caller's business, see :edit_note).
+          parent = Map.get(track.elements_by_id, id)
 
-        {:ok, ops, changes}
+          changes = %{
+            @empty_side_changes
+            | elements: %{new_id => track.module.split_inherit(parent, new_id)},
+              span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
+          }
 
-      _ ->
-        {:error, :unreachable}
+          {:ok, ops, changes}
+
+        _ ->
+          {:error, :unreachable}
+      end
     end
   end
 
-  def lower({:merge_notes, track, ids}, ws, _cfg) do
+  def lower({:merge_notes, track_id, ids}, ws, _cfg) do
     [into | rest] = ids
     ops = [%Merge{ids: ids, into: into}]
 
-    spans = Enum.map(ids, &Coconut.Workspace.latest_span(ws, track, &1))
+    with {:ok, track} <- track_context(ws, track_id) do
+      spans = Enum.map(ids, &Track.latest_span(track, &1))
 
-    if Enum.any?(spans, &is_nil/1) do
-      {:error, :unreachable}
-    else
-      # Composite span runs from the earliest start to the latest end.
-      # `into` keeps its own element payload — merging content (lyrics
-      # etc.) is domain policy, see `Coconut.Score.Note.merge/4`.
-      {starts, ends} = Enum.unzip(spans)
-      deletable = Map.new(rest, &{&1, :delete})
+      if Enum.any?(spans, &is_nil/1) do
+        {:error, :unreachable}
+      else
+        # Composite span runs from the earliest start to the latest end.
+        # `into` keeps its own element payload — merging content (lyrics
+        # etc.) is domain policy, see `Coconut.Score.Note.merge/6`.
+        {starts, ends} = Enum.unzip(spans)
+        deletable = Map.new(rest, &{&1, :delete})
 
-      changes = %{
-        @empty_side_changes
-        | elements: deletable,
-          span_snapshot: Map.put(deletable, into, {Enum.min(starts), Enum.max(ends)})
-      }
+        changes = %{
+          @empty_side_changes
+          | elements: deletable,
+            span_snapshot: Map.put(deletable, into, {Enum.min(starts), Enum.max(ends)})
+        }
 
-      {:ok, ops, changes}
+        {:ok, ops, changes}
+      end
     end
   end
 
@@ -328,14 +307,6 @@ defmodule Coconut.Operate do
   end
 
   # ---- Helpers ----
-
-  # The right half inherits the parent's payload; content is timing-free
-  # (Note holds no tick), so inheriting is just an id swap. Lyric/tuning
-  # policy after a split is the caller's business (see :edit_note).
-  defp inherit_element(%Note{} = parent, new_id, _start_tick, _end_tick),
-    do: %{parent | id: new_id}
-
-  defp inherit_element(element, _new_id, _start_tick, _end_tick), do: element || %{}
 
   defp track_context(ws, track_id) do
     case Map.fetch(ws.tracks, track_id) do
@@ -380,14 +351,6 @@ defmodule Coconut.Operate do
 
   defp not_self?(id, id), do: {:error, {:self_referential, id}}
   defp not_self?(_id, _after), do: :ok
-
-  defp not_first?(space, id) do
-    if space.ids == [] or hd(space.ids) != id do
-      :ok
-    else
-      {:error, {:tempo_first_protected, id}}
-    end
-  end
 
   defp span_valid?(start_t, end_t)
        when is_integer(start_t) and is_integer(end_t) and
