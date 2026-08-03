@@ -87,11 +87,14 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
 
   # 120 BPM → 0.5 s per 480 ticks.
   defp tigers_workspace do
+    {:ok, tempo} = Track.new(%{id: :tempo, module: Track.Tempo})
+    {:ok, vocal} = Track.new(%{id: :vocal, module: Track.Vocal})
+
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{tempo: Track.new(:tempo, Track.Tempo), vocal: Track.new(:vocal, Track.Vocal)}
+        tracks: %{tempo: tempo, vocal: vocal}
       })
 
     ws = insert(ws, :tempo, "t0", :head, {0, 20_000}, %{bpm: 120})

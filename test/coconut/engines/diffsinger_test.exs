@@ -67,10 +67,13 @@ defmodule Coconut.Engines.DiffSingerTest do
   end
 
   defp maybe_tempo(opts) do
-    base = %{vocal: Track.new(:vocal, Track.Vocal), harmony: Track.new(:harmony, Track.Vocal)}
+    {:ok, vocal} = Track.new(%{id: :vocal, module: Track.Vocal})
+    {:ok, harmony} = Track.new(%{id: :harmony, module: Track.Vocal})
+    base = %{vocal: vocal, harmony: harmony}
 
     if Keyword.get(opts, :tempo, true) do
-      Map.put(base, :tempo, Track.new(:tempo, Track.Tempo))
+      {:ok, tempo} = Track.new(%{id: :tempo, module: Track.Tempo})
+      Map.put(base, :tempo, tempo)
     else
       base
     end

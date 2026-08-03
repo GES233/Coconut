@@ -7,11 +7,13 @@ defmodule Coconut.TrackTest do
   @track :vocal
 
   setup do
+    {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})
+
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{@track => Track.new(@track, Track.Vocal)}
+        tracks: %{@track => track}
       })
 
     {:ok, ws: ws}

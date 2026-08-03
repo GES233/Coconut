@@ -26,11 +26,14 @@ config = %{
 }
 
 # ---- 1. Score: tempo + notes (lyric + pitch, phonemes come from the encoder) ----
+{:ok, tempo_track} = Track.new(%{id: :tempo, module: Track.Tempo})
+{:ok, vocal_track} = Track.new(%{id: :vocal, module: Track.Vocal})
+
 {:ok, ws} =
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
-    tracks: %{tempo: Track.new(:tempo, Track.Tempo), vocal: Track.new(:vocal, Track.Vocal)}
+    tracks: %{tempo: tempo_track, vocal: vocal_track}
   })
 
 insert = fn ws, track, id, after_id, span, attrs ->

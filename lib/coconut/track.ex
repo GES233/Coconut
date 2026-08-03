@@ -92,18 +92,6 @@ defmodule Coconut.Track do
     end
   end
 
-  # ---- Constructor ----
-
-  @doc "Create a track of the given module, wrapping a fresh `Tamale.Space`."
-  @spec new(term(), module(), Tamale.Space.t()) :: t()
-  def new(id, module, space \\ %Tamale.Space{}) do
-    %__MODULE__{
-      id: id,
-      module: module,
-      space: space
-    }
-  end
-
   # ---- Span table ----
 
   @doc "The track's versioned span table, for `Coconut.WarpProvider.tick/2`."

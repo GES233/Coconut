@@ -5,11 +5,13 @@ defmodule Coconut.TempoTest do
   alias Coconut.Util.ID
 
   setup do
+    {:ok, tempo} = Track.new(%{id: :tempo, module: Track.Tempo})
+
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{tempo: Track.new(:tempo, Track.Tempo)}
+        tracks: %{tempo: tempo}
       })
 
     {:ok, ws: ws}
@@ -310,7 +312,8 @@ defmodule Coconut.TempoTest do
     end
 
     test "note inserts on regular tracks are untouched by bpm rules", %{ws: ws} do
-      ws = put_in(ws.tracks[:vocal], Track.new(:vocal, Track.Vocal))
+      {:ok, vocal} = Track.new(%{id: :vocal, module: Track.Vocal})
+      ws = put_in(ws.tracks[:vocal], vocal)
 
       {:ok, _ops, changes} =
         Operate.lower(

@@ -10,14 +10,18 @@ cfg = %Operate.Config{}
 track_a = :vocal_a
 track_b = :vocal_b
 
+{:ok, tempo_track} = Track.new(%{id: :tempo, module: Track.Tempo})
+{:ok, vocal_a} = Track.new(%{id: track_a, module: Track.Vocal})
+{:ok, vocal_b} = Track.new(%{id: track_b, module: Track.Vocal})
+
 {:ok, ws} =
   Workspace.new(%{
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
     tracks: %{
-      :tempo => Track.new(:tempo, Track.Tempo),
-      track_a => Track.new(track_a, Track.Vocal),
-      track_b => Track.new(track_b, Track.Vocal)
+      :tempo => tempo_track,
+      track_a => vocal_a,
+      track_b => vocal_b
     }
   })
 

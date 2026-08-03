@@ -8,11 +8,13 @@ defmodule Coconut.OperateTest do
   @track :vocal
 
   setup do
+    {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})
+
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tracks: %{@track => Track.new(@track, Track.Vocal)}
+        tracks: %{@track => track}
       })
 
     {:ok, ws: ws}
@@ -597,7 +599,8 @@ defmodule Coconut.OperateTest do
 
     test "patches for other tracks pass through", %{ws: ws} do
       other_track = :harmony
-      ws = put_in(ws.tracks[other_track], Track.new(other_track, Track.Vocal))
+      {:ok, other} = Track.new(%{id: other_track, module: Track.Vocal})
+      ws = put_in(ws.tracks[other_track], other)
 
       # Insert in @track
       {:ok, ops, changes} =
