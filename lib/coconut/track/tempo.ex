@@ -12,26 +12,27 @@ defmodule Coconut.Track.Tempo do
   """
 
   use Coconut.Track
+  @behaviour Coconut.Track.TempoDerive
 
   alias Coconut.Score.Tempo
   alias Coconut.Track
 
-  @impl true
+  @impl Coconut.Track
   def coord_domain, do: :tick
 
-  @impl true
+  @impl Coconut.Track
   def cast_element(_id, _span, attrs) do
     with {:ok, milli_bpm} <- Tempo.cast_bpm(Map.get(attrs, :bpm)) do
       {:ok, Map.put(attrs, :bpm, milli_bpm)}
     end
   end
 
-  @impl true
+  @impl Coconut.Track
   def edit_element(element, changes) do
     cast_element(nil, nil, Map.merge(element || %{}, changes))
   end
 
-  @impl true
+  @impl Coconut.Track
   def validate_gesture(:delete, track, %{id: id}) do
     if track.space.ids == [] or hd(track.space.ids) != id do
       :ok
@@ -40,10 +41,10 @@ defmodule Coconut.Track.Tempo do
     end
   end
 
-  @impl true
+  @impl Coconut.Track
   def split_inherit(element, _new_id), do: element || %{}
 
-  @impl true
+  @impl Coconut.Track
   def view(track) do
     # Tempo events must follow the Space's sequence order (not span order):
     # Move permutes ids, and every live event must survive the flattening
@@ -70,6 +71,7 @@ defmodule Coconut.Track.Tempo do
   This is the tempo track's capability marker — `Coconut.Workspace` binds
   its `tempo` field by `tempo_events/1` export, not by module identity.
   """
+  @impl Coconut.Track.TempoDerive
   @spec tempo_events(Track.t()) :: [{Coconut.Score.Tick.numeric_tick(), Tempo.Event.t()}]
   def tempo_events(track) do
     track

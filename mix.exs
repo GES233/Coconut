@@ -21,7 +21,7 @@ defmodule Coconut.MixProject do
   defp elixirc_paths(_), do: ["lib"]
 
   def application do
-    []
+    [extra_applications: [:logger, :crypto]]
   end
 
   def cli do

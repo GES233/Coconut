@@ -48,6 +48,7 @@ defmodule Coconut.Track do
           dead_patches: [{Coconut.Patch.t(), term()}]
         }
 
+  @enforce_keys [:module]
   use Coconut.Util.Model,
     keys: [
       :id,
@@ -59,15 +60,6 @@ defmodule Coconut.Track do
       dead_patches: []
     ],
     id_prefix: "Track_"
-
-  # TODO: Add a guard
-  # @impl true
-  # def validate(%__MODULE__{module: module} = track) do
-  #   with {:module, module} <- Code.ensure_loaded(module),
-  #    true <- function_exported?(module, :coord_domain, 0) do
-  #     {:ok, track}
-  #   end
-  # end
 
   # ---- Behaviour ----
 
@@ -286,4 +278,10 @@ defmodule Coconut.Track do
   # Workspace.apply_batch/5), so a batch never transports the patches it mints.
   defp drop_patches(track, []), do: track
   defp drop_patches(track, removes), do: %{track | patches: track.patches -- removes}
+
+  defmodule TempoDerive do
+    @callback tempo_events(Coconut.Track.t()) :: [
+                {Coconut.Score.Tick.numeric_tick(), Coconut.Score.Tempo.Event.t()}
+              ]
+  end
 end
