@@ -60,6 +60,15 @@ defmodule Coconut.Track do
     ],
     id_prefix: "Track_"
 
+  # TODO: Add a guard
+  # @impl true
+  # def validate(%__MODULE__{module: module} = track) do
+  #   with {:module, module} <- Code.ensure_loaded(module),
+  #    true <- function_exported?(module, :coord_domain, 0) do
+  #     {:ok, track}
+  #   end
+  # end
+
   # ---- Behaviour ----
 
   @doc "Coordinate system this track's spans live in."
@@ -119,34 +128,37 @@ defmodule Coconut.Track do
 
   @doc "The track's coordinate domain (`:tick` | `:frame`)."
   @spec coord_domain(t()) :: :tick | :frame
-  def coord_domain(track), do: track.module.coord_domain()
+  def coord_domain(%__MODULE__{module: module}), do: module.coord_domain()
 
   @doc "Cast raw insert attrs into the track's element payload."
   @spec cast_element(t(), Tamale.id(), span(), attrs :: map()) :: {:ok, term()} | {:error, term()}
-  def cast_element(track, id, span, attrs), do: track.module.cast_element(id, span, attrs)
+  def cast_element(%__MODULE__{module: module}, id, span, attrs),
+    do: module.cast_element(id, span, attrs)
 
   @doc "Merge a content edit onto `element` and re-cast it."
   @spec edit_element(t(), element :: term(), changes :: map()) :: {:ok, term()} | {:error, term()}
-  def edit_element(track, element, changes), do: track.module.edit_element(element, changes)
+  def edit_element(%__MODULE__{module: module}, element, changes),
+    do: module.edit_element(element, changes)
 
   @doc "Track-type-specific gesture legality (default: accept everything)."
   @spec validate_gesture(t(), gesture :: atom(), info :: map()) :: :ok | {:error, term()}
-  def validate_gesture(track, gesture, info),
-    do: track.module.validate_gesture(gesture, track, info)
+  def validate_gesture(%__MODULE__{module: module} = track, gesture, info),
+    do: module.validate_gesture(gesture, track, info)
 
   @doc "Element payload for the right half of a split."
   @spec split_inherit(t(), parent_element :: term(), new_id :: Tamale.id()) :: term()
-  def split_inherit(track, parent, new_id), do: track.module.split_inherit(parent, new_id)
+  def split_inherit(%__MODULE__{module: module}, parent, new_id),
+    do: module.split_inherit(parent, new_id)
 
   @doc "The flattened score view (see `Coconut.Track.view/1` in the behaviour docs)."
   @spec view(t()) :: view()
-  def view(track), do: track.module.view(track)
+  def view(%__MODULE__{module: module} = track), do: module.view(track)
 
   # ---- Span table ----
 
   @doc "The track's versioned span table, for `Coconut.WarpProvider.tick/2`."
   @spec spans(t()) :: %{Tamale.version() => %{Tamale.id() => span()}}
-  def spans(track), do: track.spans_by_version
+  def spans(%__MODULE__{spans_by_version: spans_by_version}), do: spans_by_version
 
   @doc """
   The latest recorded span table.
@@ -157,7 +169,7 @@ defmodule Coconut.Track do
   """
   @spec latest_spans(t()) :: %{Tamale.id() => span()}
   def latest_spans(track) do
-    case Enum.max(Map.keys(track.spans_by_version), fn -> nil end) do
+    case track |> spans() |> Map.keys() |> Enum.max(fn -> nil end) do
       nil -> %{}
       version -> Map.fetch!(track.spans_by_version, version)
     end

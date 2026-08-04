@@ -10,7 +10,7 @@ defmodule Coconut.Operations.MergeNotes do
   @impl true
   def validate(%__MODULE__{track_id: track_id, selection_notes_id: ids}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         [_ | _] = ids,
+         :ok <- non_empty(ids),
          :ok <- all_live?(track, ids),
          :ok <- all_in_space?(track.space, ids),
          :ok <- adjacent?(track.space, ids) do
@@ -45,4 +45,7 @@ defmodule Coconut.Operations.MergeNotes do
       end
     end
   end
+
+  defp non_empty([]), do: {:error, :empty_selection}
+  defp non_empty([_ | _]), do: :ok
 end
