@@ -39,7 +39,7 @@ defmodule Coconut.Operations.MergeNotes do
       else
         # Composite span runs from the earliest start to the latest end.
         # `into` keeps its own element payload — merging content (lyrics
-        # etc.) is domain policy, see `Coconut.Score.Note.merge/6`.
+        # etc.) is the caller's business, see `Coconut.Operations.EditNote`.
         {starts, ends} = Enum.unzip(spans)
         deletable = Map.new(rest, &{&1, :delete})
 

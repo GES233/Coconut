@@ -274,6 +274,11 @@ write-only；`Note.split/merge` 的几何校验改为由调用方注入 span。
 **已落地**：Note 去 tick 完成；split/merge 改签名注入 span；Operate 的
 split 继承变为纯 id 置换（`Track.Vocal.split_inherit/2`）。
 
+**已退役（2026-08-04）**：`Note.split/5`、`Note.merge/6` 删除——workspace
+的 split/merge lowering 走 span 几何 + `split_inherit`，从不经过 Note；
+这两个函数在 lib/test/examples 均无任何调用方。内容（lyric 等）合并
+策略留给调用方，走 `Coconut.Operations.EditNote`。
+
 ### 11.3 side 杂物抽屉（已落地 2026-08-03）
 
 **已落地**：Side struct 整个删除——spans/elements/patches/dead_patches

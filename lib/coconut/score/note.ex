@@ -8,7 +8,6 @@ defmodule Coconut.Score.Note do
   transport — there is no snapshot to drift out of sync.
   """
   alias Coconut.{Util.ID, Score.Key}
-  alias Coconut.Score.Tick
 
   import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
@@ -29,9 +28,6 @@ defmodule Coconut.Score.Note do
     metadata: %{}
   ]
   defstruct @keys
-
-  @typedoc "A tick span `{start, end}` from the track's spans table."
-  @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}
 
   @type note_id :: ID.t(__MODULE__)
 
@@ -234,122 +230,4 @@ defmodule Coconut.Score.Note do
 
   def remove_metadata(note, keys) when is_list(keys),
     do: update(note, metadata: Map.drop(note.metadata, keys))
-
-  # ---- Split and Merge Note ----
-
-  @doc """
-  Splits a note's content at an absolute tick position.
-
-  The span is injected by the caller (the track's spans table is the timing
-  authority); `split_tick` must fall strictly inside it
-  (`start < split_tick < end`).
-
-  Returns `{:ok, note_before, note_after}`. Content is timing-free, so
-  `note_before` is the note itself; `note_after` gets `new_id` plus the
-  parent's content, overridable via `attrs` (e.g. a different lyric).
-  """
-  @spec split(t(), span(), Tick.numeric_tick(), ID.t(t()), map() | keyword()) ::
-          {:ok, t(), t()} | {:error, term()}
-  def split(note, {start_tick, end_tick}, split_tick, new_id, attrs \\ []) do
-    cond do
-      split_tick <= start_tick ->
-        {:error, {:split_tick_before_note, split_tick, start_tick}}
-
-      split_tick >= end_tick ->
-        {:error, {:split_tick_after_note, split_tick, end_tick}}
-
-      true ->
-        extra_attrs =
-          attrs
-          |> Enum.into(%{})
-          |> Map.take([:key, :lyric, :annotation, :metadata])
-
-        after_attrs =
-          Map.merge(
-            %{
-              id: new_id,
-              key: note.key,
-              lyric: note.lyric,
-              annotation: note.annotation,
-              metadata: note.metadata
-            },
-            extra_attrs
-          )
-
-        case new(after_attrs) do
-          {:ok, after_note} -> {:ok, note, after_note}
-          {:error, _} = err -> err
-        end
-    end
-  end
-
-  @doc """
-  Merges two notes' content into one.
-
-  Spans are injected by the caller (same authority argument as `split/5`)
-  and used only for the gap check. `merged_id` is injected by the caller —
-  Note does not generate IDs.
-
-  ## Options
-
-  - `:gap_tolerance` — maximum allowed gap between the two spans in ticks (default 0: must be adjacent or overlapping)
-  - `:lyric_merger` — pluggable lyric concatenation function (`({Note.t(), Note.t()} -> {:ok, term()} | {:error, term()})`); defaults to concatenating when both are non-nil
-  - `:annotation_merger` — pluggable annotation merge function (`({Note.t(), Note.t()} -> {:ok, term()} | {:error, term()})`); defaults to the first non-nil value
-
-  ## Behaviour
-
-  - Both notes must share the same pitch (compared via `Key.to_midi/1`)
-  - Spans must overlap, or the gap ≤ `gap_tolerance`
-  - Returns `{:ok, merged_note}` with the given `merged_id`
-  - Merged annotation takes the first non-nil value
-  """
-  @spec merge(t(), span(), t(), span(), ID.t(t()), keyword()) :: {:ok, t()} | {:error, term()}
-  def merge(note1, {s1, e1}, note2, {s2, e2}, merged_id, opts \\ []) do
-    gap_tolerance = Keyword.get(opts, :gap_tolerance, 0)
-
-    lyric_merger =
-      Keyword.get(opts, :lyric_merger, fn note1, note2 ->
-        {:ok,
-         cond do
-           is_nil(note1.lyric) and is_nil(note2.lyric) -> nil
-           is_nil(note1.lyric) -> note2.lyric
-           is_nil(note2.lyric) -> note1.lyric
-           note1.lyric == note2.lyric -> note1.lyric
-           true -> note1.lyric <> note2.lyric
-         end}
-      end)
-
-    annotation_merger =
-      Keyword.get(opts, :annotation_merger, fn note1, note2 ->
-        {:ok, note1.annotation || note2.annotation}
-      end)
-
-    cond do
-      Key.to_midi(note1.key) != Key.to_midi(note2.key) ->
-        {:error, {:key_mismatch, Key.to_midi(note1.key), Key.to_midi(note2.key)}}
-
-      e1 + gap_tolerance < s2 or e2 + gap_tolerance < s1 ->
-        {:error, {:gap_too_large, e1, s2, gap_tolerance}}
-
-      true ->
-        do_merge(note1, note2, merged_id, lyric_merger, annotation_merger)
-    end
-  end
-
-  # ---- Toolkit functions ----
-
-  # Execute merge
-  defp do_merge(note1, note2, merged_id, lyric_merger, annotation_merger) do
-    with {:ok, lyric} <- lyric_merger.(note1, note2),
-         {:ok, annotation} <- annotation_merger.(note1, note2) do
-      %{
-        id: merged_id,
-        key: note1.key,
-        lyric: lyric,
-        annotation: annotation,
-        metadata: Map.merge(note1.metadata, note2.metadata)
-      }
-      |> new()
-    end
-  end
 end
