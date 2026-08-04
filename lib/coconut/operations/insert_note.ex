@@ -28,9 +28,9 @@ defmodule Coconut.Operations.InsertNote do
         ws
       ) do
     with {:ok, %Track{} = track} <- track_context(ws, track_id),
-         :ok <- id_fresh?(track.space, id),
-         :ok <- after_valid?(track.space, after_id),
-         :ok <- note_span_valid?(start_t, end_t),
+         :ok <- check_id(track.space, id),
+         :ok <- check_valid(track.space, after_id),
+         :ok <- validate_span(start_t, end_t),
          {:ok, _element} <- Track.cast_element(track, id, {start_t, end_t}, attrs),
          :ok <- Track.validate_gesture(track, :insert, %{id: id, span: {start_t, end_t}}) do
       :ok

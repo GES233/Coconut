@@ -36,7 +36,7 @@ defmodule Coconut.Operations.CoreComponents do
 
   @doc """
   Fetches an element's payload. A miss is `{:error, :unreachable}` —
-  validate-level checks (`id_live?/2`) guard existence before lowering.
+  validate-level checks (`ensure_id_live/2`) guard existence before lowering.
   """
   @spec fetch_element(Track.t(), Tamale.id()) :: {:ok, term()} | {:error, :unreachable}
   def fetch_element(track, id) do
@@ -49,8 +49,8 @@ defmodule Coconut.Operations.CoreComponents do
   # ---- Id checks ----
 
   @doc "The id must be unused: neither live in the sequence nor tombstoned in `seen`."
-  @spec id_fresh?(Tamale.Space.t(), Tamale.id()) :: :ok | {:error, {:id_conflict, Tamale.id()}}
-  def id_fresh?(%Tamale.Space{} = space, id) do
+  @spec check_id(Tamale.Space.t(), Tamale.id()) :: :ok | {:error, {:id_conflict, Tamale.id()}}
+  def check_id(%Tamale.Space{} = space, id) do
     if id in space.ids or MapSet.member?(space.seen, id) do
       {:error, {:id_conflict, id}}
     else
@@ -59,8 +59,8 @@ defmodule Coconut.Operations.CoreComponents do
   end
 
   @doc "The id must own live element data."
-  @spec id_live?(Track.t(), Tamale.id()) :: :ok | {:error, {:unknown_id, Tamale.id()}}
-  def id_live?(track, id) do
+  @spec ensure_id_live(Track.t(), Tamale.id()) :: :ok | {:error, {:unknown_id, Tamale.id()}}
+  def ensure_id_live(track, id) do
     if Map.has_key?(track.elements_by_id, id) do
       :ok
     else
@@ -69,9 +69,9 @@ defmodule Coconut.Operations.CoreComponents do
   end
 
   @doc "The id must sit in the Space's sequence."
-  @spec id_in_space?(Tamale.Space.t(), Tamale.id()) ::
+  @spec ensure_id_in_space(Tamale.Space.t(), Tamale.id()) ::
           :ok | {:error, {:id_not_in_space, Tamale.id()}}
-  def id_in_space?(space, id) do
+  def ensure_id_in_space(space, id) do
     if id in space.ids do
       :ok
     else
@@ -80,21 +80,22 @@ defmodule Coconut.Operations.CoreComponents do
   end
 
   @doc "Every id must own live element data; returns the first failure, `:ok` otherwise."
-  @spec all_live?(Track.t(), [Tamale.id()]) :: :ok | {:error, term()}
-  def all_live?(track, ids) do
+  @spec ensure_all_live(Track.t(), [Tamale.id()]) :: :ok | {:error, term()}
+  def ensure_all_live(track, ids) do
     Enum.find_value(ids, :ok, fn id ->
-      case id_live?(track, id) do
+      case ensure_id_live(track, id) do
         :ok -> nil
         err -> err
       end
     end)
   end
 
+  # Only merge_note
   @doc "Every id must sit in the Space's sequence; returns the first failure, `:ok` otherwise."
   @spec all_in_space?(Tamale.Space.t(), [Tamale.id()]) :: :ok | {:error, term()}
   def all_in_space?(space, ids) do
     Enum.find_value(ids, :ok, fn id ->
-      case id_in_space?(space, id) do
+      case ensure_id_in_space(space, id) do
         :ok -> nil
         err -> err
       end
@@ -104,11 +105,11 @@ defmodule Coconut.Operations.CoreComponents do
   # ---- Sequence checks ----
 
   @doc "The insertion anchor must be `:head` or an id in the sequence."
-  @spec after_valid?(Tamale.Space.t(), Tamale.id() | :head) ::
+  @spec check_valid(Tamale.Space.t(), Tamale.id() | :head) ::
           :ok | {:error, {:unknown_after_id, Tamale.id()}}
-  def after_valid?(_space, :head), do: :ok
+  def check_valid(_space, :head), do: :ok
 
-  def after_valid?(%Tamale.Space{} = space, after_id) do
+  def check_valid(%Tamale.Space{} = space, after_id) do
     if after_id in space.ids do
       :ok
     else
@@ -117,17 +118,17 @@ defmodule Coconut.Operations.CoreComponents do
   end
 
   @doc "A node cannot be its own insertion anchor."
-  @spec not_self?(Tamale.id(), Tamale.id() | :head) ::
+  @spec ensure_not_self(Tamale.id(), Tamale.id() | :head) ::
           :ok | {:error, {:self_referential, Tamale.id()}}
-  def not_self?(id, id), do: {:error, {:self_referential, id}}
-  def not_self?(_id, _after), do: :ok
+  def ensure_not_self(id, id), do: {:error, {:self_referential, id}}
+  def ensure_not_self(_id, _after), do: :ok
 
   @doc "The ids must appear consecutively in the Space's sequence, in the given order."
-  @spec adjacent?(Tamale.Space.t(), [Tamale.id(), ...]) ::
+  @spec ensure_adjacent(Tamale.Space.t(), [Tamale.id(), ...]) ::
           :ok
           | {:error, {:ids_not_in_space, [Tamale.id()]}}
           | {:error, {:ids_not_adjacent, [Tamale.id()]}}
-  def adjacent?(space, ids) do
+  def ensure_adjacent(space, ids) do
     idxs =
       ids
       |> Enum.map(&Enum.find_index(space.ids, fn x -> x == &1 end))
@@ -145,16 +146,17 @@ defmodule Coconut.Operations.CoreComponents do
   # ---- Span checks ----
 
   @doc "A span must be two numeric ticks with `0 <= start < end`."
-  @spec note_span_valid?(Tick.numeric_tick() | term(), Tick.numeric_tick() | term()) ::
+  @spec validate_span(Tick.numeric_tick() | term(), Tick.numeric_tick() | term()) ::
           :ok | {:error, {:invalid_span, {any(), any()}}}
-  def note_span_valid?(start_t, end_t)
+  def validate_span(start_t, end_t)
       when Tick.is_numeric_tick(start_t) and Tick.is_numeric_tick(end_t) and
              start_t >= 0 and end_t > start_t,
       do: :ok
 
-  def note_span_valid?(start_t, end_t),
+  def validate_span(start_t, end_t),
     do: {:error, {:invalid_span, {start_t, end_t}}}
 
+  # Only split_note will use
   @doc """
   `at_tick` must fall strictly inside the id's HEAD span.
 

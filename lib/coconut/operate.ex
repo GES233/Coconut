@@ -115,9 +115,9 @@ defmodule Coconut.Operate do
   # sequence checks.
   def validate({:insert_note, track_id, id, after_id, {start_t, end_t}, attrs}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_fresh?(track.space, id),
-         :ok <- after_valid?(track.space, after_id),
-         :ok <- note_span_valid?(start_t, end_t),
+         :ok <- check_id(track.space, id),
+         :ok <- check_valid(track.space, after_id),
+         :ok <- validate_span(start_t, end_t),
          {:ok, _element} <- Track.cast_element(track, id, {start_t, end_t}, attrs),
          :ok <- Track.validate_gesture(track, :insert, %{id: id, span: {start_t, end_t}}) do
       :ok
@@ -126,8 +126,8 @@ defmodule Coconut.Operate do
 
   def validate({:delete_note, track_id, id}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_live?(track, id),
-         :ok <- id_in_space?(track.space, id),
+         :ok <- ensure_id_live(track, id),
+         :ok <- ensure_id_in_space(track.space, id),
          :ok <- Track.validate_gesture(track, :delete, %{id: id}) do
       :ok
     end
@@ -135,30 +135,30 @@ defmodule Coconut.Operate do
 
   def validate({:move_note, track_id, id, new_after}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_live?(track, id),
-         :ok <- id_in_space?(track.space, id),
-         :ok <- after_valid?(track.space, new_after),
-         :ok <- not_self?(id, new_after) do
+         :ok <- ensure_id_live(track, id),
+         :ok <- ensure_id_in_space(track.space, id),
+         :ok <- check_valid(track.space, new_after),
+         :ok <- ensure_not_self(id, new_after) do
       :ok
     end
   end
 
   def validate({:drag_note, track_id, id, new_after, _old_span, {new_s, new_e}}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_live?(track, id),
-         :ok <- id_in_space?(track.space, id),
-         :ok <- after_valid?(track.space, new_after),
-         :ok <- not_self?(id, new_after),
-         :ok <- note_span_valid?(new_s, new_e) do
+         :ok <- ensure_id_live(track, id),
+         :ok <- ensure_id_in_space(track.space, id),
+         :ok <- check_valid(track.space, new_after),
+         :ok <- ensure_not_self(id, new_after),
+         :ok <- validate_span(new_s, new_e) do
       :ok
     end
   end
 
   def validate({:split_note, track_id, id, at_tick, new_id}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_live?(track, id),
-         :ok <- id_in_space?(track.space, id),
-         :ok <- id_fresh?(track.space, new_id),
+         :ok <- ensure_id_live(track, id),
+         :ok <- ensure_id_in_space(track.space, id),
+         :ok <- check_id(track.space, new_id),
          :ok <- within_span?(ws, track_id, id, at_tick) do
       :ok
     end
@@ -167,16 +167,16 @@ defmodule Coconut.Operate do
   def validate({:merge_notes, track_id, ids}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
          [_ | _] = ids,
-         :ok <- all_live?(track, ids),
+         :ok <- ensure_all_live(track, ids),
          :ok <- all_in_space?(track.space, ids),
-         :ok <- adjacent?(track.space, ids) do
+         :ok <- ensure_adjacent(track.space, ids) do
       :ok
     end
   end
 
   def validate({:edit_note, track_id, id, changes}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
-         :ok <- id_live?(track, id),
+         :ok <- ensure_id_live(track, id),
          {:ok, _element} <-
            Track.edit_element(track, Map.fetch!(track.elements_by_id, id), changes) do
       :ok

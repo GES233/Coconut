@@ -50,8 +50,11 @@ defmodule Coconut.Workspace do
           {:ok, Track.t()} | {:error, {:unknown_track, term()}}
   def fetch_track(ws, track_id) when in_tempo_track(ws, track_id), do: {:ok, ws.tempo}
 
-  def fetch_track(ws, track_id) do
-    with :error <- Map.fetch(ws.tracks, track_id), do: {:error, {:unknown_track, track_id}}
+  def fetch_track(%__MODULE__{tracks: tracks}, track_id) do
+    case Map.fetch(tracks, track_id) do
+      {:ok, track} -> {:ok, track}
+      :error -> {:error, {:unknown_track, track_id}}
+    end
   end
 
   @doc "All tracks as `{id, track}` pairs, tempo track first (fold order is not semantic)."
