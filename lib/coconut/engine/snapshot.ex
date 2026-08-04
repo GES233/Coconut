@@ -51,22 +51,22 @@ defmodule Coconut.Engine.Snapshot do
 
     case Workspace.tempo_map(ws) do
       {:ok, tempo_map} ->
-        {:ok,
-         %__MODULE__{
-           tracks: tracks,
-           tempo_map: tempo_map,
-           edit_version: ws.edit_version,
-           tpqn: ws.tpqn
-         }}
+        {:ok, tempo_map}
 
       {:error, :no_tempo_track} ->
-        {:ok,
-         %__MODULE__{
-           tracks: tracks,
-           tempo_map: nil,
-           edit_version: ws.edit_version,
-           tpqn: ws.tpqn
-         }}
+        {:ok, nil}
+
+      {:error, _} = error ->
+        error
+    end
+    |> case do
+      {:ok, tempo_map} ->
+        {:ok, %__MODULE__{
+          tracks: tracks,
+          tempo_map: tempo_map,
+          edit_version: ws.edit_version,
+          tpqn: ws.tpqn
+        }}
 
       {:error, _} = error ->
         error

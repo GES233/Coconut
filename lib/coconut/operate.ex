@@ -81,6 +81,7 @@ defmodule Coconut.Operate do
           | SplitNote.t()
           | MergeNotes.t()
           | EditNote.t()
+          | struct()
 
   # ---- Side changes ----
 
@@ -103,9 +104,9 @@ defmodule Coconut.Operate do
 
   # ---- Callbacks ----
 
-  @callback validate(request :: struct(), Workspace.t()) :: :ok | {:error, term()}
+  @callback validate(request(), Workspace.t()) :: :ok | {:error, term()}
 
-  @callback lower(request :: struct(), Workspace.t(), Config.t()) ::
+  @callback lower(request(), Workspace.t(), Config.t()) ::
               {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
 
   # ---- Public API ----
