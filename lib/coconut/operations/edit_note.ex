@@ -11,7 +11,7 @@ defmodule Coconut.Operations.EditNote do
           note_id: Note.note_id(),
           changes: map()
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_id, :changes]
+  defstruct [:track_id, :note_id, :changes]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

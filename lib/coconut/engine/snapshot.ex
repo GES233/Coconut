@@ -9,7 +9,7 @@ defmodule Coconut.Engine.Snapshot do
   (design doc §11.5; enforcement lands with the server shell).
   """
 
-  alias Coconut.{Util.Object, Workspace, Track}
+  alias Coconut.{Workspace, Track}
 
   @typedoc """
   Per-track flattened view: the track module, its coordinate domain, and
@@ -28,7 +28,7 @@ defmodule Coconut.Engine.Snapshot do
           tpqn: pos_integer()
         }
 
-  use Object, keys: [:tracks, :tempo_map, :edit_version, tpqn: 480]
+  defstruct [:tracks, :tempo_map, :edit_version, tpqn: 480]
 
   @doc """
   Flatten a workspace into an engine-facing snapshot.

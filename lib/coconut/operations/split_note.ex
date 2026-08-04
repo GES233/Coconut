@@ -12,7 +12,7 @@ defmodule Coconut.Operations.SplitNote do
           at_tick: non_neg_integer(),
           new_id: Note.note_id()
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_id, :at_tick, :new_id]
+  defstruct [:track_id, :note_id, :at_tick, :new_id]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

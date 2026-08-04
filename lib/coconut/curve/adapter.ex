@@ -47,11 +47,10 @@ defmodule Coconut.Curve.Adapter do
   # Replaceable with a NIF later.
 
   defmacro __using__(opts) do
-    # Aligns with Coconut.Util.Object conventions.
     keys = Keyword.fetch!(opts, :keys)
 
     quote do
-      use Coconut.Util.Object, keys: unquote(keys)
+      defstruct unquote(keys)
       @behaviour Coconut.Curve.Adapter
       alias Coconut.Curve.ControlPoint
     end

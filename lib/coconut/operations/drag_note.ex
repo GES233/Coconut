@@ -13,7 +13,7 @@ defmodule Coconut.Operations.DragNote do
           old_span: Operate.span(),
           new_span: Operate.span()
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_id, :after_id, :old_span, :new_span]
+  defstruct [:track_id, :note_id, :after_id, :old_span, :new_span]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

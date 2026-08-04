@@ -10,7 +10,7 @@ defmodule Coconut.Operations.MergeNotes do
           track_id: Track.track_id(),
           note_ids: [Note.note_id(), ...]
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_ids]
+  defstruct [:track_id, :note_ids]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

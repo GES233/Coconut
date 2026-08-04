@@ -11,7 +11,7 @@ defmodule Coconut.Operations.MoveNote do
           note_id: Note.note_id(),
           after_id: Note.note_id() | :head
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_id, :after_id]
+  defstruct [:track_id, :note_id, :after_id]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

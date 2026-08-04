@@ -10,7 +10,7 @@ defmodule Coconut.Operations.DeleteNote do
           track_id: Track.track_id(),
           note_id: Note.note_id()
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_id]
+  defstruct [:track_id, :note_id]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

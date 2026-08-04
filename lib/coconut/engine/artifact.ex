@@ -9,8 +9,6 @@ defmodule Coconut.Engine.Artifact do
   the artifact was rendered from — the §11.5 version pin.
   """
 
-  alias Coconut.Util.Object
-
   @type t :: %__MODULE__{
           engine: String.t(),
           edit_version: Tamale.version(),
@@ -19,5 +17,5 @@ defmodule Coconut.Engine.Artifact do
           overrides: %{Coconut.Resolve.port_ref() => %{input: term()}}
         }
 
-  use Object, keys: [:engine, :edit_version, :payload, globals: %{}, overrides: %{}]
+  defstruct [:engine, :edit_version, :payload, globals: %{}, overrides: %{}]
 end

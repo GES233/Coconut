@@ -13,7 +13,7 @@ defmodule Coconut.Operations.InsertNote do
           span: Operate.span(),
           attrs: map()
         }
-  use Coconut.Util.Object, keys: [:track_id, :note_id, :after_id, :span, :attrs]
+  defstruct [:track_id, :note_id, :after_id, :span, :attrs]
 
   @impl true
   @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}

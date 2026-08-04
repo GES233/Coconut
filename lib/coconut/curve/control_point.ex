@@ -24,5 +24,5 @@ defmodule Coconut.Curve.ControlPoint do
           handle_right: handle() | nil
         }
 
-  use Coconut.Util.Object, keys: [:tick, :value, handle_left: nil, handle_right: nil]
+  defstruct [:tick, :value, handle_left: nil, handle_right: nil]
 end

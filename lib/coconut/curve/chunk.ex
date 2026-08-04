@@ -14,7 +14,5 @@ defmodule Coconut.Curve.Chunk do
           rasterized: term() | nil,
           extra: map()
         }
-  use Coconut.Util.Model,
-    keys: [:id, :adapter, :container, :start_tick, rasterized: nil, extra: %{}],
-    id_prefix: "CurveChunk_"
+  defstruct [:id, :adapter, :container, :start_tick, rasterized: nil, extra: %{}]
 end
