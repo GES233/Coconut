@@ -100,7 +100,18 @@ notes = [
 
 ws =
   Enum.reduce(notes, ws, fn {id, after_id, span, attrs}, ws ->
-    {:ok, ops, ch} = Operate.lower({:insert_note, track, id, after_id, span, attrs}, ws, cfg)
+    {:ok, ops, ch} =
+      Operate.lower(
+        %Coconut.Operations.InsertNote{
+          track_id: track,
+          note_id: id,
+          after_id: after_id,
+          span: span,
+          attrs: attrs
+        },
+        ws,
+        cfg
+      )
     {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
     ws
   end)
@@ -137,7 +148,17 @@ IO.puts("  space   [2100, 2200]  past the end (empty space)")
 
 # ---- 3. Act 1: drag n3 right into empty space ----
 {:ok, ops, ch} =
-  Operate.lower({:drag_note, track, "n3", "n2", {960, 1440}, {1440, 1920}}, ws, cfg)
+  Operate.lower(
+    %Coconut.Operations.DragNote{
+      track_id: track,
+      note_id: "n3",
+      after_id: "n2",
+      old_span: {960, 1440},
+      new_span: {1440, 1920}
+    },
+    ws,
+    cfg
+  )
 
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
@@ -158,7 +179,17 @@ transport_and_report.(ws, "transport after act 1 (curve follows n3)")
 
 # ---- 4. Act 2: shrink n2 to a third of its length ----
 {:ok, ops, ch} =
-  Operate.lower({:drag_note, track, "n2", "n1", {480, 960}, {480, 640}}, ws, cfg)
+  Operate.lower(
+    %Coconut.Operations.DragNote{
+      track_id: track,
+      note_id: "n2",
+      after_id: "n1",
+      old_span: {480, 960},
+      new_span: {480, 640}
+    },
+    ws,
+    cfg
+  )
 
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
@@ -193,7 +224,8 @@ case Resolve.run_check(ws, channels) do
 end
 
 # ---- 6. Act 3: delete n3 — the curve patch loses its ground ----
-{:ok, ops, ch} = Operate.lower({:delete_note, track, "n3"}, ws, cfg)
+{:ok, ops, ch} =
+  Operate.lower(%Coconut.Operations.DeleteNote{track_id: track, note_id: "n3"}, ws, cfg)
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
 IO.puts("\n=== Act 3: delete n3 (now at [1440, 1920]) ===")

@@ -29,9 +29,27 @@ defmodule Coconut.TrackTest do
     test "cuts the op log and old span snapshots, keeps the baseline", %{ws: ws} do
       ws =
         ws
-        |> apply_request({:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}})
-        |> apply_request({:insert_note, @track, "n2", "n1", {480, 960}, %{pitch: 62}})
-        |> apply_request({:drag_note, @track, "n1", :head, {0, 480}, {100, 580}})
+        |> apply_request(%Coconut.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n1",
+          after_id: :head,
+          span: {0, 480},
+          attrs: %{pitch: 60}
+        })
+        |> apply_request(%Coconut.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n2",
+          after_id: "n1",
+          span: {480, 960},
+          attrs: %{pitch: 62}
+        })
+        |> apply_request(%Coconut.Operations.DragNote{
+          track_id: @track,
+          note_id: "n1",
+          after_id: :head,
+          old_span: {0, 480},
+          new_span: {100, 580}
+        })
 
       track = ws.tracks[@track]
       assert track.space.version == 3
@@ -55,9 +73,25 @@ defmodule Coconut.TrackTest do
     test "a Move-only tail still has a span baseline after truncation", %{ws: ws} do
       ws =
         ws
-        |> apply_request({:insert_note, @track, "n1", :head, {0, 480}, %{pitch: 60}})
-        |> apply_request({:insert_note, @track, "n2", "n1", {480, 960}, %{pitch: 62}})
-        |> apply_request({:move_note, @track, "n2", :head})
+        |> apply_request(%Coconut.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n1",
+          after_id: :head,
+          span: {0, 480},
+          attrs: %{pitch: 60}
+        })
+        |> apply_request(%Coconut.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n2",
+          after_id: "n1",
+          span: {480, 960},
+          attrs: %{pitch: 62}
+        })
+        |> apply_request(%Coconut.Operations.MoveNote{
+          track_id: @track,
+          note_id: "n2",
+          after_id: :head
+        })
 
       # version 3 (Move) wrote no span snapshot; truncating at 3 must keep
       # version 2's snapshot as the baseline

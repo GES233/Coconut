@@ -30,7 +30,15 @@ defmodule Coconut.Scenarios.GInt01 do
   end
 
   @impl true
-  def edits(_ws), do: [{:split_note, "vocal", "n2", 720, "n2_b"}]
+  def edits(_ws),
+    do: [
+      %Coconut.Operations.SplitNote{
+        track_id: "vocal",
+        note_id: "n2",
+        at_tick: 720,
+        new_id: "n2_b"
+      }
+    ]
 
   @impl true
   def expect(%{rounds: [baseline, r1], final_ws: final_ws}) do

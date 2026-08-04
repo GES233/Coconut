@@ -25,7 +25,17 @@ defmodule Coconut.ResolveTest do
 
   defp insert_note(ws, id, after_id, span, attrs) do
     {:ok, ops, changes} =
-      Operate.lower({:insert_note, @track, id, after_id, span, attrs}, ws, %Operate.Config{})
+      Operate.lower(
+        %Coconut.Operations.InsertNote{
+          track_id: @track,
+          note_id: id,
+          after_id: after_id,
+          span: span,
+          attrs: attrs
+        },
+        ws,
+        %Operate.Config{}
+      )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
     ws
@@ -130,7 +140,13 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "x"})
 
-    {:ok, ops, changes} = Operate.lower({:delete_note, @track, "n1"}, ws, %Operate.Config{})
+    {:ok, ops, changes} =
+      Operate.lower(
+        %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+        ws,
+        %Operate.Config{}
+      )
+
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
 
     # Write-time transport moved the patch to the graveyard during

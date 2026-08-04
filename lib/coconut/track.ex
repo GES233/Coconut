@@ -16,8 +16,8 @@ defmodule Coconut.Track do
   - `cast_element/3` — raw insert attrs → element payload (`Note` for
     vocal, bpm map for tempo).
   - `edit_element/2` — content edit: merge `changes` onto the current
-    element and re-cast (`Operate`'s `:edit_note` lowering writes the
-    result back as the element upsert).
+    element and re-cast (`Coconut.Operations.EditNote`'s lowering writes
+    the result back as the element upsert).
   - `validate_gesture/3` — track-type-specific legality beyond the generic
     geometry/sequence checks (e.g. tempo's first-element protection).
   - `split_inherit/2` — the right half of a split's element payload.

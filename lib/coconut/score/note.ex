@@ -146,7 +146,7 @@ defmodule Coconut.Score.Note do
   Drags a note to a new key.
 
   Only modifies the note itself; timing moves are span-table business
-  (see `Coconut.Operate`'s `:drag_note` request).
+  (see the `Coconut.Operations.DragNote` request).
 
   ## Options
 

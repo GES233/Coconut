@@ -29,7 +29,15 @@ defmodule Coconut.Scenarios.GInt02 do
 
   # edit_note 的 changes 部分合并到现 element 上：pitch 62→65，其余不动。
   @impl true
-  def edits(_ws), do: [{:edit_note, "vocal", "n2", %{pitch: 65}}]
+  def edits(_ws),
+    do: [
+      %Coconut.Operations.EditNote{
+        track_id: "vocal",
+        note_id: "n2",
+        changes: %{pitch: 65}
+      }
+      # {:edit_note, "vocal", "n2", %{pitch: 65}}
+    ]
 
   @impl true
   def expect(%{rounds: [baseline, r1]}) do

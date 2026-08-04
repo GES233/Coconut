@@ -25,7 +25,17 @@ track = "vocal"
 
 # ---- 2. Insert tempo event ----
 {:ok, ops, ch} =
-  Operate.lower({:insert_note, "tempo", "t0", :head, {0, 9600}, %{bpm: 120}}, ws, cfg)
+  Operate.lower(
+    %Coconut.Operations.InsertNote{
+      track_id: "tempo",
+      note_id: "t0",
+      after_id: :head,
+      span: {0, 9600},
+      attrs: %{bpm: 120}
+    },
+    ws,
+    cfg
+  )
 {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
 
 # ---- 3. Insert notes ----
@@ -37,7 +47,18 @@ notes = [
 
 ws =
   Enum.reduce(notes, {ws, 1}, fn {id, after_id, span, attrs}, {ws, ver} ->
-    {:ok, ops, ch} = Operate.lower({:insert_note, track, id, after_id, span, attrs}, ws, cfg)
+    {:ok, ops, ch} =
+      Operate.lower(
+        %Coconut.Operations.InsertNote{
+          track_id: track,
+          note_id: id,
+          after_id: after_id,
+          span: span,
+          attrs: attrs
+        },
+        ws,
+        cfg
+      )
     {:ok, ws} = Workspace.apply_batch(ws, track, ver, ops, ch)
     {ws, ver + 1}
   end)
@@ -107,7 +128,17 @@ cp3 = mount.(%Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100,
 
 # ---- 5. Edit: drag n1 (Move + Retime) ----
 {:ok, ops, ch} =
-  Operate.lower({:drag_note, track, "n1", :head, {0, 480}, {100, 580}}, ws, cfg)
+  Operate.lower(
+    %Coconut.Operations.DragNote{
+      track_id: track,
+      note_id: "n1",
+      after_id: :head,
+      old_span: {0, 480},
+      new_span: {100, 580}
+    },
+    ws,
+    cfg
+  )
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
 IO.puts("\n=== After drag n1 (0..480 -> 100..580) ===")

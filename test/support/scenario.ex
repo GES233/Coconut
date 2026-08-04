@@ -62,7 +62,7 @@ defmodule Coconut.Scenario do
   defp apply_edit(ws, :baseline), do: ws
 
   defp apply_edit(ws, op) do
-    track_id = elem(op, 1)
+    track_id = op.track_id
     :ok = Operate.validate(op, ws)
     {:ok, ops, changes} = Operate.lower(op, ws, %Operate.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, track_id, ws.edit_version, ops, changes)
@@ -103,7 +103,14 @@ defmodule Coconut.Scenario do
 
   @doc "Inserts a note into the vocal track through the full Operate path."
   def insert_note(ws, id, after_id, span, attrs) do
-    req = {:insert_note, @vocal_track, id, after_id, span, attrs}
+    req = %Coconut.Operations.InsertNote{
+      track_id: @vocal_track,
+      note_id: id,
+      after_id: after_id,
+      span: span,
+      attrs: attrs
+    }
+
     :ok = Operate.validate(req, ws)
     {:ok, ops, changes} = Operate.lower(req, ws, %Operate.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @vocal_track, ws.edit_version, ops, changes)

@@ -1,14 +1,20 @@
 defmodule Coconut.Operations.MergeNotes do
   import Coconut.Operations.CoreComponents
 
-  alias Coconut.Track
+  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.Score.Note
 
   @behaviour Coconut.Operate
 
-  use Coconut.Util.Object, keys: [:track_id, :selection_notes_id]
+  @type t :: %__MODULE__{
+          track_id: Track.track_id(),
+          note_ids: [Note.note_id(), ...]
+        }
+  use Coconut.Util.Object, keys: [:track_id, :note_ids]
 
   @impl true
-  def validate(%__MODULE__{track_id: track_id, selection_notes_id: ids}, ws) do
+  @spec validate(t(), Workspace.t()) :: :ok | {:error, term()}
+  def validate(%__MODULE__{track_id: track_id, note_ids: ids}, ws) do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- non_empty(ids),
          :ok <- ensure_all_live(track, ids),
@@ -19,7 +25,9 @@ defmodule Coconut.Operations.MergeNotes do
   end
 
   @impl true
-  def lower(%__MODULE__{track_id: track_id, selection_notes_id: ids}, ws, _cfg) do
+  @spec lower(t(), Workspace.t(), Operate.Config.t()) ::
+          {:ok, [Tamale.Op.t()], Operate.side_changes()} | {:error, term()}
+  def lower(%__MODULE__{track_id: track_id, note_ids: ids}, ws, _cfg) do
     [into | rest] = ids
     ops = [%Tamale.Op.Merge{ids: ids, into: into}]
 

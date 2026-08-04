@@ -323,8 +323,9 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
 
 - 错误词汇两套：`missing_x` / `bad_x` / `unknown_x` 混用，接口层对外前
   统一。
-- Operate request 为 6~7 元 tagged tuple，位置参数多；成为 wire format
-  前再评。
+- ~~Operate request 为 6~7 元 tagged tuple，位置参数多；成为 wire format
+  前再评。~~ 已解决：request 改为 `Coconut.Operations.*` struct
+  （`Operate` 仅做 dispatch）。
 - `Note.to_canonical` 的 key 形状（`%{midi: n}`）是隐性契约：换 tuning
   或改形状 = 全部已挂 patch 的 base_digest 失效。改 canonical 形状视为
   breaking change。
