@@ -15,7 +15,9 @@ defmodule Coconut.Engine.Request do
   engine's declared `:globals` spec before `check/2` is consulted.
   """
 
-  alias Coconut.{Engine.Snapshot, Util.Object, Workspace}
+  alias Coconut.{Engine.Snapshot, Workspace}
+
+  import Coconut.Helpers, only: [normalize_attrs: 2]
 
   @type t :: %__MODULE__{
           snapshot: Snapshot.t(),
@@ -23,7 +25,16 @@ defmodule Coconut.Engine.Request do
           globals: %{atom() => term()}
         }
 
-  use Object, keys: [:snapshot, interventions: %{}, globals: %{}]
+  @keys [:snapshot, interventions: %{}, globals: %{}]
+  defstruct @keys
+
+  @doc "Create a new request from the given attributes."
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, term()}
+  def new(attrs) do
+    with {:ok, normalized} <- normalize_attrs(attrs, @keys) do
+      {:ok, struct(__MODULE__, normalized)}
+    end
+  end
 
   @doc """
   Build a Request pinned to the workspace's current edit version.

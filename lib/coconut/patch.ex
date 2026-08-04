@@ -17,7 +17,9 @@ defmodule Coconut.Patch do
   mints one (`"Patch_"` prefix) at mount when absent.
   """
 
-  alias Coconut.{Util.ID, Util.Object, WarpProvider}
+  alias Coconut.{Util.ID, WarpProvider}
+
+  import Coconut.Helpers, only: [normalize_attrs: 2]
 
   @type t :: %__MODULE__{
           id: ID.t() | nil,
@@ -27,7 +29,18 @@ defmodule Coconut.Patch do
           channel: atom()
         }
 
-  use Object, keys: [:id, :track_id, :anchor, :patch, channel: :default]
+  @keys [:id, :track_id, :anchor, :patch, channel: :default]
+  defstruct @keys
+
+  @doc "Create a new patch from the given attributes, then validate it."
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, term()}
+  def new(attrs) do
+    with {:ok, normalized} <- normalize_attrs(attrs, @keys),
+         patch = struct(__MODULE__, normalized),
+         {:ok, patch} <- validate(patch) do
+      {:ok, patch}
+    end
+  end
 
   @doc """
   Construction-time legality: a Metric anchor must name a coordinate system
@@ -38,7 +51,7 @@ defmodule Coconut.Patch do
   `warp_provider.(coord, entry)`, where the single-clause provider closure
   has no match (`FunctionClauseError`).
   """
-  @impl true
+  @spec validate(t()) :: {:ok, t()} | {:error, term()}
   def validate(%__MODULE__{anchor: %Tamale.Anchor.Metric{coord: coord}} = obj) do
     if coord in WarpProvider.supported_coords() do
       {:ok, obj}

@@ -30,6 +30,8 @@ defmodule Coconut.Track do
   alias Coconut.Score.Tick
   alias Coconut.Util.ID
 
+  import Coconut.Helpers, only: [normalize_attrs: 2]
+
   @typedoc "A span `{start, end}` in the track's coordinate domain."
   @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}
 
@@ -49,17 +51,27 @@ defmodule Coconut.Track do
         }
 
   @enforce_keys [:module]
-  use Coconut.Util.Model,
-    keys: [
-      :id,
-      :module,
-      space: %Tamale.Space{},
-      spans_by_version: %{},
-      elements_by_id: %{},
-      patches: [],
-      dead_patches: []
-    ],
-    id_prefix: "Track_"
+  @keys [
+    :id,
+    :module,
+    space: %Tamale.Space{},
+    spans_by_version: %{},
+    elements_by_id: %{},
+    patches: [],
+    dead_patches: []
+  ]
+  defstruct @keys
+
+  @doc "Create a new track based on the attributes. `:id` must be provided explicitly."
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, term()}
+  def new(attrs) do
+    with {:ok, normalized} <- normalize_attrs(attrs, @keys) do
+      case Map.fetch(normalized, :id) do
+        :error -> {:error, {:missing_id, "Track_"}}
+        {:ok, id} -> {:ok, struct(__MODULE__, Map.put(normalized, :id, id))}
+      end
+    end
+  end
 
   # ---- Behaviour ----
 

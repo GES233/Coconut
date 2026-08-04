@@ -61,12 +61,13 @@ defmodule Coconut.Engine.Snapshot do
     end
     |> case do
       {:ok, tempo_map} ->
-        {:ok, %__MODULE__{
-          tracks: tracks,
-          tempo_map: tempo_map,
-          edit_version: ws.edit_version,
-          tpqn: ws.tpqn
-        }}
+        {:ok,
+         %__MODULE__{
+           tracks: tracks,
+           tempo_map: tempo_map,
+           edit_version: ws.edit_version,
+           tpqn: ws.tpqn
+         }}
 
       {:error, _} = error ->
         error

@@ -17,8 +17,10 @@ defmodule Coconut.Workspace do
   (`fetch_track/2`, `apply_batch/5`, …) route to it transparently.
   """
 
-  alias Coconut.{Track, Util.ID, Util.Model, WarpProvider}
+  alias Coconut.{Track, Util.ID, WarpProvider}
   alias Coconut.Score.{TempoMap, TimeSigMap}
+
+  import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
   @type t :: %__MODULE__{
           id: ID.t(t()),
@@ -28,16 +30,40 @@ defmodule Coconut.Workspace do
           tpqn: pos_integer(),
           time_sigs: [Coconut.Score.TimeSig.time_sig_event(), ...]
         }
-  use Model,
-    keys: [
-      :id,
-      :edit_version,
-      tracks: %{},
-      tempo: %Track{id: "tempo", module: Coconut.Track.Tempo},
-      tpqn: 480,
-      time_sigs: [{1, {4, 4}}]
-    ],
-    id_prefix: "WSpc_"
+  @keys [
+    :id,
+    :edit_version,
+    tracks: %{},
+    tempo: %Track{id: "tempo", module: Coconut.Track.Tempo},
+    tpqn: 480,
+    time_sigs: [{1, {4, 4}}]
+  ]
+  defstruct @keys
+
+  @doc "Create a new workspace based on the attributes. `:id` must be provided explicitly."
+  @spec new(map() | keyword()) :: {:ok, t()} | {:error, term()}
+  def new(attrs) do
+    with {:ok, normalized} <- normalize_attrs(attrs, @keys) do
+      case Map.fetch(normalized, :id) do
+        :error ->
+          {:error, {:missing_id, "WSpc_"}}
+
+        {:ok, id} ->
+          struct(__MODULE__, Map.put(normalized, :id, id))
+          |> validate()
+      end
+    end
+  end
+
+  @doc "Modify the properties of an existing workspace (modifying the id is not allowed)."
+  @spec update(t(), map() | keyword()) :: {:ok, t()} | {:error, term()}
+  def update(ws, attrs) do
+    with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
+         :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok),
+         new_ws = struct(ws, normalized) do
+      validate(new_ws)
+    end
+  end
 
   # ---- Tracks ----
 
@@ -324,7 +350,7 @@ defmodule Coconut.Workspace do
     TimeSigMap.compile(ws.time_sigs, tpqn: ws.tpqn)
   end
 
-  @impl true
+  @spec validate(t()) :: {:ok, t()} | {:error, term()}
   def validate(%{tempo: tempo, time_sigs: time_sigs} = ws) do
     cond do
       not tempo_events_capable?(tempo.module) ->

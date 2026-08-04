@@ -1,6 +1,6 @@
 defmodule Coconut.Project do
   alias Coconut.Workspace
-  alias Coconut.Util.{ID, Model}
+  alias Coconut.Util.ID
 
   @type t :: %__MODULE__{
           id: ID.t(),
@@ -10,14 +10,6 @@ defmodule Coconut.Project do
           assets: term(),
           metadata: term()
         }
-  use Model,
-    keys: [
-      :id,
-      :workspace,
-      :engine,
-      :voicebank,
-      :assets,
-      :metadata
-    ],
-    id_prefix: "Prj_"
+
+  defstruct [:id, :workspace, :engine, :voicebank, :assets, :metadata]
 end

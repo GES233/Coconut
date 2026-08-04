@@ -7,8 +7,10 @@ defmodule Coconut.Score.Note do
   track's spans table, which remains the single timing authority across
   transport — there is no snapshot to drift out of sync.
   """
-  alias Coconut.{Util.ID, Util.Model, Score.Key}
+  alias Coconut.{Util.ID, Score.Key}
   alias Coconut.Score.Tick
+
+  import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
   @typedoc """
   metadata is scope => inner.
@@ -19,15 +21,14 @@ defmodule Coconut.Score.Note do
   """
   @type metadata :: %{binary() => term()}
 
-  use Model,
-    keys: [
-      :id,
-      :key,
-      :lyric,
-      annotation: nil,
-      metadata: %{}
-    ],
-    id_prefix: "Note_"
+  @keys [
+    :id,
+    :key,
+    :lyric,
+    annotation: nil,
+    metadata: %{}
+  ]
+  defstruct @keys
 
   @typedoc "A tick span `{start, end}` from the track's spans table."
   @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}
@@ -125,6 +126,16 @@ defmodule Coconut.Score.Note do
     end
   end
 
+  @doc "Modify the properties of an existing note (modifying the id is not allowed)."
+  @spec update(t(), map() | keyword()) :: {:ok, t()} | {:error, term()}
+  def update(note, attrs) do
+    with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
+         :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok),
+         new_note = struct(note, normalized) do
+      validate(new_note)
+    end
+  end
+
   # ---- Validator ----
 
   @doc """
@@ -134,7 +145,7 @@ defmodule Coconut.Score.Note do
 
   * `lyric` is neither `nil` nor a string
   """
-  @impl true
+  @spec validate(t()) :: {:ok, t()} | {:error, term()}
   def validate(%__MODULE__{lyric: lyric}) when not (is_nil(lyric) or is_binary(lyric)),
     do: {:error, {:lyric_not_support, lyric}}
 
