@@ -79,6 +79,26 @@
   （首尾值 + `:linear`），不做 step→曲线的自动同步（双向映射是坑）。
 - step 永远是权威；曲线元数据只是"这段是怎么来的"的编辑辅助。
 
+**序列化落点（已定 2026-08-05）**：侧表不落 Track 内部，挂 Workspace
+存档的独立可选 key `tempo_ramps: [ramp_dump]`（tempo 轨全局唯一，平铺
+list 即可）——Track struct/codec 零改动，与 §2"内核零改动"严格一致。
+§6 援引的"纯内容编辑走侧表"先例是元素级侧表（随 `elements_by_id` 走），
+ramp 是区段级数据、不依附单一 element id、生命周期独立（stale 整条
+失效），先例套不上，故走工程级区段。配套约定：
+
+- load 逐条走 `Tempo.Ramp.new/1` 校验（shape/grid 闭集、正整数 mbpm），
+  未知 shape 按 pickle 惯例 loud error；缺 key = 空表，老存档天然兼容。
+- 两个版本号各管各的：envelope `version` 管格式迁移（`Pickle.File`
+  钩子），`bake.version` 管算法版本、纯记录——§5"加载永不自动重 bake"
+  已保证 load 时它不触发任何计算；v2 自适应布点上线后旧档原样加载，
+  仅在重新提交手势时用新算法重 bake。
+- `tempo_ramps` 与 `patches`/`elements_by_id` 平级、不进 digest——
+  step 相同而 ramp 元数据不同的两个工程 digest 一致。
+- stale 标记不落盘：存档只存原始 ramp 条目，stale 判定是加载后适配层
+  的运行时比对（元数据比对非 bake，不与"加载零计算"冲突）。
+- 手势层无任何 codec：手势提交即 bake 成普通 tempo op 批次，op log
+  只见六 op（`Pickle.Op` 已覆盖），undo 单元是 baked batch 而非手势。
+
 ## 7. 查询配套（已落地）
 
 - 选区经过时间：`TempoMap.duration_sec/3`（零宽/反向区段返回 `0.0`，
