@@ -44,6 +44,17 @@ defmodule Coconut.Track.Tempo do
   @impl Coconut.Track
   def split_inherit(element, _new_id), do: element || %{}
 
+  # Pickle 能力回调（可选能力，同 tempo_events/1 的先例，不进 Track
+  # behaviour 必需回调清单）：元素是 %{bpm: 整数 milli-bpm} 裸 map，
+  # dump 校验形状后原样透传，load 同。
+  def dump_element(%{bpm: bpm} = element) when is_integer(bpm), do: {:ok, element}
+
+  def dump_element(other), do: {:error, {:invalid_tempo_element, other}}
+
+  def load_element(%{bpm: bpm} = dumped) when is_integer(bpm), do: {:ok, dumped}
+
+  def load_element(other), do: {:error, {:invalid_tempo_element_dump, other}}
+
   @impl Coconut.Track
   def view(track) do
     # Tempo events must follow the Space's sequence order (not span order):

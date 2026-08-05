@@ -193,6 +193,10 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 4. API 边界形状：首发建议 Elixir API + JSON-RPC/stdio + CLI 三件套，
    MCP 可后加；渲染为长任务（check 同步一票否决，render 异步 job + 事件）；
 5. 持久化：工程文件落盘与否（equinox 的 Pickle codec 可参考）。
+   ——已定（2026-08-05）：持久化走 Pickle codec（equinox 惯例移植，
+   `lib/coconut/pickle*.ex`）；Project 字段形状拍板：engine/settings/assets
+   保留 nil，voicebank = `%{name, engine, digest}` 签名；文件外壳为
+   `%{format, version, project}` 信封 + `term_to_binary`。
 
 ## 10. 实施顺序建议
 

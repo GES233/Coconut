@@ -35,6 +35,12 @@ defmodule Coconut.Track.Vocal do
   @impl true
   def split_inherit(%Note{} = parent, new_id), do: %{parent | id: new_id}
 
+  # Pickle 能力回调（可选能力，同 tempo_events/1 的先例，不进 Track
+  # behaviour 必需回调清单）：元素编解码委托 Coconut.Pickle.Note。
+  def dump_element(%Note{} = note), do: Coconut.Pickle.Note.dump(note)
+
+  def load_element(dumped), do: Coconut.Pickle.Note.load(dumped)
+
   @impl true
   def view(track) do
     track
