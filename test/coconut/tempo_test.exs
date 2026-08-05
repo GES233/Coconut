@@ -355,6 +355,65 @@ defmodule Coconut.TempoTest do
     end
   end
 
+  describe "region duration" do
+    setup %{ws: ws} do
+      ws =
+        [
+          {"t0", :head, {0, 1920}, 120},
+          {"t1", "t0", {1920, 3840}, 60}
+        ]
+        |> Enum.reduce(ws, fn {id, after_id, span, bpm}, ws ->
+          {:ok, ops, ch} =
+            Operate.lower(
+              %Coconut.Operations.InsertNote{
+                track_id: "tempo",
+                note_id: id,
+                after_id: after_id,
+                span: span,
+                attrs: %{bpm: bpm}
+              },
+              ws,
+              %Operate.Config{}
+            )
+
+          {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
+          ws
+        end)
+
+      {:ok, ws: ws}
+    end
+
+    test "returns 0.0 for zero-width and reversed ranges", %{ws: ws} do
+      {:ok, tm} = Workspace.tempo_map(ws)
+      assert Score.TempoMap.duration_sec(tm, 480, 480) == 0.0
+      assert Score.TempoMap.duration_sec(tm, 960, 480) == 0.0
+    end
+
+    test "elapsed time within a single segment", %{ws: ws} do
+      {:ok, tm} = Workspace.tempo_map(ws)
+      # 480 ticks (one quarter) at 120 BPM = 0.5 sec
+      assert_in_delta Score.TempoMap.duration_sec(tm, 0, 480), 0.5, 0.01
+      assert_in_delta Score.TempoMap.duration_sec(tm, 480, 960), 0.5, 0.01
+    end
+
+    test "elapsed time across a tempo boundary", %{ws: ws} do
+      {:ok, tm} = Workspace.tempo_map(ws)
+      # 960→1920 at 120 BPM = 1.0 sec; 1920→2880 at 60 BPM = 2.0 sec
+      assert_in_delta Score.TempoMap.duration_sec(tm, 960, 2880), 3.0, 0.01
+    end
+
+    test "Workspace.region_duration_sec delegates to the tempo map", %{ws: ws} do
+      assert {:ok, sec} = Workspace.region_duration_sec(ws, 960, 2880)
+      assert_in_delta sec, 3.0, 0.01
+    end
+  end
+
+  describe "region duration with empty tempo track" do
+    test "propagates :no_tempo_track", %{ws: ws} do
+      assert {:error, :no_tempo_track} = Workspace.region_duration_sec(ws, 0, 480)
+    end
+  end
+
   describe "bpm normalization" do
     test "cast_bpm accepts integer bpm" do
       assert Score.Tempo.cast_bpm(120) == {:ok, 120_000}

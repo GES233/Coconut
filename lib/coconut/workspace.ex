@@ -337,6 +337,21 @@ defmodule Coconut.Workspace do
   end
 
   @doc """
+  Elapsed physical time of a tick range (e.g. an editor selection) under
+  the workspace's tempo track. Propagates `{:error, :no_tempo_track}`
+  from `tempo_map/1` when the tempo track is empty — engines apply their
+  own fallback.
+  """
+  @spec region_duration_sec(t(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, float()} | {:error, term()}
+  def region_duration_sec(ws, start_tick, end_tick)
+      when is_integer(start_tick) and is_integer(end_tick) and start_tick >= 0 and end_tick >= 0 do
+    with {:ok, tm} <- tempo_map(ws) do
+      {:ok, TempoMap.duration_sec(tm, start_tick, end_tick)}
+    end
+  end
+
+  @doc """
   Builds a compiled `TimeSigMap` from the workspace's `time_sigs` events,
   at the workspace's `tpqn`.
 

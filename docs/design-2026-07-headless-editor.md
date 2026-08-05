@@ -89,6 +89,11 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 - tick↔帧换算收敛到唯一一处（warp_provider / Resolve 采样处），
   zongzi_feasibility 的教训：跨语言舍入一致性是隐形地雷。
 
+> 2026-08-05 补记：渐速（ramp）的落地路径已定——见
+> `design-2026-08-tempo-curve.md`。Step 为骨、曲线为皮、bake 为界：
+> 内核仍只见阶梯，曲线是适配层编辑投影，经确定性 bake 落到阶梯事件；
+> 本条硬约定不变。
+
 ## 5. warp_provider 设计
 
 契约：`(coord, log_entry) -> Warp.t()`，每版本批次每坐标系一个 warp，

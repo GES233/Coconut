@@ -103,6 +103,19 @@ defmodule Coconut.Score.TempoMap do
     end
   end
 
+  @doc """
+  Returns the elapsed physical time of a tick range — the "selection →
+  duration" query. Zero-width and reversed ranges return `0.0`, mirroring
+  `slice/3`'s empty-range semantics.
+  """
+  @spec duration_sec(t(), Tick.numeric_tick(), Tick.numeric_tick()) :: Tempo.physical_time()
+  def duration_sec(%__MODULE__{} = tm, start_tick, end_tick)
+      when is_numeric_tick(start_tick) and is_numeric_tick(end_tick) do
+    if start_tick >= end_tick,
+      do: 0.0,
+      else: tick_to_sec(tm, end_tick) - tick_to_sec(tm, start_tick)
+  end
+
   defp find_by_tick(tuple, target_tick),
     do: find_by_tick(tuple, target_tick, 0, tuple_size(tuple) - 1)
 
