@@ -95,6 +95,10 @@ Coconut.Engines.OrchidAdapter  # 实现 Coconut.Engine behaviour：
                             # render = Oi.execute + adapters + baggage
 ```
 
+> **用户**：
+>
+> 为啥不直接用 Oi.Graph 呢？
+
 数据流：
 
 ```
@@ -140,7 +144,7 @@ Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间�
 
 - 现在 `Tamale.Patch.payload` 是 opaque `term()`，内核不过问形状。
 - 需要拍板：每个 channel 是否声明自己的 payload schema（pitch 曲线 /
-  时长表 / 歌词文本），schema 校验放在 `Patch.new/1`、channel 的
+  时长表 / 歌词音素），schema 校验放在 `Patch.new/1`、channel 的
   projection，还是 check 阶段。
 - payload 的版本化/迁移（工程文件序列化后，payload 形状演进怎么兼容，
   与 `Coconut.Project` 序列化联动）。
