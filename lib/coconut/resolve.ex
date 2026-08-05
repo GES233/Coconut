@@ -94,19 +94,23 @@ defmodule Coconut.Resolve do
   # an out-of-band mount on an unknown track is rejected at
   # `Workspace.attach_patch/2` and cannot occur here.
   defp transport_all(ws) do
-    Enum.reduce(Workspace.all_tracks(ws), {[], []}, fn {track_id, track}, {surv_acc, entry_acc} ->
-      case track.patches do
-        [] ->
-          {surv_acc, entry_acc}
+    {surv_acc, entry_acc} =
+      Enum.reduce(Workspace.all_tracks(ws), {[], []}, fn {track_id, track},
+                                                         {surv_acc, entry_acc} ->
+        case track.patches do
+          [] ->
+            {surv_acc, entry_acc}
 
-        patches ->
-          warp_provider = WarpProvider.tick(Coconut.Track.spans(track), patches)
-          {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, warp_provider)
-          entries = Enum.map(dead, &transport_entry(elem(&1, 0), elem(&1, 1)))
+          patches ->
+            warp_provider = WarpProvider.tick(Coconut.Track.spans(track), patches)
+            {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, warp_provider)
+            entries = Enum.map(dead, &transport_entry(elem(&1, 0), elem(&1, 1)))
 
-          {surv_acc ++ survivors, entry_acc ++ entries}
-      end
-    end)
+            {Enum.reverse(survivors, surv_acc), Enum.reverse(entries, entry_acc)}
+        end
+      end)
+
+    {Enum.reverse(surv_acc), Enum.reverse(entry_acc)}
   end
 
   defp transport_entry(%Patch{} = patch, reason) do
@@ -122,25 +126,28 @@ defmodule Coconut.Resolve do
   # ---- Resolve stage ----
 
   defp resolve_all(ws, survivors, channels) do
-    Enum.reduce(survivors, {[], []}, fn patch, {ok_acc, entry_acc} ->
-      case Map.fetch(channels, patch.channel) do
-        :error ->
-          entry = %{
-            kind: :unknown_channel,
-            track_id: patch.track_id,
-            patch: patch,
-            channel: patch.channel
-          }
+    {ok_acc, entry_acc} =
+      Enum.reduce(survivors, {[], []}, fn patch, {ok_acc, entry_acc} ->
+        case Map.fetch(channels, patch.channel) do
+          :error ->
+            entry = %{
+              kind: :unknown_channel,
+              track_id: patch.track_id,
+              patch: patch,
+              channel: patch.channel
+            }
 
-          {ok_acc, entry_acc ++ [entry]}
+            {ok_acc, [entry | entry_acc]}
 
-        {:ok, spec} ->
-          case resolve_one(ws, patch, normalize_spec(spec)) do
-            {:ok, payload} -> {ok_acc ++ [{patch, payload}], entry_acc}
-            {:error, entry} -> {ok_acc, entry_acc ++ [entry]}
-          end
-      end
-    end)
+          {:ok, spec} ->
+            case resolve_one(ws, patch, normalize_spec(spec)) do
+              {:ok, payload} -> {[{patch, payload} | ok_acc], entry_acc}
+              {:error, entry} -> {ok_acc, [entry | entry_acc]}
+            end
+        end
+      end)
+
+    {Enum.reverse(ok_acc), Enum.reverse(entry_acc)}
   end
 
   defp resolve_one(ws, %Patch{} = patch, spec) do
