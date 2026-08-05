@@ -178,6 +178,41 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 4. undo 的 inverse batch 生成；
 5. 跨 Space 重挂策略（跨轨拖动）。
 
+**缺口展开（补记 2026-08-05）**：
+
+- **2. diff 适配器**：正常路径是手势 → op 批次；文件导入（MIDI/UST）、
+  外部整轨改写、整块粘贴只给"改完的状态"，需从新旧元素快照反推六 op
+  序列。启发式 = 身份对齐（导入格式无 coconut id，按复合键还是位置贪心）
+  + 顺序/时间/数量变化归类；"集中在这一个函数"指不确定性收口一处，
+  其余路径保持纯 op。未拍板：身份匹配键与保守策略（宁可 Delete+Insert
+  不错认 Move，还是反过来）。落点为 `Operate` 同级独立模块，输出标准
+  `ops + side_changes` 走同一 `apply_batch` 管道；头号用户 MIDI 导入是
+  v2 项，v1 可欠。
+- **3. chunked digest helper**：`Tamale.Digest.digest/1` 一次性吃完整
+  canonical term，整轨投影大时物化成本高；helper 为分块流式 digest。
+  命门：分块结果必须与一次性 digest **逐比特一致**，否则同一内容的
+  `base_digest` 因调用路径分裂、patch 存活判定崩——故方案围着
+  canonical 编码可分段拼接这个不变量设计，不是简单包 `:crypto` 的
+  init/update/final。用途排序：channel digest 投影 > voicebank digest
+  实算（v1 只存不算）> 工程级 digest。落点 tamale 侧为主。
+- **4. inverse batch 生成**：撤销 = 追加逆批次（append-only）已定，缺
+  生成逻辑。六 op 的逆分三档：自带可逆（`Retime` 换 before/after；
+  `Split`↔`Merge` 互逆）；结构可逆（`Insert`→`Delete`；`Move` 回原
+  邻居）；**需前状态**（`Delete` 的逆要恢复元素内容与 span，op 本身
+  不含——故 inverse 必须在 lower/apply 当下同步捕获，不能事后从 log
+  推）。连带：`side_changes` 同逆；跨轨批次需两轨同撤（与 5 纠缠）。
+  红利：撤销只是又一批 op，patch 锚沿新 log 自然 transport。undo
+  历史存哪（Workspace 字段 vs GenServer 壳状态）与接口层一起排。
+- **5. 跨 Space 重挂**：跨轨拖动 = A 轨 Delete + B 轨 Insert，但 id 是
+  Space 级身份——沿用同 id 则 A 轨钉着它的 patch 全 terminal；换新
+  id 则用户感知身份断裂、曲线类 patch 照样全灭。选项：a) 新 id +
+  patch 不迁移（简单狠）；b) 同 id + patch 跨轨打捞重挂；c) 复合手势
+  lowering 成两轨批次 + patch 迁移表。结构牵连：`apply_batch/5` 目前
+  单轨，跨轨需两轨原子提交（单 version 检查 + 两条 log），并反过来
+  决定 undo 历史粒度。tamale 不动，`Operate` 加复合手势入口。
+- **排期依赖**：4 与 5 互相纠缠（捕获时机、跨轨原子提交+撤销），相邻
+  排期；2 等文件导入排期；3 等投影规模真的疼了再做。
+
 ## 9. 前置条件（动手前需定）
 
 1. 引擎面：驱动的引擎是谁（决定 Engine behaviour 与 digest 投影实现）
