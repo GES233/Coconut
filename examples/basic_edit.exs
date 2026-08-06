@@ -3,12 +3,12 @@
 # Creates a workspace with a note track and tempo track, inserts notes,
 # mounts patches, edits, transports, and runs a Resolve + Engine round.
 
-alias Coconut.{Engine, Operate, Patch, Resolve, Track, WarpProvider, Workspace}
+alias Coconut.{Engine, Edit.Operation, Patch, Resolve, Track, WarpProvider, Workspace}
 alias Coconut.Engine.Request
 alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 
-cfg = %Operate.Config{}
+cfg = %Operation.Config{}
 track = "vocal"
 
 # ---- 1. Bootstrap workspace ----
@@ -25,8 +25,8 @@ track = "vocal"
 
 # ---- 2. Insert tempo event ----
 {:ok, ops, ch} =
-  Operate.lower(
-    %Coconut.Operations.InsertNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.InsertNote{
       track_id: "tempo",
       note_id: "t0",
       after_id: :head,
@@ -48,8 +48,8 @@ notes = [
 ws =
   Enum.reduce(notes, {ws, 1}, fn {id, after_id, span, attrs}, {ws, ver} ->
     {:ok, ops, ch} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: track,
           note_id: id,
           after_id: after_id,
@@ -128,8 +128,8 @@ cp3 = mount.(%Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100,
 
 # ---- 5. Edit: drag n1 (Move + Retime) ----
 {:ok, ops, ch} =
-  Operate.lower(
-    %Coconut.Operations.DragNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.DragNote{
       track_id: track,
       note_id: "n1",
       after_id: :head,

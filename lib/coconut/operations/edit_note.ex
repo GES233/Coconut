@@ -1,10 +1,10 @@
-defmodule Coconut.Operations.EditNote do
-  import Coconut.Operations.CoreComponents
+defmodule Coconut.Edit.Operations.EditNote do
+  import Coconut.Edit.Operations.CoreComponents
 
-  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.{Edit.Operation, Track, Workspace}
   alias Coconut.Score.Note
 
-  @behaviour Coconut.Operate
+  @behaviour Coconut.Edit.Operation
 
   @type t :: %__MODULE__{
           track_id: Track.track_id(),
@@ -25,8 +25,8 @@ defmodule Coconut.Operations.EditNote do
   end
 
   @impl true
-  @spec lower(t(), Workspace.t(), Operate.Config.t()) ::
-          {:ok, [Tamale.Op.t()], Operate.side_changes()} | {:error, term()}
+  @spec lower(t(), Workspace.t(), Operation.Config.t()) ::
+          {:ok, [Tamale.Op.t()], Operation.side_changes()} | {:error, term()}
   def lower(%__MODULE__{track_id: track_id, note_id: id, changes: changes}, ws, _cfg) do
     # Content edits produce no ops: the track module merges the changes
     # onto the current element and re-casts it, and the result is written

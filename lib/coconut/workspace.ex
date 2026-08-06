@@ -103,7 +103,7 @@ defmodule Coconut.Workspace do
   the workspace version it read before lowering. If the workspace has
   moved on, `{:error, :version_conflict}` is returned.
 
-  `ops` and `side_changes` are the output of `Coconut.Operate.lower/3`.
+  `ops` and `side_changes` are the output of `Coconut.Edit.Operation.lower/3`.
 
   After the batch commits, the track's patches are transported along the
   fresh log entry and persisted (write-time transport; design doc §2 step
@@ -117,7 +117,7 @@ defmodule Coconut.Workspace do
           Track.track_id(),
           expected_version :: Tamale.version(),
           [Tamale.Op.t()],
-          Coconut.Operate.side_changes()
+          Coconut.Edit.Operation.side_changes()
         ) :: {:ok, t()} | {:error, term()}
   def apply_batch(ws, track_id, expected_version, ops, side_changes) do
     with :ok <- check_version(ws, expected_version),

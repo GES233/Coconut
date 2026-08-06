@@ -3,7 +3,7 @@ defmodule Coconut.Pickle.FileTest do
 
   alias Coconut.Pickle.File, as: PickleFile
   alias Coconut.Pickle.Track, as: PickleTrack
-  alias Coconut.{Operate, Project, Workspace}
+  alias Coconut.{Edit.Operation, Project, Workspace}
   alias Coconut.Util.ID
 
   @tag tmp_dir: "pickle_file"
@@ -86,14 +86,14 @@ defmodule Coconut.Pickle.FileTest do
 
     ws =
       [
-        %Coconut.Operations.InsertNote{
+        %Coconut.Edit.Operations.InsertNote{
           track_id: "tempo",
           note_id: "t0",
           after_id: :head,
           span: {0, 1920},
           attrs: %{bpm: 120}
         },
-        %Coconut.Operations.InsertNote{
+        %Coconut.Edit.Operations.InsertNote{
           track_id: "vocal",
           note_id: "n1",
           after_id: :head,
@@ -102,7 +102,7 @@ defmodule Coconut.Pickle.FileTest do
         }
       ]
       |> Enum.reduce(ws, fn op, ws ->
-        {:ok, ops, changes} = Operate.lower(op, ws, %Operate.Config{})
+        {:ok, ops, changes} = Operation.lower(op, ws, %Operation.Config{})
         {:ok, ws} = Workspace.apply_batch(ws, op.track_id, ws.edit_version, ops, changes)
         ws
       end)

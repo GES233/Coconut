@@ -1,16 +1,16 @@
-defmodule Coconut.Operations.CoreComponents do
+defmodule Coconut.Edit.Operations.CoreComponents do
   @moduledoc """
   Shared geometry/sequence checks for edit gestures.
 
   Generic legality predicates shared by the legacy tuple-dispatch
-  `Coconut.Operate` clauses and the per-gesture structs under
-  `Coconut.Operations.*`: shape/order/span checks live here, while
+  `Coconut.Edit.Operation` clauses and the per-gesture structs under
+  `Coconut.Edit.Operations.*`: shape/order/span checks live here, while
   element casting and track-type policy stay on the track modules
   (`Coconut.Track` behaviour).
   """
 
   require Coconut.Score.Tick
-  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.{Edit.Operation, Track, Workspace}
   alias Coconut.Score.Tick
 
   @empty_side_changes %{
@@ -20,8 +20,8 @@ defmodule Coconut.Operations.CoreComponents do
     patches_remove: []
   }
 
-  @doc "An empty `Coconut.Operate.side_changes()` map; gesture lowerings merge their deltas into it."
-  @spec empty_side_changes() :: Operate.side_changes()
+  @doc "An empty `Coconut.Edit.Operation.side_changes()` map; gesture lowerings merge their deltas into it."
+  @spec empty_side_changes() :: Operation.side_changes()
   def empty_side_changes, do: @empty_side_changes
 
   # ---- Track / element lookup ----

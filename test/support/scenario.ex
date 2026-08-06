@@ -12,7 +12,7 @@ defmodule Coconut.Scenario do
 
   1. `setup/0` — build a workspace, mount patches, supply check channels.
   2. round 1 — baseline check (no edit).
-  3. `edits/1` — each op one adversarial round: `Operate` lower →
+  3. `edits/1` — each op one adversarial round: `Edit.Operation` lower →
      `Workspace.apply_batch` → `Resolve.run_check`.
   4. `expect/1` — judges all rounds, `:ok` or `{:miss, message}`.
 
@@ -20,7 +20,7 @@ defmodule Coconut.Scenario do
 
       %{
         round: pos_integer(),
-        op: :baseline | Coconut.Operate.request(),
+        op: :baseline | Coconut.Edit.Operation.request(),
         passed: boolean(),
         survivors: [Coconut.Patch.t()],   # check-time survivors (pass only)
         dead: [{Coconut.Patch.t(), term()}],  # write-time graveyard
@@ -28,7 +28,7 @@ defmodule Coconut.Scenario do
       }
   """
 
-  alias Coconut.{Operate, Resolve, Track, Workspace}
+  alias Coconut.{Edit.Operation, Resolve, Track, Workspace}
   alias Coconut.Util.ID
 
   @vocal_track "vocal"
@@ -36,7 +36,7 @@ defmodule Coconut.Scenario do
   @callback id() :: String.t()
   @callback title() :: String.t()
   @callback setup() :: {Workspace.t(), %{atom() => Resolve.channel_spec()}}
-  @callback edits(Workspace.t()) :: [Operate.request()]
+  @callback edits(Workspace.t()) :: [Operation.request()]
   @callback expect(%{rounds: [map()], final_ws: Workspace.t()}) :: :ok | {:miss, String.t()}
 
   @doc "Runs one scenario, returning `%{id, title, verdict, rounds}`."
@@ -63,8 +63,8 @@ defmodule Coconut.Scenario do
 
   defp apply_edit(ws, op) do
     track_id = op.track_id
-    :ok = Operate.validate(op, ws)
-    {:ok, ops, changes} = Operate.lower(op, ws, %Operate.Config{})
+    :ok = Operation.validate(op, ws)
+    {:ok, ops, changes} = Operation.lower(op, ws, %Operation.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, track_id, ws.edit_version, ops, changes)
     ws
   end
@@ -101,9 +101,9 @@ defmodule Coconut.Scenario do
     ws
   end
 
-  @doc "Inserts a note into the vocal track through the full Operate path."
+  @doc "Inserts a note into the vocal track through the full Edit.Operation path."
   def insert_note(ws, id, after_id, span, attrs) do
-    req = %Coconut.Operations.InsertNote{
+    req = %Coconut.Edit.Operations.InsertNote{
       track_id: @vocal_track,
       note_id: id,
       after_id: after_id,
@@ -111,8 +111,8 @@ defmodule Coconut.Scenario do
       attrs: attrs
     }
 
-    :ok = Operate.validate(req, ws)
-    {:ok, ops, changes} = Operate.lower(req, ws, %Operate.Config{})
+    :ok = Operation.validate(req, ws)
+    {:ok, ops, changes} = Operation.lower(req, ws, %Operation.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @vocal_track, ws.edit_version, ops, changes)
     ws
   end

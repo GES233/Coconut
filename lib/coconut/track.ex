@@ -16,7 +16,7 @@ defmodule Coconut.Track do
   - `cast_element/3` — raw insert attrs → element payload (`Note` for
     vocal, bpm map for tempo).
   - `edit_element/2` — content edit: merge `changes` onto the current
-    element and re-cast (`Coconut.Operations.EditNote`'s lowering writes
+    element and re-cast (`Coconut.Edit.Operations.EditNote`'s lowering writes
     the result back as the element upsert).
   - `validate_gesture/3` — track-type-specific legality beyond the generic
     geometry/sequence checks (e.g. tempo's first-element protection).
@@ -290,12 +290,12 @@ defmodule Coconut.Track do
   @doc """
   Sync the side tables after an op batch commits.
 
-  `changes` is `Coconut.Operate`'s side_changes: element upserts/tombstones,
+  `changes` is `Coconut.Edit.Operation`'s side_changes: element upserts/tombstones,
   span deltas, and patch removals. `patches_add` is *not* handled here —
   additions join after write-time transport, minted at the new head (see
   `Coconut.Workspace.apply_batch/5`).
   """
-  @spec sync(t(), Tamale.version(), Coconut.Operate.side_changes()) :: t()
+  @spec sync(t(), Tamale.version(), Coconut.Edit.Operation.side_changes()) :: t()
   def sync(track, new_version, changes) do
     track
     |> sync_elements(changes.elements)

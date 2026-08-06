@@ -31,7 +31,7 @@ defmodule Coconut.Scenarios.GInt02 do
   @impl true
   def edits(_ws),
     do: [
-      %Coconut.Operations.EditNote{
+      %Coconut.Edit.Operations.EditNote{
         track_id: "vocal",
         note_id: "n2",
         changes: %{pitch: 65}

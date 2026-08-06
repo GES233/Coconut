@@ -7,7 +7,7 @@
 # Paths are machine-specific; override with env vars when they differ:
 # DS_VOICEBANK, DS_PYTHON.
 
-alias Coconut.{Engine, Operate, Track, Workspace}
+alias Coconut.{Engine, Edit.Operation, Track, Workspace}
 alias Coconut.Engine.Request
 alias Coconut.Engines.DiffSinger
 alias Coconut.Util.ID
@@ -39,7 +39,7 @@ config = %{
 
 insert = fn ws, track, id, after_id, span, attrs ->
   {:ok, ops, changes} =
-    Coconut.Operations.InsertNote.lower(%Coconut.Operations.InsertNote{track_id: track, note_id: id, after_id: after_id, span: span, attrs: attrs}, ws, %Operate.Config{})
+    Coconut.Edit.Operations.InsertNote.lower(%Coconut.Edit.Operations.InsertNote{track_id: track, note_id: id, after_id: after_id, span: span, attrs: attrs}, ws, %Operation.Config{})
 
   {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, changes)
   ws

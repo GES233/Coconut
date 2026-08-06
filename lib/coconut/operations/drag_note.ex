@@ -1,17 +1,17 @@
-defmodule Coconut.Operations.DragNote do
-  import Coconut.Operations.CoreComponents
+defmodule Coconut.Edit.Operations.DragNote do
+  import Coconut.Edit.Operations.CoreComponents
 
-  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.{Edit.Operation, Track, Workspace}
   alias Coconut.Score.Note
 
-  @behaviour Coconut.Operate
+  @behaviour Coconut.Edit.Operation
 
   @type t :: %__MODULE__{
           track_id: Track.track_id(),
           note_id: Note.note_id(),
           after_id: Note.note_id() | :head,
-          old_span: Operate.span(),
-          new_span: Operate.span()
+          old_span: Operation.span(),
+          new_span: Operation.span()
         }
   defstruct [:track_id, :note_id, :after_id, :old_span, :new_span]
 
@@ -37,8 +37,8 @@ defmodule Coconut.Operations.DragNote do
   end
 
   @impl true
-  @spec lower(t(), Workspace.t(), Operate.Config.t()) ::
-          {:ok, [Tamale.Op.t()], Operate.side_changes()} | {:error, term()}
+  @spec lower(t(), Workspace.t(), Operation.Config.t()) ::
+          {:ok, [Tamale.Op.t()], Operation.side_changes()} | {:error, term()}
   def lower(
         %__MODULE__{
           note_id: id,

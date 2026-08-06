@@ -32,7 +32,7 @@ defmodule Coconut.Scenarios.GInt01 do
   @impl true
   def edits(_ws),
     do: [
-      %Coconut.Operations.SplitNote{
+      %Coconut.Edit.Operations.SplitNote{
         track_id: "vocal",
         note_id: "n2",
         at_tick: 720,

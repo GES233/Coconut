@@ -1,7 +1,7 @@
 defmodule Coconut.Engines.DiffSingerTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Operate, Track, Workspace}
+  alias Coconut.{Engine, Edit.Operation, Track, Workspace}
   alias Coconut.Engine.Request
   alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
@@ -80,8 +80,8 @@ defmodule Coconut.Engines.DiffSingerTest do
 
   defp insert(ws, track, id, after_id, span, attrs) do
     {:ok, ops, changes} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: track,
           note_id: id,
           after_id: after_id,
@@ -89,7 +89,7 @@ defmodule Coconut.Engines.DiffSingerTest do
           attrs: attrs
         },
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, changes)

@@ -1,10 +1,10 @@
-defmodule Coconut.Operations.MergeNotes do
-  import Coconut.Operations.CoreComponents
+defmodule Coconut.Edit.Operations.MergeNotes do
+  import Coconut.Edit.Operations.CoreComponents
 
-  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.{Edit.Operation, Track, Workspace}
   alias Coconut.Score.Note
 
-  @behaviour Coconut.Operate
+  @behaviour Coconut.Edit.Operation
 
   @type t :: %__MODULE__{
           track_id: Track.track_id(),
@@ -25,8 +25,8 @@ defmodule Coconut.Operations.MergeNotes do
   end
 
   @impl true
-  @spec lower(t(), Workspace.t(), Operate.Config.t()) ::
-          {:ok, [Tamale.Op.t()], Operate.side_changes()} | {:error, term()}
+  @spec lower(t(), Workspace.t(), Operation.Config.t()) ::
+          {:ok, [Tamale.Op.t()], Operation.side_changes()} | {:error, term()}
   def lower(%__MODULE__{track_id: track_id, note_ids: ids}, ws, _cfg) do
     [into | rest] = ids
     ops = [%Tamale.Op.Merge{ids: ids, into: into}]
@@ -39,7 +39,7 @@ defmodule Coconut.Operations.MergeNotes do
       else
         # Composite span runs from the earliest start to the latest end.
         # `into` keeps its own element payload — merging content (lyrics
-        # etc.) is the caller's business, see `Coconut.Operations.EditNote`.
+        # etc.) is the caller's business, see `Coconut.Edit.Operations.EditNote`.
         {starts, ends} = Enum.unzip(spans)
         deletable = Map.new(rest, &{&1, :delete})
 

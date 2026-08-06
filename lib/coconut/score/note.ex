@@ -153,7 +153,7 @@ defmodule Coconut.Score.Note do
   Drags a note to a new key.
 
   Only modifies the note itself; timing moves are span-table business
-  (see the `Coconut.Operations.DragNote` request).
+  (see the `Coconut.Edit.Operations.DragNote` request).
 
   ## Options
 
@@ -193,7 +193,7 @@ defmodule Coconut.Score.Note do
     end
   end
 
-  # ---- Metadata Operations ----
+  # ---- Metadata Edit.Operations ----
 
   @doc "Merges new metadata into the note's current metadata."
   @spec update_metadata(t(), map()) :: {:ok, t()} | {:error, term()}

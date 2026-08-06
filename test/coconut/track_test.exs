@@ -1,7 +1,7 @@
 defmodule Coconut.TrackTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.{Edit.Operation, Track, Workspace}
   alias Coconut.Util.ID
 
   @track "vocal"
@@ -20,7 +20,7 @@ defmodule Coconut.TrackTest do
   end
 
   defp apply_request(ws, request) do
-    {:ok, ops, changes} = Operate.lower(request, ws, %Operate.Config{})
+    {:ok, ops, changes} = Operation.lower(request, ws, %Operation.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
     ws
   end
@@ -29,21 +29,21 @@ defmodule Coconut.TrackTest do
     test "cuts the op log and old span snapshots, keeps the baseline", %{ws: ws} do
       ws =
         ws
-        |> apply_request(%Coconut.Operations.InsertNote{
+        |> apply_request(%Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n1",
           after_id: :head,
           span: {0, 480},
           attrs: %{pitch: 60}
         })
-        |> apply_request(%Coconut.Operations.InsertNote{
+        |> apply_request(%Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n2",
           after_id: "n1",
           span: {480, 960},
           attrs: %{pitch: 62}
         })
-        |> apply_request(%Coconut.Operations.DragNote{
+        |> apply_request(%Coconut.Edit.Operations.DragNote{
           track_id: @track,
           note_id: "n1",
           after_id: :head,
@@ -73,21 +73,21 @@ defmodule Coconut.TrackTest do
     test "a Move-only tail still has a span baseline after truncation", %{ws: ws} do
       ws =
         ws
-        |> apply_request(%Coconut.Operations.InsertNote{
+        |> apply_request(%Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n1",
           after_id: :head,
           span: {0, 480},
           attrs: %{pitch: 60}
         })
-        |> apply_request(%Coconut.Operations.InsertNote{
+        |> apply_request(%Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n2",
           after_id: "n1",
           span: {480, 960},
           attrs: %{pitch: 62}
         })
-        |> apply_request(%Coconut.Operations.MoveNote{
+        |> apply_request(%Coconut.Edit.Operations.MoveNote{
           track_id: @track,
           note_id: "n2",
           after_id: :head

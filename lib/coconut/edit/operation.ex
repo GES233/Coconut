@@ -1,10 +1,10 @@
-defmodule Coconut.Operate do
+defmodule Coconut.Edit.Operation do
   @moduledoc """
   Lowering layer: translates edit requests into Tamale op batches and side-table
   change instructions.
 
-  A request is one of the per-gesture structs under `Coconut.Operations.*`
-  (e.g. `Coconut.Operations.InsertNote`). This module defines the behaviour
+  A request is one of the per-gesture structs under `Coconut.Edit.Operations.*`
+  (e.g. `Coconut.Edit.Operations.InsertNote`). This module defines the behaviour
   they implement and dispatches `validate/2` / `lower/3` to them.
 
   Design contract:
@@ -18,7 +18,7 @@ defmodule Coconut.Operate do
   - lowering does NOT apply anything; `Workspace.apply_batch/2` is the writer.
   """
 
-  alias Coconut.Operations.{
+  alias Coconut.Edit.Operations.{
     DeleteNote,
     DragNote,
     EditNote,
@@ -57,13 +57,13 @@ defmodule Coconut.Operate do
 
   | gesture     | module                         | ops produced          | span_snapshot touched |
   |-------------|--------------------------------|-----------------------|-----------------------|
-  | insert_note | `Operations.InsertNote`        | Insert                | new id → span        |
-  | delete_note | `Operations.DeleteNote`        | Delete                | id → :delete         |
-  | move_note   | `Operations.MoveNote`          | Move                  | — (order only)       |
-  | drag_note   | `Operations.DragNote`          | Move + Retime (同批)  | id → new_span        |
-  | split_note  | `Operations.SplitNote`         | Split                 | parent→left, new→right|
-  | merge_notes | `Operations.MergeNotes`        | Merge                 | into→merged, rest→del|
-  | edit_note   | `Operations.EditNote`          | — (no op)             | id → re-cast element |
+  | insert_note | `Edit.Operations.InsertNote`        | Insert                | new id → span        |
+  | delete_note | `Edit.Operations.DeleteNote`        | Delete                | id → :delete         |
+  | move_note   | `Edit.Operations.MoveNote`          | Move                  | — (order only)       |
+  | drag_note   | `Edit.Operations.DragNote`          | Move + Retime (同批)  | id → new_span        |
+  | split_note  | `Edit.Operations.SplitNote`         | Split                 | parent→left, new→right|
+  | merge_notes | `Edit.Operations.MergeNotes`        | Merge                 | into→merged, rest→del|
+  | edit_note   | `Edit.Operations.EditNote`          | — (no op)             | id → re-cast element |
 
   `old_span` in `DragNote` is the span captured by the caller at drag-start;
   Retime needs both ends to keep the op log self-contained for warp construction.
@@ -71,7 +71,7 @@ defmodule Coconut.Operate do
   For `:tempo` inserts, `attrs.bpm` is a plain bpm number (floats allowed),
   normalized to exact milli-bpm by the tempo track module's `cast_element/3`
   (the single rounding point). Element casting in general is the track
-  module's business; Operate only shapes ops and span entries.
+  module's business; Edit.Operation only shapes ops and span entries.
   """
   @type request ::
           InsertNote.t()

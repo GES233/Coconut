@@ -1,12 +1,12 @@
 # Spike: multi-track edit pipeline
 # Two sub-tracks share overlapping tick spans without conflict.
 
-alias Coconut.{Engine, Operate, Patch, Track, WarpProvider, Workspace}
+alias Coconut.{Engine, Edit.Operation, Patch, Track, WarpProvider, Workspace}
 alias Coconut.Engine.Request
 alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 
-cfg = %Operate.Config{}
+cfg = %Operation.Config{}
 track_a = "vocal_a"
 track_b = "vocal_b"
 
@@ -27,8 +27,8 @@ track_b = "vocal_b"
 
 # ---- Tempo ----
 {:ok, ops, ch} =
-  Operate.lower(
-    %Coconut.Operations.InsertNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.InsertNote{
       track_id: "tempo",
       note_id: "t0",
       after_id: :head,
@@ -42,8 +42,8 @@ track_b = "vocal_b"
 
 # ---- Track A: melody ----
 {:ok, ops_a, ch_a} =
-  Operate.lower(
-    %Coconut.Operations.InsertNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.InsertNote{
       track_id: track_a,
       note_id: "a1",
       after_id: :head,
@@ -55,8 +55,8 @@ track_b = "vocal_b"
   )
 {:ok, ws} = Workspace.apply_batch(ws, track_a, 1, ops_a, ch_a)
 {:ok, ops_a2, ch_a2} =
-  Operate.lower(
-    %Coconut.Operations.InsertNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.InsertNote{
       track_id: track_a,
       note_id: "a2",
       after_id: "a1",
@@ -70,8 +70,8 @@ track_b = "vocal_b"
 
 # ---- Track B: harmony, overlaps with A ----
 {:ok, ops_b, ch_b} =
-  Operate.lower(
-    %Coconut.Operations.InsertNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.InsertNote{
       track_id: track_b,
       note_id: "b1",
       after_id: :head,
@@ -100,8 +100,8 @@ IO.inspect(art.payload.notes, label: "render (flat)")
 
 # ---- Drag a1 (overlaps b1) ----
 {:ok, ops, ch} =
-  Operate.lower(
-    %Coconut.Operations.DragNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.DragNote{
       track_id: track_a,
       note_id: "a1",
       after_id: :head,

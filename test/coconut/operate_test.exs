@@ -1,7 +1,7 @@
-defmodule Coconut.OperateTest do
+defmodule Coconut.Edit.OperationTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Operate, Track, Workspace}
+  alias Coconut.{Edit.Operation, Track, Workspace}
   alias Coconut.Score.{Key.TwelveET, Note}
   alias Coconut.Util.ID
 
@@ -23,8 +23,8 @@ defmodule Coconut.OperateTest do
   describe "validate" do
     test "rejects unknown track", %{ws: ws} do
       assert {:error, {:unknown_track, "bad"}} =
-               Operate.validate(
-                 %Coconut.Operations.InsertNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.InsertNote{
                    track_id: "bad",
                    note_id: "n1",
                    after_id: :head,
@@ -38,8 +38,8 @@ defmodule Coconut.OperateTest do
     test "insert: rejects duplicate id", %{ws: ws} do
       # insert first
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -47,15 +47,15 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       # try insert same id again
       assert {:error, {:id_conflict, "n1"}} =
-               Operate.validate(
-                 %Coconut.Operations.InsertNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.InsertNote{
                    track_id: @track,
                    note_id: "n1",
                    after_id: :head,
@@ -68,8 +68,8 @@ defmodule Coconut.OperateTest do
 
     test "insert: rejects invalid span", %{ws: ws} do
       assert {:error, {:invalid_span, {480, 0}}} =
-               Operate.validate(
-                 %Coconut.Operations.InsertNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.InsertNote{
                    track_id: @track,
                    note_id: "n1",
                    after_id: :head,
@@ -82,16 +82,16 @@ defmodule Coconut.OperateTest do
 
     test "delete: rejects unknown id", %{ws: ws} do
       assert {:error, {:unknown_id, "nope"}} =
-               Operate.validate(
-                 %Coconut.Operations.DeleteNote{track_id: @track, note_id: "nope"},
+               Operation.validate(
+                 %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "nope"},
                  ws
                )
     end
 
     test "move: rejects self-reference", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -99,22 +99,22 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       assert {:error, {:self_referential, "n1"}} =
-               Operate.validate(
-                 %Coconut.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n1"},
+               Operation.validate(
+                 %Coconut.Edit.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n1"},
                  ws
                )
     end
 
     test "split: accepts a split point inside the note span", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -122,14 +122,14 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       assert :ok =
-               Operate.validate(
-                 %Coconut.Operations.SplitNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "n1",
                    at_tick: 240,
@@ -141,8 +141,8 @@ defmodule Coconut.OperateTest do
 
     test "split: rejects a split point outside the note span", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -150,14 +150,14 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       assert {:error, {:split_out_of_bounds, {0, 480, 480}}} =
-               Operate.validate(
-                 %Coconut.Operations.SplitNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "n1",
                    at_tick: 480,
@@ -169,8 +169,8 @@ defmodule Coconut.OperateTest do
 
     test "split: validates against the HEAD span version", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -178,15 +178,15 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       # Drag moves the span to {100, 580}; the old span must no longer count.
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DragNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.DragNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -194,15 +194,15 @@ defmodule Coconut.OperateTest do
             new_span: {100, 580}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # 50 is inside the old span {0, 480} but outside the HEAD span.
       assert {:error, {:split_out_of_bounds, {100, 580, 50}}} =
-               Operate.validate(
-                 %Coconut.Operations.SplitNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "n1",
                    at_tick: 50,
@@ -212,8 +212,8 @@ defmodule Coconut.OperateTest do
                )
 
       assert :ok =
-               Operate.validate(
-                 %Coconut.Operations.SplitNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "n1",
                    at_tick: 300,
@@ -227,8 +227,8 @@ defmodule Coconut.OperateTest do
   describe "lower" do
     test "insert gives Insert op + element + span", %{ws: ws} do
       assert {:ok, [%Tamale.Op.Insert{id: "n1", after_id: :head}], changes} =
-               Operate.lower(
-                 %Coconut.Operations.InsertNote{
+               Operation.lower(
+                 %Coconut.Edit.Operations.InsertNote{
                    track_id: @track,
                    note_id: "n1",
                    after_id: :head,
@@ -236,7 +236,7 @@ defmodule Coconut.OperateTest do
                    attrs: %{pitch: 60}
                  },
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       assert %{"n1" => %Note{key: %TwelveET{midi: 60}}} = changes.elements
@@ -245,10 +245,10 @@ defmodule Coconut.OperateTest do
 
     test "delete gives Delete op + tombstones", %{ws: ws} do
       assert {:ok, [%Tamale.Op.Delete{id: "n1"}], changes} =
-               Operate.lower(
-                 %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+               Operation.lower(
+                 %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       assert changes.elements == %{"n1" => :delete}
@@ -257,10 +257,10 @@ defmodule Coconut.OperateTest do
 
     test "move gives Move op only, no side changes", %{ws: ws} do
       assert {:ok, [%Tamale.Op.Move{id: "n1", after_id: "n2"}], changes} =
-               Operate.lower(
-                 %Coconut.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n2"},
+               Operation.lower(
+                 %Coconut.Edit.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n2"},
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       assert changes.elements == %{}
@@ -269,8 +269,8 @@ defmodule Coconut.OperateTest do
 
     test "drag gives Move + Retime + span update", %{ws: ws} do
       assert {:ok, ops, changes} =
-               Operate.lower(
-                 %Coconut.Operations.DragNote{
+               Operation.lower(
+                 %Coconut.Edit.Operations.DragNote{
                    track_id: @track,
                    note_id: "n1",
                    after_id: "n2",
@@ -278,7 +278,7 @@ defmodule Coconut.OperateTest do
                    new_span: {100, 580}
                  },
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       assert length(ops) == 2
@@ -289,8 +289,8 @@ defmodule Coconut.OperateTest do
 
     test "edit_note gives no ops, upserts the re-cast element", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -298,20 +298,20 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       assert {:ok, [], changes} =
-               Operate.lower(
-                 %Coconut.Operations.EditNote{
+               Operation.lower(
+                 %Coconut.Edit.Operations.EditNote{
                    track_id: @track,
                    note_id: "n1",
                    changes: %{lyric: "ら"}
                  },
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       # Partial merge: the lyric is written, the key carries over.
@@ -321,8 +321,8 @@ defmodule Coconut.OperateTest do
 
     test "split gives both halves' spans + inherited element", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -330,21 +330,21 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       assert {:ok, [%Tamale.Op.Split{id: "n1", children: ["n1", "n2"]}], changes} =
-               Operate.lower(
-                 %Coconut.Operations.SplitNote{
+               Operation.lower(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "n1",
                    at_tick: 240,
                    new_id: "n2"
                  },
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       assert changes.span_snapshot == %{"n1" => {0, 240}, "n2" => {240, 480}}
@@ -359,22 +359,22 @@ defmodule Coconut.OperateTest do
 
     test "split without span state is unreachable", %{ws: ws} do
       assert {:error, :unreachable} =
-               Operate.lower(
-                 %Coconut.Operations.SplitNote{
+               Operation.lower(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "ghost",
                    at_tick: 240,
                    new_id: "n2"
                  },
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
     end
 
     test "merge gives composite span + tombstones", %{ws: ws} do
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -382,14 +382,14 @@ defmodule Coconut.OperateTest do
             attrs: %{lyric: "ら"}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, ch)
 
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n2",
             after_id: "n1",
@@ -397,16 +397,16 @@ defmodule Coconut.OperateTest do
             attrs: %{lyric: "り"}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, ch)
 
       assert {:ok, [%Tamale.Op.Merge{ids: ["n1", "n2"], into: "n1"}], changes} =
-               Operate.lower(
-                 %Coconut.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
+               Operation.lower(
+                 %Coconut.Edit.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
                  ws,
-                 %Operate.Config{}
+                 %Operation.Config{}
                )
 
       assert changes.span_snapshot == %{"n1" => {0, 960}, "n2" => :delete}
@@ -417,8 +417,8 @@ defmodule Coconut.OperateTest do
   describe "apply_batch" do
     test "version conflict rejects stale write", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -426,7 +426,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -438,8 +438,8 @@ defmodule Coconut.OperateTest do
 
     test "insert populates space + side", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -447,7 +447,7 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -466,8 +466,8 @@ defmodule Coconut.OperateTest do
     test "full insert-then-delete cycle", %{ws: ws} do
       # Insert
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -475,7 +475,7 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -483,10 +483,10 @@ defmodule Coconut.OperateTest do
 
       # Delete
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+        Operation.lower(
+          %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -504,8 +504,8 @@ defmodule Coconut.OperateTest do
     test "drag updates span_snapshot only, not elements", %{ws: ws} do
       # Insert a note first
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -513,15 +513,15 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       # Drag it
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DragNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.DragNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -529,7 +529,7 @@ defmodule Coconut.OperateTest do
             new_span: {100, 580}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -544,8 +544,8 @@ defmodule Coconut.OperateTest do
 
     test "split closes the loop: both halves get spans, re-split validates", %{ws: ws} do
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -553,14 +553,14 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, ch)
 
       :ok =
-        Operate.validate(
-          %Coconut.Operations.SplitNote{
+        Operation.validate(
+          %Coconut.Edit.Operations.SplitNote{
             track_id: @track,
             note_id: "n1",
             at_tick: 240,
@@ -570,15 +570,15 @@ defmodule Coconut.OperateTest do
         )
 
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.SplitNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.SplitNote{
             track_id: @track,
             note_id: "n1",
             at_tick: 240,
             new_id: "n2"
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, ch)
@@ -591,8 +591,8 @@ defmodule Coconut.OperateTest do
 
       # The right half used to have no span at all — a second split validates now.
       assert :ok =
-               Operate.validate(
-                 %Coconut.Operations.SplitNote{
+               Operation.validate(
+                 %Coconut.Edit.Operations.SplitNote{
                    track_id: @track,
                    note_id: "n2",
                    at_tick: 360,
@@ -604,8 +604,8 @@ defmodule Coconut.OperateTest do
 
     test "merge writes composite span, removes absorbed ids", %{ws: ws} do
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -613,14 +613,14 @@ defmodule Coconut.OperateTest do
             attrs: %{lyric: "ら"}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, ch)
 
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n2",
             after_id: "n1",
@@ -628,22 +628,22 @@ defmodule Coconut.OperateTest do
             attrs: %{lyric: "り"}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, ch)
 
       :ok =
-        Operate.validate(
-          %Coconut.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
+        Operation.validate(
+          %Coconut.Edit.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
           ws
         )
 
       {:ok, ops, ch} =
-        Operate.lower(
-          %Coconut.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
+        Operation.lower(
+          %Coconut.Edit.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops, ch)
@@ -657,8 +657,8 @@ defmodule Coconut.OperateTest do
 
     test "edit_note merges changes, preserving untouched fields", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -666,16 +666,16 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.EditNote{track_id: @track, note_id: "n1", changes: %{lyric: "ら"}},
+        Operation.lower(
+          %Coconut.Edit.Operations.EditNote{track_id: @track, note_id: "n1", changes: %{lyric: "ら"}},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, changes)
@@ -723,8 +723,8 @@ defmodule Coconut.OperateTest do
 
     test "latest_span falls back to the newest recorded version", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -732,14 +732,14 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n2",
             after_id: "n1",
@@ -747,17 +747,17 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       # Move-only batch: no span snapshot is written at the head version.
       {:ok, ops3, changes3} =
-        Operate.lower(
-          %Coconut.Operations.MoveNote{track_id: @track, note_id: "n2", after_id: :head},
+        Operation.lower(
+          %Coconut.Edit.Operations.MoveNote{track_id: @track, note_id: "n2", after_id: :head},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
@@ -774,8 +774,8 @@ defmodule Coconut.OperateTest do
     test "ordinal anchor survives after insert", %{ws: ws} do
       # Insert a note, then attach a patch with an ordinal anchor
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -783,7 +783,7 @@ defmodule Coconut.OperateTest do
             attrs: %{pitch: 60}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -806,8 +806,8 @@ defmodule Coconut.OperateTest do
 
     test "ordinal anchor dies after delete", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -815,7 +815,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -831,10 +831,10 @@ defmodule Coconut.OperateTest do
 
       # Delete the note — write-time transport inside apply_batch kills it.
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+        Operation.lower(
+          %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -845,8 +845,8 @@ defmodule Coconut.OperateTest do
 
     test "ordinal anchor survives move (identity follows)", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -854,14 +854,14 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n2",
             after_id: "n1",
@@ -869,7 +869,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -885,10 +885,10 @@ defmodule Coconut.OperateTest do
 
       # Move n1 after n2
       {:ok, ops3, changes3} =
-        Operate.lower(
-          %Coconut.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n2"},
+        Operation.lower(
+          %Coconut.Edit.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n2"},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
@@ -902,8 +902,8 @@ defmodule Coconut.OperateTest do
 
     test "metric anchor rejected without warp_provider", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -911,7 +911,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -937,8 +937,8 @@ defmodule Coconut.OperateTest do
 
     test "metric anchor follows its note's retime segment", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -946,7 +946,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -961,8 +961,8 @@ defmodule Coconut.OperateTest do
       ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DragNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.DragNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -970,7 +970,7 @@ defmodule Coconut.OperateTest do
             new_span: {100, 580}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -987,8 +987,8 @@ defmodule Coconut.OperateTest do
 
     test "metric anchor over a deleted note's span dies", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -996,7 +996,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -1011,10 +1011,10 @@ defmodule Coconut.OperateTest do
       ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+        Operation.lower(
+          %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -1032,8 +1032,8 @@ defmodule Coconut.OperateTest do
 
       # Insert in @track
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -1041,7 +1041,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -1072,8 +1072,8 @@ defmodule Coconut.OperateTest do
 
   test "relative anchor survives move (ref follows, offsets preserved)", %{ws: ws} do
     {:ok, ops, changes} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n1",
           after_id: :head,
@@ -1081,14 +1081,14 @@ defmodule Coconut.OperateTest do
           attrs: %{pitch: 60}
         },
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
 
     {:ok, ops2, changes2} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n2",
           after_id: "n1",
@@ -1096,7 +1096,7 @@ defmodule Coconut.OperateTest do
           attrs: %{}
         },
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -1112,10 +1112,10 @@ defmodule Coconut.OperateTest do
 
     # Move n1 after n2
     {:ok, ops3, changes3} =
-      Operate.lower(
-        %Coconut.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n2"},
+      Operation.lower(
+        %Coconut.Edit.Operations.MoveNote{track_id: @track, note_id: "n1", after_id: "n2"},
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
@@ -1135,8 +1135,8 @@ defmodule Coconut.OperateTest do
 
   test "relative anchor dies when ref is deleted", %{ws: ws} do
     {:ok, ops, changes} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: "n1",
           after_id: :head,
@@ -1144,7 +1144,7 @@ defmodule Coconut.OperateTest do
           attrs: %{}
         },
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -1159,10 +1159,10 @@ defmodule Coconut.OperateTest do
     ws = put_in(ws.tracks[@track].patches, [cp])
 
     {:ok, ops2, changes2} =
-      Operate.lower(
-        %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+      Operation.lower(
+        %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -1175,8 +1175,8 @@ defmodule Coconut.OperateTest do
   describe "write-time transport" do
     test "apply_batch transports and persists anchors (at_version advances)", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -1184,7 +1184,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -1199,8 +1199,8 @@ defmodule Coconut.OperateTest do
       ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n2",
             after_id: "n1",
@@ -1208,7 +1208,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -1220,8 +1220,8 @@ defmodule Coconut.OperateTest do
 
     test "take_dead_patches returns the graveyard and clears it", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -1229,7 +1229,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
@@ -1244,10 +1244,10 @@ defmodule Coconut.OperateTest do
       ws = put_in(ws.tracks[@track].patches, [cp])
 
       {:ok, ops2, changes2} =
-        Operate.lower(
-          %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+        Operation.lower(
+          %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
@@ -1259,8 +1259,8 @@ defmodule Coconut.OperateTest do
 
     test "patches_add minted by a batch join untransported, removes land first", %{ws: ws} do
       {:ok, ops, changes} =
-        Operate.lower(
-          %Coconut.Operations.InsertNote{
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
             track_id: @track,
             note_id: "n1",
             after_id: :head,
@@ -1268,7 +1268,7 @@ defmodule Coconut.OperateTest do
             attrs: %{}
           },
           ws,
-          %Operate.Config{}
+          %Operation.Config{}
         )
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)

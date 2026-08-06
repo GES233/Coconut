@@ -1,7 +1,7 @@
 defmodule Coconut.ResolveTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Operate, Patch, Resolve, Track, Workspace}
+  alias Coconut.{Engine, Edit.Operation, Patch, Resolve, Track, Workspace}
   alias Coconut.Engine.Request
   alias Coconut.Engines.Mock
   alias Coconut.Util.ID
@@ -25,8 +25,8 @@ defmodule Coconut.ResolveTest do
 
   defp insert_note(ws, id, after_id, span, attrs) do
     {:ok, ops, changes} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: @track,
           note_id: id,
           after_id: after_id,
@@ -34,7 +34,7 @@ defmodule Coconut.ResolveTest do
           attrs: attrs
         },
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
@@ -141,10 +141,10 @@ defmodule Coconut.ResolveTest do
     ws = attach_lyric_patch(ws, "n1", %{lyric: "x"})
 
     {:ok, ops, changes} =
-      Operate.lower(
-        %Coconut.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+      Operation.lower(
+        %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
         ws,
-        %Operate.Config{}
+        %Operation.Config{}
       )
 
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)

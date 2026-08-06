@@ -13,11 +13,11 @@
 # (track.dead_patches) for the policy layer. The explicit transport calls
 # below therefore re-fold nothing — they just re-verify the persisted state.
 
-alias Coconut.{Operate, Patch, Resolve, Track, WarpProvider, Workspace}
+alias Coconut.{Edit.Operation, Patch, Resolve, Track, WarpProvider, Workspace}
 alias Coconut.Util.ID
 alias Tamale.Warp
 
-cfg = %Operate.Config{}
+cfg = %Operation.Config{}
 track = "vocal"
 
 # ---- helpers ----
@@ -101,8 +101,8 @@ notes = [
 ws =
   Enum.reduce(notes, ws, fn {id, after_id, span, attrs}, ws ->
     {:ok, ops, ch} =
-      Operate.lower(
-        %Coconut.Operations.InsertNote{
+      Operation.lower(
+        %Coconut.Edit.Operations.InsertNote{
           track_id: track,
           note_id: id,
           after_id: after_id,
@@ -148,8 +148,8 @@ IO.puts("  space   [2100, 2200]  past the end (empty space)")
 
 # ---- 3. Act 1: drag n3 right into empty space ----
 {:ok, ops, ch} =
-  Operate.lower(
-    %Coconut.Operations.DragNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.DragNote{
       track_id: track,
       note_id: "n3",
       after_id: "n2",
@@ -179,8 +179,8 @@ transport_and_report.(ws, "transport after act 1 (curve follows n3)")
 
 # ---- 4. Act 2: shrink n2 to a third of its length ----
 {:ok, ops, ch} =
-  Operate.lower(
-    %Coconut.Operations.DragNote{
+  Operation.lower(
+    %Coconut.Edit.Operations.DragNote{
       track_id: track,
       note_id: "n2",
       after_id: "n1",
@@ -225,7 +225,7 @@ end
 
 # ---- 6. Act 3: delete n3 — the curve patch loses its ground ----
 {:ok, ops, ch} =
-  Operate.lower(%Coconut.Operations.DeleteNote{track_id: track, note_id: "n3"}, ws, cfg)
+  Operation.lower(%Coconut.Edit.Operations.DeleteNote{track_id: track, note_id: "n3"}, ws, cfg)
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
 IO.puts("\n=== Act 3: delete n3 (now at [1440, 1920]) ===")

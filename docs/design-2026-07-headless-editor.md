@@ -245,7 +245,7 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 ## 10. 实施顺序建议
 
 1. Workspace 纯函数内核：lowering + transport（命令流第 2、4 步）——已完成
-   （`Coconut.Workspace` / `Coconut.Operate`，写时 transport + 死 patch 坟场）；
+   （`Coconut.Workspace` / `Coconut.Operation`，写时 transport + 死 patch 坟场）；
 2. golden 场景验证台（移植 zongzi_feasibility 的 Scenario 模式）——
    已落地最小集，暂停扩家族（已定 2026-08-03）：只搬 Scenario 契约 +
    对抗轮驱动（`test/support/scenario.ex`，runner 直接走
