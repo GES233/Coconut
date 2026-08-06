@@ -13,10 +13,10 @@ defmodule Coconut.Engines.Channels.Pitch do
   grid.
   """
 
-  @behaviour Coconut.Channel
+  @behaviour Coconut.Render.Channel
 
   alias Coconut.Engines.Channels.Lyric
-  alias Coconut.Patch
+  alias Coconut.Edit.Patch
 
   @impl true
   def projection(ws, patch), do: Lyric.projection(ws, patch)

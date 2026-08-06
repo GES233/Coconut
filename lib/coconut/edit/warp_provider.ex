@@ -1,4 +1,4 @@
-defmodule Coconut.WarpProvider do
+defmodule Coconut.Edit.WarpProvider do
   @moduledoc """
   Constructs `Tamale.Warp` segments for Coconut coordinate systems.
 
@@ -45,7 +45,7 @@ defmodule Coconut.WarpProvider do
     function of its inputs. Ripple mode (v2) and frame-space warp add
     non-identity logic on top.
   - The closure returns `Tamale.Warp.t()` directly (no error tuple), so the
-    coord must be guarded before invoking: `Coconut.Patch.new/1` rejects
+    coord must be guarded before invoking: `Coconut.Edit.Patch.new/1` rejects
     Metric anchors outside `supported_coords/0` at construction time.
   """
 
@@ -61,7 +61,7 @@ defmodule Coconut.WarpProvider do
   their Metric coordinates extend the warp domain so every live anchor is
   covered.
   """
-  @spec tick(map(), [Coconut.Patch.t()]) :: Tamale.Transport.warp_provider()
+  @spec tick(map(), [Coconut.Edit.Patch.t()]) :: Tamale.Transport.warp_provider()
   def tick(track_spans, patches \\ []) do
     fn :tick, {version, ops} -> build_warp(track_spans, patches, version, ops) end
   end
@@ -79,7 +79,7 @@ defmodule Coconut.WarpProvider do
   Coordinate systems this provider can serve — the keys of the builder
   dispatch table, sorted for determinism.
 
-  `Coconut.Patch.new/1` rejects Metric anchors outside this list at
+  `Coconut.Edit.Patch.new/1` rejects Metric anchors outside this list at
   construction time — that guard is what keeps each single-coord provider
   closure total in practice.
   """
@@ -90,16 +90,16 @@ defmodule Coconut.WarpProvider do
   Returns the `warp_provider` closure serving `coord`, or `nil` when the
   dispatch table has no builder for it.
 
-  Construction sites (write-time: `Coconut.Workspace`; check-time:
-  `Coconut.Resolve`) dispatch on the track's `coord_domain/0` through
+  Construction sites (write-time: `Coconut.Edit.Workspace`; check-time:
+  `Coconut.Render.Resolve`) dispatch on the track's `coord_domain/0` through
   here. A `nil` return plugs into `Workspace.transport_patches/3`'s nil
   semantics: Ordinal/Relative anchors still travel by identity, while a
   `Tamale.Anchor.Metric` anchor dies as `:warp_provider_required` — a
   surfaced transport failure instead of a clause-less-closure crash. Via
-  `Coconut.Patch.new/1` the Metric case is unreachable anyway (its guard
+  `Coconut.Edit.Patch.new/1` the Metric case is unreachable anyway (its guard
   derives from the same table).
   """
-  @spec for_coord(atom(), map(), [Coconut.Patch.t()]) ::
+  @spec for_coord(atom(), map(), [Coconut.Edit.Patch.t()]) ::
           Tamale.Transport.warp_provider() | nil
   def for_coord(coord, track_spans, patches \\ []) do
     case Map.fetch(@builders, coord) do

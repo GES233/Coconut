@@ -1,4 +1,4 @@
-defmodule Coconut.Track do
+defmodule Coconut.Edit.Track do
   @moduledoc """
   A track: one `Tamale.Space` plus its side tables, typed by a track module.
 
@@ -21,7 +21,7 @@ defmodule Coconut.Track do
   - `validate_gesture/3` — track-type-specific legality beyond the generic
     geometry/sequence checks (e.g. tempo's first-element protection).
   - `split_inherit/2` — the right half of a split's element payload.
-  - `view/1` — the flattened score view for `Coconut.Engine.Snapshot`:
+  - `view/1` — the flattened score view for `Coconut.Render.Engine.Snapshot`:
     `[{id, element, span}]` ordered by `{start, id}`.
 
   ## Optional capabilities
@@ -31,13 +31,13 @@ defmodule Coconut.Track do
   are opt-in, so required-callback enforcement cannot apply):
 
   - `:tempo_derive` — `tempo_events/1` (see `TempoDerive`): the tempo-map
-    projection; `Coconut.Workspace` binds (and reserves) its `tempo`
+    projection; `Coconut.Edit.Workspace` binds (and reserves) its `tempo`
     field by it.
   - `:element_codec` — `dump_element/1` + `load_element/1` (see
     `ElementCodec`), sniffed as a pair: per-element archive codec for
     `Coconut.Pickle.Track`.
 
-  `use Coconut.Track` supplies a permissive `validate_gesture/3` default.
+  `use Coconut.Edit.Track` supplies a permissive `validate_gesture/3` default.
   """
 
   alias Coconut.Score.Tick
@@ -59,8 +59,8 @@ defmodule Coconut.Track do
           space: Tamale.Space.t(),
           spans_by_version: %{Tamale.version() => %{Tamale.id() => span()}},
           elements_by_id: %{Tamale.id() => term()},
-          patches: [Coconut.Patch.t()],
-          dead_patches: [{Coconut.Patch.t(), term()}]
+          patches: [Coconut.Edit.Patch.t()],
+          dead_patches: [{Coconut.Edit.Patch.t(), term()}]
         }
 
   @enforce_keys [:module]
@@ -114,19 +114,19 @@ defmodule Coconut.Track do
   Track-type-specific legality, consulted after the generic checks.
 
   `info` carries gesture-specific data (e.g. `%{id: id}` for `:delete`).
-  The default (`use Coconut.Track`) accepts everything.
+  The default (`use Coconut.Edit.Track`) accepts everything.
   """
   @callback validate_gesture(gesture :: atom(), t(), info :: map()) :: :ok | {:error, term()}
 
   @doc "Element payload for the right half of a split."
   @callback split_inherit(parent_element :: term(), new_id :: Tamale.id()) :: term()
 
-  @doc "Flattened score view for `Coconut.Engine.Snapshot`."
+  @doc "Flattened score view for `Coconut.Render.Engine.Snapshot`."
   @callback view(t()) :: view()
 
   defmacro __using__(_opts) do
     quote do
-      @behaviour Coconut.Track
+      @behaviour Coconut.Edit.Track
 
       @impl true
       def validate_gesture(_gesture, _track, _info), do: :ok
@@ -141,7 +141,7 @@ defmodule Coconut.Track do
   # directly (same convention as `Coconut.Score.Key`'s Facade API).
   # `tempo_events/1` is deliberately absent: it is a tempo-track capability
   # (see the Capabilities section), not a behaviour callback, and stays a
-  # composition-root concern (`Coconut.Workspace.tempo_map/1`).
+  # composition-root concern (`Coconut.Edit.Workspace.tempo_map/1`).
 
   @doc "The track's coordinate domain (`:tick` | `:frame`)."
   @spec coord_domain(t()) :: :tick | :frame
@@ -167,7 +167,7 @@ defmodule Coconut.Track do
   def split_inherit(%__MODULE__{module: module}, parent, new_id),
     do: module.split_inherit(parent, new_id)
 
-  @doc "The flattened score view (see `Coconut.Track.view/1` in the behaviour docs)."
+  @doc "The flattened score view (see `Coconut.Edit.Track.view/1` in the behaviour docs)."
   @spec view(t()) :: view()
   def view(%__MODULE__{module: module} = track), do: module.view(track)
 
@@ -184,7 +184,7 @@ defmodule Coconut.Track do
   Optional track-module capabilities (see `supports?/2`).
 
   - `:tempo_derive` — `tempo_events/1` (`TempoDerive`): the tempo-map
-    projection; `Coconut.Workspace.validate/1` binds (and reserves) the
+    projection; `Coconut.Edit.Workspace.validate/1` binds (and reserves) the
     `tempo` field by it.
   - `:element_codec` — `dump_element/1` + `load_element/1`
     (`ElementCodec`), sniffed as a pair: per-element archive codec for
@@ -220,7 +220,7 @@ defmodule Coconut.Track do
 
   # ---- Span table ----
 
-  @doc "The track's versioned span table, for `Coconut.WarpProvider.for_coord/3`."
+  @doc "The track's versioned span table, for `Coconut.Edit.WarpProvider.for_coord/3`."
   @spec spans(t()) :: %{Tamale.version() => %{Tamale.id() => span()}}
   def spans(%__MODULE__{spans_by_version: spans_by_version}), do: spans_by_version
 
@@ -265,7 +265,7 @@ defmodule Coconut.Track do
 
     # Snapshots are sparse (Move-only batches write none), so warp
     # construction for the oldest retained log entries — `spans_at(v - 1)`
-    # in `Coconut.WarpProvider` — can resolve below the cut. Always keep
+    # in `Coconut.Edit.WarpProvider` — can resolve below the cut. Always keep
     # the newest snapshot at or below it as the baseline.
     baseline =
       track.spans_by_version
@@ -293,7 +293,7 @@ defmodule Coconut.Track do
   `changes` is `Coconut.Edit.Operation`'s side_changes: element upserts/tombstones,
   span deltas, and patch removals. `patches_add` is *not* handled here —
   additions join after write-time transport, minted at the new head (see
-  `Coconut.Workspace.apply_batch/5`).
+  `Coconut.Edit.Workspace.apply_batch/5`).
   """
   @spec sync(t(), Tamale.version(), Coconut.Edit.Operation.side_changes()) :: t()
   def sync(track, new_version, changes) do
@@ -354,12 +354,12 @@ defmodule Coconut.Track do
   defmodule TempoDerive do
     @moduledoc """
     Optional `:tempo_derive` capability: the tempo-map projection
-    (`Coconut.Workspace.tempo_map/1`). Sniffed via
-    `Coconut.Track.supports?/2`; declaring this behaviour buys
+    (`Coconut.Edit.Workspace.tempo_map/1`). Sniffed via
+    `Coconut.Edit.Track.supports?/2`; declaring this behaviour buys
     compile-time warnings but is not required.
     """
 
-    @callback tempo_events(Coconut.Track.t()) :: [
+    @callback tempo_events(Coconut.Edit.Track.t()) :: [
                 {Coconut.Score.Tick.numeric_tick(), Coconut.Score.Tempo.Event.t()}
               ]
   end
@@ -368,7 +368,7 @@ defmodule Coconut.Track do
     @moduledoc """
     Optional `:element_codec` capability: per-element archive codec for
     `Coconut.Pickle.Track`. Both callbacks are sniffed as a pair via
-    `Coconut.Track.supports?/2` — a module exporting only one is treated
+    `Coconut.Edit.Track.supports?/2` — a module exporting only one is treated
     as codec-less (archiving a non-empty element table then fails with
     `{:error, {:no_element_codec, module}}`).
     """

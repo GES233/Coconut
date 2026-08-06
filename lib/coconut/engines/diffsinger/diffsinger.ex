@@ -10,7 +10,7 @@ defmodule Coconut.Engines.DiffSinger do
     structs (cast at lowering): each must carry a `:key` (pitch) and
     phonemes — explicit `"phonemes"` metadata (`[[lang, ph], ...]` pairs,
     always wins) or derived by the configured encoder (see
-    `Coconut.Encoder`), which runs once per track over the track's full
+    `Coconut.Render.Encoder`), which runs once per track over the track's full
     note sequence so melisma and context-dependent readings have their
     phrase. Notes with neither are rejected at assembly time
     (`:missing_phonemes`, `:encoder_failed`, `:encoder_incomplete`).
@@ -48,7 +48,7 @@ defmodule Coconut.Engines.DiffSinger do
       (default `["python"]`; e.g. `["uv", "run", "--project", "..."]`)
     * `:client` — module replacing the worker client (test seam),
       default `Coconut.Engines.DiffSinger.PortClient`
-    * `:encoder` — `Coconut.Encoder` module or `{module, config}` deriving
+    * `:encoder` — `Coconut.Render.Encoder` module or `{module, config}` deriving
       phonemes for notes that lack explicit `:phonemes`. The adapter's
       own config flows down to it (encoder-specific keys win). Bundled
       options: `Coconut.Engines.DiffSinger.Encoder` (worker-backed, uses
@@ -60,9 +60,10 @@ defmodule Coconut.Engines.DiffSinger do
   {:ok, map()} | {:error, term()}`.
   """
 
-  @behaviour Coconut.Engine
+  @behaviour Coconut.Render.Engine
 
-  alias Coconut.{Engine.Artifact, Engine.Request, Score.Key, Score.TempoMap}
+  alias Coconut.Render.Engine.{Artifact, Request}
+  alias Coconut.Score.{Key, TempoMap}
 
   @default_client Coconut.Engines.DiffSinger.PortClient
 
@@ -274,7 +275,7 @@ defmodule Coconut.Engines.DiffSinger do
   defp collect_notes(snapshot, config) do
     per_track =
       snapshot.tracks
-      |> Map.reject(fn {_track_id, view} -> view.module == Coconut.Track.Tempo end)
+      |> Map.reject(fn {_track_id, view} -> view.module == Coconut.Edit.Track.Tempo end)
       |> Map.new(fn {track_id, view} -> {track_id, view.elements} end)
 
     with {:ok, per_track} <- resolve_phonemes(per_track, Map.get(config, :encoder), config) do

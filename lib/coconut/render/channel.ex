@@ -1,11 +1,11 @@
-defmodule Coconut.Channel do
+defmodule Coconut.Render.Channel do
   @moduledoc """
-  Channel contract for `Coconut.Resolve`.
+  Channel contract for `Coconut.Render.Resolve`.
 
   A channel is one data facet the engine consumes (lyric, phoneme, phoneme
   duration, pitch, ...). Channels are deliberately *not* hardcoded: any
   module implementing this behaviour can be registered in the channel map
-  passed to `Coconut.Resolve.run_check/3`, next to plain ad-hoc spec maps.
+  passed to `Coconut.Render.Resolve.run_check/3`, next to plain ad-hoc spec maps.
 
   Each channel supplies:
 
@@ -20,7 +20,8 @@ defmodule Coconut.Channel do
     `{:port, note_id, :pitch}`). At least one of the two must be exported.
   """
 
-  alias Coconut.{Patch, Resolve, Workspace}
+  alias Coconut.Edit.{Patch, Workspace}
+  alias Coconut.Render.Resolve
 
   @callback projection(Workspace.t(), Patch.t()) :: {:ok, term()} | {:error, term()}
 

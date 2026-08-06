@@ -1,4 +1,4 @@
-defmodule Coconut.Engine do
+defmodule Coconut.Render.Engine do
   @moduledoc """
   Engine behaviour and dispatch.
 
@@ -7,7 +7,7 @@ defmodule Coconut.Engine do
 
   - `check/2` — the engine's own gate over a `Request`. Always consulted
     before `render/2`; a failure here aborts the round. (Patch-level
-    conflicts are vetoed earlier, in `Coconut.Resolve.run_check/3`.) On
+    conflicts are vetoed earlier, in `Coconut.Render.Resolve.run_check/3`.) On
     success it returns `{:ok, checked}` — whatever the engine prepared
     (projections, probes, pre-computed forwards) — which is handed back
     to `render/3` so work done at check time is not redone at render time.
@@ -33,7 +33,7 @@ defmodule Coconut.Engine do
   missing config, unassemblable input).
   """
 
-  alias Coconut.Engine.Request
+  alias Coconut.Render.Engine.Request
 
   @type engine :: module() | {module(), config_or_handle :: term()}
 

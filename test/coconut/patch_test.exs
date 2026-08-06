@@ -1,7 +1,7 @@
 defmodule Coconut.PatchTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.Patch
+  alias Coconut.Edit.Patch
 
   defp tamale_patch, do: %Tamale.Patch{base_digest: "d", payload: %{}}
 

@@ -1,4 +1,4 @@
-defmodule Coconut.Encoder do
+defmodule Coconut.Render.Encoder do
   @moduledoc """
   Encoder contract: note sequence → engine request tokens.
 

@@ -1,8 +1,9 @@
 defmodule Coconut.ResolveTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Edit.Operation, Patch, Resolve, Track, Workspace}
-  alias Coconut.Engine.Request
+  alias Coconut.Edit.{Operation, Patch, Track, Workspace}
+  alias Coconut.Render.{Engine, Resolve}
+  alias Coconut.Render.Engine.Request
   alias Coconut.Engines.Mock
   alias Coconut.Util.ID
 

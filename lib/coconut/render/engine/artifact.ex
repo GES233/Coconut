@@ -1,4 +1,4 @@
-defmodule Coconut.Engine.Artifact do
+defmodule Coconut.Render.Engine.Artifact do
   @moduledoc """
   The render product's formal shape (design doc §11.1).
 
@@ -14,7 +14,7 @@ defmodule Coconut.Engine.Artifact do
           edit_version: Tamale.version(),
           payload: term(),
           globals: %{atom() => term()},
-          overrides: %{Coconut.Resolve.port_ref() => %{input: term()}}
+          overrides: %{Coconut.Render.Resolve.port_ref() => %{input: term()}}
         }
 
   defstruct [:engine, :edit_version, :payload, globals: %{}, overrides: %{}]

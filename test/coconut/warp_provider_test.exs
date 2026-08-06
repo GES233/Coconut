@@ -1,7 +1,7 @@
 defmodule Coconut.WarpProviderTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.WarpProvider
+  alias Coconut.Edit.WarpProvider
   alias Tamale.{Op, Warp}
 
   # Span tables are %{version => %{id => {start_tick, end_tick}}}.
@@ -143,7 +143,7 @@ defmodule Coconut.WarpProviderTest do
     test "extends to live patch anchors beyond all spans" do
       spans = %{1 => %{"n1" => {0, 480}}}
 
-      patch = %Coconut.Patch{
+      patch = %Coconut.Edit.Patch{
         track_id: "vocal",
         channel: :energy,
         anchor: %Tamale.Anchor.Metric{coord: :tick, from: 4800, to: 5000, at_version: 1},

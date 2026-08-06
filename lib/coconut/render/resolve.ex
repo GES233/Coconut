@@ -1,4 +1,4 @@
-defmodule Coconut.Resolve do
+defmodule Coconut.Render.Resolve do
   @moduledoc """
   Bridge between the tamale edit kernel and the engine.
 
@@ -21,10 +21,10 @@ defmodule Coconut.Resolve do
 
   Channel specs are caller-supplied: digest projection shapes are domain
   policy, not kernel policy. A spec is either a module implementing the
-  `Coconut.Channel` behaviour or an ad-hoc `%{projection, target}` map.
+  `Coconut.Render.Channel` behaviour or an ad-hoc `%{projection, target}` map.
   """
 
-  alias Coconut.{Patch, WarpProvider, Workspace}
+  alias Coconut.Edit.{Patch, WarpProvider, Workspace}
 
   @typedoc "Engine port reference: `{:port, node, port}`."
   @type port_ref :: {:port, node :: term(), port :: term()}
@@ -49,7 +49,7 @@ defmodule Coconut.Resolve do
   @typedoc "A single check failure. Entries are aggregated before vetoing."
   @type check_entry :: %{
           :kind => :conflict | :transport | :unknown_channel | :projection_failed,
-          :track_id => Coconut.Track.track_id(),
+          :track_id => Coconut.Edit.Track.track_id(),
           :patch => Patch.t(),
           optional(:channel) => atom(),
           optional(:reason) => term()
@@ -104,8 +104,8 @@ defmodule Coconut.Resolve do
           patches ->
             provider =
               WarpProvider.for_coord(
-                Coconut.Track.coord_domain(track),
-                Coconut.Track.spans(track),
+                Coconut.Edit.Track.coord_domain(track),
+                Coconut.Edit.Track.spans(track),
                 patches
               )
 
@@ -198,7 +198,7 @@ defmodule Coconut.Resolve do
 
   # ---- Fold ----
 
-  # A channel spec is either an ad-hoc map or a `Coconut.Channel` module.
+  # A channel spec is either an ad-hoc map or a `Coconut.Render.Channel` module.
   defp normalize_spec(%{projection: _, target: _} = spec), do: spec
 
   defp normalize_spec(module) when is_atom(module) do

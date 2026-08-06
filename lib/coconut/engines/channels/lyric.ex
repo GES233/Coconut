@@ -10,9 +10,10 @@ defmodule Coconut.Engines.Channels.Lyric do
   an ad-hoc spec map (or their own module) instead.
   """
 
-  @behaviour Coconut.Channel
+  @behaviour Coconut.Render.Channel
 
-  alias Coconut.{Patch, Score.Note, Workspace}
+  alias Coconut.Edit.{Patch, Workspace}
+  alias Coconut.Score.Note
 
   @impl true
   def projection(%Workspace{} = ws, %Patch{} = patch) do

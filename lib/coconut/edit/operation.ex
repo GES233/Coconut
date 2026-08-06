@@ -28,7 +28,7 @@ defmodule Coconut.Edit.Operation do
     SplitNote
   }
 
-  alias Coconut.Workspace
+  alias Coconut.Edit.Workspace
   alias Coconut.Util.ID
 
   # ---- Config ----
@@ -47,7 +47,7 @@ defmodule Coconut.Edit.Operation do
   # ---- Request ----
 
   @typedoc "Track identity within a workspace."
-  @type track_id :: ID.t(Coconut.Track.t())
+  @type track_id :: ID.t(Coconut.Edit.Track.t())
 
   @typedoc "A tick span `{start, end}`. Both are non-negative integers, `end > start`."
   @type span :: {non_neg_integer(), non_neg_integer()}
@@ -98,7 +98,7 @@ defmodule Coconut.Edit.Operation do
   @type side_changes :: %{
           elements: %{Tamale.id() => map() | :delete},
           span_snapshot: %{Tamale.id() => span() | :delete},
-          patches_add: [Coconut.Patch.t()],
+          patches_add: [Coconut.Edit.Patch.t()],
           patches_remove: [term()]
         }
 

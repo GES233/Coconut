@@ -3,9 +3,10 @@
 # Creates a workspace with a note track and tempo track, inserts notes,
 # mounts patches, edits, transports, and runs a Resolve + Engine round.
 
-alias Coconut.{Engine, Patch, Resolve, Track, WarpProvider, Workspace}
+alias Coconut.Edit.{Patch, Track, WarpProvider, Workspace}
+alias Coconut.Render.{Engine, Resolve}
 alias Coconut.Edit.{Operation}
-alias Coconut.Engine.Request
+alias Coconut.Render.Engine.Request
 alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 

@@ -5,13 +5,14 @@ defmodule Coconut.Pickle.ProjectTest do
 
   alias Coconut.Pickle.Project, as: PickleProject
   alias Coconut.Pickle.Track, as: PickleTrack
-  alias Coconut.{Edit.Operation, Project, Workspace}
+  alias Coconut.Project
+  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Util.ID
 
   # 沿用 workspace_test 的构造方式：vocal 音符 + tempo 事件
   defp build_workspace do
-    {:ok, tempo} = Coconut.Track.new(%{id: "tempo", module: Coconut.Track.Tempo})
-    {:ok, vocal} = Coconut.Track.new(%{id: "vocal", module: Coconut.Track.Vocal})
+    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "tempo", module: Coconut.Edit.Track.Tempo})
+    {:ok, vocal} = Coconut.Edit.Track.new(%{id: "vocal", module: Coconut.Edit.Track.Vocal})
 
     {:ok, ws} =
       Workspace.new(%{

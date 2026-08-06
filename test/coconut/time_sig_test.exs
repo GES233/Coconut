@@ -1,7 +1,7 @@
 defmodule Coconut.TimeSigTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.Workspace
+  alias Coconut.Edit.Workspace
   alias Coconut.Score.TimeSigMap
   alias Coconut.Util.ID
 

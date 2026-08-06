@@ -7,8 +7,9 @@
 # Paths are machine-specific; override with env vars when they differ:
 # DS_VOICEBANK, DS_PYTHON.
 
-alias Coconut.{Engine, Edit.Operation, Track, Workspace}
-alias Coconut.Engine.Request
+alias Coconut.Edit.{Operation, Track, Workspace}
+alias Coconut.Render.Engine
+alias Coconut.Render.Engine.Request
 alias Coconut.Engines.DiffSinger
 alias Coconut.Util.ID
 

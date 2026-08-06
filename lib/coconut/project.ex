@@ -1,12 +1,12 @@
 defmodule Coconut.Project do
   @moduledoc """
-  工程（落盘单元）：一个 `Coconut.Workspace` 加上工程级的声库签名与
+  工程（落盘单元）：一个 `Coconut.Edit.Workspace` 加上工程级的声库签名与
   自由元数据。
 
   ## 字段
 
   - `id` — 必需，同 Workspace/Note 的 id 纪律；
-  - `workspace` — `Coconut.Workspace.t()`，编辑聚合本体；
+  - `workspace` — `Coconut.Edit.Workspace.t()`，编辑聚合本体；
   - `engine` — **保留**，v1 一律 `nil`（引擎与 Orchid 的边界未定）；
   - `settings` — **保留**，v1 一律 `nil`（引擎设置/globals 边界未定）；
   - `assets` — **保留**，v1 一律 `nil`（`Track.Audio` 未落地）；
@@ -20,7 +20,7 @@ defmodule Coconut.Project do
   （定形状、定 codec）时放开 `validate/1` 的对应分支，旧档无需迁移。
   """
 
-  alias Coconut.Workspace
+  alias Coconut.Edit.Workspace
   alias Coconut.Util.ID
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2]

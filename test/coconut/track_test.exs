@@ -1,7 +1,7 @@
 defmodule Coconut.TrackTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Edit.Operation, Track, Workspace}
+  alias Coconut.Edit.{Operation, Track, Workspace}
   alias Coconut.Util.ID
 
   @track "vocal"

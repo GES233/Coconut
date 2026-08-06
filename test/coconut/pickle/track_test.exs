@@ -4,7 +4,8 @@ defmodule Coconut.Pickle.TrackTest do
   import Coconut.PickleHelper
 
   alias Coconut.Pickle.Track, as: PickleTrack
-  alias Coconut.{Patch, Score, Track}
+  alias Coconut.Score
+  alias Coconut.Edit.{Patch, Track}
   alias Tamale.Anchor.Ordinal
 
   defp vocal_track do

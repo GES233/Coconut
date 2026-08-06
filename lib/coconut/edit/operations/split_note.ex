@@ -1,7 +1,7 @@
 defmodule Coconut.Edit.Operations.SplitNote do
   import Coconut.Edit.Operations.CoreComponents
 
-  alias Coconut.{Edit.Operation, Track, Workspace}
+  alias Coconut.Edit.{Operation, Track, Workspace}
   alias Coconut.Score.Note
 
   @behaviour Coconut.Edit.Operation

@@ -1,6 +1,6 @@
 defmodule Coconut.Pickle.Track do
   @moduledoc """
-  `Coconut.Track` 的原生对象 codec（arity-2：`dump/2` / `load/2`）。
+  `Coconut.Edit.Track` 的原生对象 codec（arity-2：`dump/2` / `load/2`）。
 
   不实现 `Coconut.Pickle` behaviour：该 behaviour 只管无上下文 codec，
   需要注入 registry 的 codec 用同风格 arity-2 签名。
@@ -12,17 +12,17 @@ defmodule Coconut.Pickle.Track do
   - `space` 走 `Coconut.Pickle.Space` codec；
   - `spans_by_version` 的 version 整数键直出（约定允许的 map 键类型），
     span `{start, end}` → 二元 list `[start, end]`，端点按
-    `Coconut.Track.span()` 约定为整数直出；
+    `Coconut.Edit.Track.span()` 约定为整数直出；
   - `elements_by_id` 按能力委托：track module 具备 `:element_codec`
     能力（`dump_element/1` + `load_element/1` 成对导出，统一经
-    `Coconut.Track.supports?/2` 探测）则逐元素委托；不具备且元素表
+    `Coconut.Edit.Track.supports?/2` 探测）则逐元素委托；不具备且元素表
     为空则放行，不具备且非空报 `{:error, {:no_element_codec, module}}`；
   - `patches` 走 `Coconut.Pickle.Patch` codec；
   - `dead_patches` 的 `{patch, reason}` → `[patch_dump, reason]`，reason
     原样透传但须满足 `Coconut.Pickle` 允许类型约定，否则
     `{:error, {:non_conform_dead_reason, reason}}`。
 
-  load 反向还原后经 `Coconut.Track.new/1` 重建。
+  load 反向还原后经 `Coconut.Edit.Track.new/1` 重建。
 
   ## registry
 
@@ -32,19 +32,19 @@ defmodule Coconut.Pickle.Track do
   """
 
   alias Coconut.Pickle.{Patch, Registry, Space}
-  alias Coconut.Track
+  alias Coconut.Edit.Track
   import Coconut.Pickle
 
   @doc "自带轨型的默认 registry：`\"vocal\"` / `\"tempo\"`。"
   @spec default_registry() :: Registry.t()
   def default_registry do
     {:ok, registry} =
-      Registry.new(%{"vocal" => Coconut.Track.Vocal, "tempo" => Coconut.Track.Tempo})
+      Registry.new(%{"vocal" => Coconut.Edit.Track.Vocal, "tempo" => Coconut.Edit.Track.Tempo})
 
     registry
   end
 
-  @doc "把 `Coconut.Track` 摊平为仅含允许类型的 plain map。"
+  @doc "把 `Coconut.Edit.Track` 摊平为仅含允许类型的 plain map。"
   @spec dump(Track.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
   def dump(%Track{} = track, %Registry{} = registry) do
     with {:ok, name} <- Registry.to_name(registry, track.module),
@@ -67,7 +67,7 @@ defmodule Coconut.Pickle.Track do
 
   def dump(other, %Registry{}), do: {:error, {:invalid_track, other}}
 
-  @doc "从 plain map 重建 `Coconut.Track`（经 `Track.new/1`）。"
+  @doc "从 plain map 重建 `Coconut.Edit.Track`（经 `Track.new/1`）。"
   @spec load(map(), Registry.t()) :: {:ok, Track.t()} | {:error, term()}
   def load(%{} = data, %Registry{} = registry) do
     with {:ok, module} <- load_module(Map.get(data, :module), registry),

@@ -1,6 +1,6 @@
 defmodule Coconut.Pickle.Patch do
   @moduledoc """
-  `Coconut.Patch` 的原生对象 codec。
+  `Coconut.Edit.Patch` 的原生对象 codec。
 
   dump 为摊平的 map，五个字段：
 
@@ -13,13 +13,13 @@ defmodule Coconut.Pickle.Patch do
 
   load 时 anchor 经 `Coconut.Pickle.Anchor.load/1` 重建；`Tamale.Patch`
   只有 `new/2`（吃 base 原文现算 digest），无法从 `base_digest` 反演，
-  故直接 `struct/2` 重建；最后整体经 `Coconut.Patch.new/1` 重建
+  故直接 `struct/2` 重建；最后整体经 `Coconut.Edit.Patch.new/1` 重建
   （coord 支持性校验生效）。非法输入返回 error tuple，不 raise。
   """
 
   @behaviour Coconut.Pickle
 
-  alias Coconut.Patch
+  alias Coconut.Edit.Patch
   alias Coconut.Pickle.Anchor, as: PickleAnchor
 
   @impl true

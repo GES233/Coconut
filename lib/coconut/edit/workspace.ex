@@ -1,4 +1,4 @@
-defmodule Coconut.Workspace do
+defmodule Coconut.Edit.Workspace do
   @moduledoc """
   Aggregate for edit.
 
@@ -11,13 +11,14 @@ defmodule Coconut.Workspace do
   A workspace is `id / edit_version / tracks / tempo` plus the project-level
   `tpqn` / `time_sigs` (tick resolution and the bar-grid time signature
   events — neither participates in the op/transport machinery).
-  Everything else lives on `Coconut.Track` (design doc §11.3). The tempo
+  Everything else lives on `Coconut.Edit.Track` (design doc §11.3). The tempo
   track is a dedicated field — exactly one per workspace, structurally —
   not an entry of `tracks` (design doc §6); track-id-keyed functions
   (`fetch_track/2`, `apply_batch/5`, …) route to it transparently.
   """
 
-  alias Coconut.{Track, Util.ID, WarpProvider}
+  alias Coconut.Edit.{Track, WarpProvider}
+  alias Coconut.Util.ID
   alias Coconut.Score.{TempoMap, TimeSigMap}
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
@@ -34,7 +35,7 @@ defmodule Coconut.Workspace do
     :id,
     :edit_version,
     tracks: %{},
-    tempo: %Track{id: "tempo", module: Coconut.Track.Tempo},
+    tempo: %Track{id: "tempo", module: Coconut.Edit.Track.Tempo},
     tpqn: 480,
     time_sigs: [{1, {4, 4}}]
   ]
@@ -143,7 +144,7 @@ defmodule Coconut.Workspace do
 
   `apply_batch/5` already transports at write time and persists the
   results, so calling this on a workspace whose patches all sit at head is
-  a no-op fold — it remains as the check-time safety net (`Coconut.Resolve`)
+  a no-op fold — it remains as the check-time safety net (`Coconut.Render.Resolve`)
   for patches mounted out-of-band.
 
   Dead patches are `{patch, result}` tuples — the caller decides whether to
@@ -153,7 +154,7 @@ defmodule Coconut.Workspace do
           t(),
           Track.track_id(),
           warp_provider :: Tamale.Transport.warp_provider() | nil
-        ) :: {:ok, survivors :: [Coconut.Patch.t()], dead :: [term()]}
+        ) :: {:ok, survivors :: [Coconut.Edit.Patch.t()], dead :: [term()]}
   def transport_patches(ws, track_id, warp_provider \\ nil) do
     {:ok, track} = fetch_track(ws, track_id)
 
@@ -174,7 +175,10 @@ defmodule Coconut.Workspace do
   # graveyard, and this batch's own `patches_add` join untouched.
   defp transport_track_patches(ws, track_id, patches_add) do
     {:ok, track} = fetch_track(ws, track_id)
-    provider = WarpProvider.for_coord(Track.coord_domain(track), Track.spans(track), track.patches)
+
+    provider =
+      WarpProvider.for_coord(Track.coord_domain(track), Track.spans(track), track.patches)
+
     {:ok, survivors, dead} = transport_patches(ws, track_id, provider)
 
     track = %{
@@ -271,13 +275,13 @@ defmodule Coconut.Workspace do
 
   Mount anchors at the track's current head version; every later
   `apply_batch/5` transports them forward. Construction-time legality
-  (supported Metric `coord`) is enforced by `Coconut.Patch.new/1`; an
+  (supported Metric `coord`) is enforced by `Coconut.Edit.Patch.new/1`; an
   unknown `track_id` is rejected here (`{:error, {:unknown_track, _}}`) —
   with patches stored per track there is nowhere for an orphan to land.
   """
-  @spec attach_patch(t(), Coconut.Patch.t()) ::
+  @spec attach_patch(t(), Coconut.Edit.Patch.t()) ::
           {:ok, t()} | {:error, {:unknown_track, term()}}
-  def attach_patch(ws, %Coconut.Patch{track_id: track_id} = patch) do
+  def attach_patch(ws, %Coconut.Edit.Patch{track_id: track_id} = patch) do
     with {:ok, track} <- fetch_track(ws, track_id) do
       patch = mint_patch_id(patch)
       track = %{track | patches: track.patches ++ [patch]}
@@ -287,13 +291,13 @@ defmodule Coconut.Workspace do
 
   # Patch ids are minted at the aggregate boundary: an absent id gets a
   # fresh `"Patch_"`-prefixed one at mount; explicit ids pass through.
-  defp mint_patch_id(%Coconut.Patch{id: nil} = patch),
+  defp mint_patch_id(%Coconut.Edit.Patch{id: nil} = patch),
     do: %{patch | id: ID.generate_id("Patch_")}
 
   defp mint_patch_id(patch), do: patch
 
   @doc "Appends a list of patches. See `attach_patch/2`."
-  @spec attach_patches(t(), [Coconut.Patch.t()]) ::
+  @spec attach_patches(t(), [Coconut.Edit.Patch.t()]) ::
           {:ok, t()} | {:error, {:unknown_track, term()}}
   def attach_patches(ws, patches) when is_list(patches) do
     Enum.reduce_while(patches, {:ok, ws}, fn patch, {:ok, ws} ->
@@ -309,7 +313,7 @@ defmodule Coconut.Workspace do
   all tracks and clears the graveyards. The policy layer decides re-mount
   or discard (design doc §6: 锚判死由策略层重挂).
   """
-  @spec take_dead_patches(t()) :: {[{Coconut.Patch.t(), term()}], t()}
+  @spec take_dead_patches(t()) :: {[{Coconut.Edit.Patch.t(), term()}], t()}
   def take_dead_patches(ws) do
     dead = Enum.flat_map(all_tracks(ws), fn {_id, track} -> track.dead_patches end)
 
@@ -326,7 +330,7 @@ defmodule Coconut.Workspace do
   field), at the workspace's `tpqn`.
 
   A tempo track with no events yields `{:error, :no_tempo_track}` — engines
-  apply their own fallback (see `Coconut.Engine.Snapshot`).
+  apply their own fallback (see `Coconut.Render.Engine.Snapshot`).
   """
   @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
   def tempo_map(ws) do

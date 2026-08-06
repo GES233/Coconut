@@ -3,7 +3,7 @@ defmodule Coconut.Pickle.PatchTest do
 
   import Coconut.PickleHelper
 
-  alias Coconut.Patch
+  alias Coconut.Edit.Patch
   alias Coconut.Pickle.Patch, as: PicklePatch
   alias Tamale.Anchor.{Metric, Ordinal}
 

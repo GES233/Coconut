@@ -12,7 +12,7 @@ defmodule Coconut.Engines.DiffSinger.Encoder do
   `:python` / `:worker` / `:client` all apply here unchanged.
   """
 
-  @behaviour Coconut.Encoder
+  @behaviour Coconut.Render.Encoder
 
   alias Coconut.Engines.DiffSinger.PortClient
 

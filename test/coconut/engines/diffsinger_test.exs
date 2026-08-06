@@ -1,8 +1,9 @@
 defmodule Coconut.Engines.DiffSingerTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Edit.Operation, Track, Workspace}
-  alias Coconut.Engine.Request
+  alias Coconut.Edit.{Operation, Track, Workspace}
+  alias Coconut.Render.Engine
+  alias Coconut.Render.Engine.Request
   alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
 
@@ -29,7 +30,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
   defmodule RecordingEncoder do
     @moduledoc "Records the note sequence it receives, covers everything."
-    @behaviour Coconut.Encoder
+    @behaviour Coconut.Render.Encoder
 
     @impl true
     def encode(notes, config) do
@@ -42,7 +43,7 @@ defmodule Coconut.Engines.DiffSingerTest do
 
   defmodule PartialEncoder do
     @moduledoc "Covers nothing."
-    @behaviour Coconut.Encoder
+    @behaviour Coconut.Render.Encoder
 
     @impl true
     def encode(_notes, _config), do: {:ok, %{}}

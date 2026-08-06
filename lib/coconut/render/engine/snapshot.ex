@@ -1,28 +1,28 @@
-defmodule Coconut.Engine.Snapshot do
+defmodule Coconut.Render.Engine.Snapshot do
   @moduledoc """
   The flattened score view for one engine check/render round (design doc §11.1).
 
-  Engines never see `Coconut.Workspace` — they read this value snapshot:
+  Engines never see `Coconut.Edit.Workspace` — they read this value snapshot:
   per-track flattened views (each track module's `view/1`), the compiled
   `TempoMap`, and the workspace's `edit_version` pin. The pin is how a
   stale `checked` bundle is detected once the workspace has moved on
   (design doc §11.5; enforcement lands with the server shell).
   """
 
-  alias Coconut.{Workspace, Track}
+  alias Coconut.Edit.{Track, Workspace}
 
   @typedoc """
   Per-track flattened view: the track module, its coordinate domain, and
-  its `[{id, element, span}]` elements (see `Coconut.Track.view/1`).
+  its `[{id, element, span}]` elements (see `Coconut.Edit.Track.view/1`).
   """
   @type track_view :: %{
           module: module(),
           coord: :tick | :frame,
-          elements: Coconut.Track.view()
+          elements: Coconut.Edit.Track.view()
         }
 
   @type t :: %__MODULE__{
-          tracks: %{Coconut.Track.track_id() => track_view()},
+          tracks: %{Coconut.Edit.Track.track_id() => track_view()},
           tempo_map: Coconut.Score.TempoMap.t() | nil,
           edit_version: Tamale.version(),
           tpqn: pos_integer()

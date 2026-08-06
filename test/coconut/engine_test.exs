@@ -1,14 +1,15 @@
 defmodule Coconut.EngineTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Engine, Track, Workspace}
-  alias Coconut.Engine.Request
+  alias Coconut.Edit.{Track, Workspace}
+  alias Coconut.Render.Engine
+  alias Coconut.Render.Engine.Request
   alias Coconut.Engines.Mock
   alias Coconut.Util.ID
 
   defmodule BareEngine do
     @moduledoc "Engine without a :globals declaration."
-    @behaviour Coconut.Engine
+    @behaviour Coconut.Render.Engine
 
     @impl true
     def info(_), do: %{name: "Bare", version: "dev"}

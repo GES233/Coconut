@@ -22,13 +22,14 @@ defmodule Coconut.Scenario do
         round: pos_integer(),
         op: :baseline | Coconut.Edit.Operation.request(),
         passed: boolean(),
-        survivors: [Coconut.Patch.t()],   # check-time survivors (pass only)
-        dead: [{Coconut.Patch.t(), term()}],  # write-time graveyard
-        entries: [Coconut.Resolve.check_entry()]
+        survivors: [Coconut.Edit.Patch.t()],   # check-time survivors (pass only)
+        dead: [{Coconut.Edit.Patch.t(), term()}],  # write-time graveyard
+        entries: [Coconut.Render.Resolve.check_entry()]
       }
   """
 
-  alias Coconut.{Edit.Operation, Resolve, Track, Workspace}
+  alias Coconut.Edit.{Operation, Track, Workspace}
+  alias Coconut.Render.Resolve
   alias Coconut.Util.ID
 
   @vocal_track "vocal"
@@ -127,7 +128,7 @@ defmodule Coconut.Scenario do
     {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(element), payload)
 
     {:ok, cp} =
-      Coconut.Patch.new(%{
+      Coconut.Edit.Patch.new(%{
         track_id: @vocal_track,
         channel: channel,
         anchor: %Tamale.Anchor.Ordinal{refs: [note_id], at_version: track.space.version},

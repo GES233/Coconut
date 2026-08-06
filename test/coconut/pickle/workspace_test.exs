@@ -5,13 +5,13 @@ defmodule Coconut.Pickle.WorkspaceTest do
 
   alias Coconut.Pickle.{Registry, Track}
   alias Coconut.Pickle.Workspace, as: PickleWorkspace
-  alias Coconut.{Edit.Operation, Workspace}
+  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Util.ID
 
   # 照 tempo_test 的方式：Edit.Operation.lower + apply_batch 造 vocal 音符 + tempo 事件
   defp build_workspace do
-    {:ok, tempo} = Coconut.Track.new(%{id: "tempo", module: Coconut.Track.Tempo})
-    {:ok, vocal} = Coconut.Track.new(%{id: "vocal", module: Coconut.Track.Vocal})
+    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "tempo", module: Coconut.Edit.Track.Tempo})
+    {:ok, vocal} = Coconut.Edit.Track.new(%{id: "vocal", module: Coconut.Edit.Track.Vocal})
 
     {:ok, ws} =
       Workspace.new(%{
@@ -111,9 +111,9 @@ defmodule Coconut.Pickle.WorkspaceTest do
 
     test "dump with unregistered track module reports {:unregistered_module, _}" do
       ws = build_workspace()
-      {:ok, registry} = Registry.new(%{"tempo" => Coconut.Track.Tempo})
+      {:ok, registry} = Registry.new(%{"tempo" => Coconut.Edit.Track.Tempo})
 
-      assert {:error, {:unregistered_module, Coconut.Track.Vocal}} =
+      assert {:error, {:unregistered_module, Coconut.Edit.Track.Vocal}} =
                PickleWorkspace.dump(ws, registry)
     end
 

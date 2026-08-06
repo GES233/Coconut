@@ -3,7 +3,8 @@ defmodule Coconut.Pickle.FileTest do
 
   alias Coconut.Pickle.File, as: PickleFile
   alias Coconut.Pickle.Track, as: PickleTrack
-  alias Coconut.{Edit.Operation, Project, Workspace}
+  alias Coconut.Project
+  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Util.ID
 
   @tag tmp_dir: "pickle_file"
@@ -73,8 +74,8 @@ defmodule Coconut.Pickle.FileTest do
 
   # 与 project_test 同形的 workspace 构造（vocal 音符 + tempo 事件）
   defp build_project do
-    {:ok, tempo} = Coconut.Track.new(%{id: "tempo", module: Coconut.Track.Tempo})
-    {:ok, vocal} = Coconut.Track.new(%{id: "vocal", module: Coconut.Track.Vocal})
+    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "tempo", module: Coconut.Edit.Track.Tempo})
+    {:ok, vocal} = Coconut.Edit.Track.new(%{id: "vocal", module: Coconut.Edit.Track.Vocal})
 
     {:ok, ws} =
       Workspace.new(%{

@@ -1,7 +1,8 @@
 defmodule Coconut.TempoTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.{Edit.Operation, Score, Track, WarpProvider, Workspace}
+  alias Coconut.Score
+  alias Coconut.Edit.{Operation, Track, WarpProvider, Workspace}
   alias Coconut.Util.ID
 
   setup do
@@ -160,7 +161,7 @@ defmodule Coconut.TempoTest do
       {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
 
       {:ok, cp} =
-        Coconut.Patch.new(%{
+        Coconut.Edit.Patch.new(%{
           track_id: "tempo",
           anchor: %Tamale.Anchor.Ordinal{refs: ["t0"], at_version: 1},
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
@@ -190,7 +191,7 @@ defmodule Coconut.TempoTest do
       {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
 
       {:ok, cp} =
-        Coconut.Patch.new(%{
+        Coconut.Edit.Patch.new(%{
           track_id: "tempo",
           anchor: %Tamale.Anchor.Metric{coord: :tick, from: 100, to: 200, at_version: 1},
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}

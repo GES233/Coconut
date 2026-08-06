@@ -10,8 +10,9 @@ defmodule Coconut.Engines.DiffSingerIntegrationTest do
   """
   use ExUnit.Case, async: false
 
-  alias Coconut.{Engine, Edit.Operation, Track, Workspace}
-  alias Coconut.Engine.Request
+  alias Coconut.Edit.{Operation, Track, Workspace}
+  alias Coconut.Render.Engine
+  alias Coconut.Render.Engine.Request
   alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
 

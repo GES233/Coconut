@@ -10,7 +10,7 @@ defmodule Coconut.Engines.Encoders.Literal do
   it is not a dictionary G2P.
   """
 
-  @behaviour Coconut.Encoder
+  @behaviour Coconut.Render.Encoder
 
   @impl true
   def encode(notes, config) do

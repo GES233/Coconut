@@ -10,9 +10,9 @@ defmodule Coconut.Engines.Mock do
              assert the Resolve → Engine handoff and the globals pass-through.
   """
 
-  @behaviour Coconut.Engine
+  @behaviour Coconut.Render.Engine
 
-  alias Coconut.{Engine.Artifact, Engine.Request}
+  alias Coconut.Render.Engine.{Artifact, Request}
 
   @impl true
   def info(_),

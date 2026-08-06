@@ -1,8 +1,9 @@
 # Spike: multi-track edit pipeline
 # Two sub-tracks share overlapping tick spans without conflict.
 
-alias Coconut.{Engine, Edit.Operation, Patch, Track, WarpProvider, Workspace}
-alias Coconut.Engine.Request
+alias Coconut.Edit.{Operation, Patch, Track, WarpProvider, Workspace}
+alias Coconut.Render.Engine
+alias Coconut.Render.Engine.Request
 alias Coconut.Engines.Mock
 alias Coconut.Util.ID
 

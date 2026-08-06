@@ -12,10 +12,10 @@ defmodule Coconut.Engines.Channels.Duration do
   Folds to `{:port, note_id, :duration}`.
   """
 
-  @behaviour Coconut.Channel
+  @behaviour Coconut.Render.Channel
 
   alias Coconut.Engines.Channels.Lyric
-  alias Coconut.Patch
+  alias Coconut.Edit.Patch
 
   @impl true
   def projection(ws, patch), do: Lyric.projection(ws, patch)

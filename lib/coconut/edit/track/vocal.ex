@@ -1,4 +1,4 @@
-defmodule Coconut.Track.Vocal do
+defmodule Coconut.Edit.Track.Vocal do
   @moduledoc """
   Vocal track: tick-domain, `Coconut.Score.Note` elements.
 
@@ -8,11 +8,11 @@ defmodule Coconut.Track.Vocal do
   `validate_gesture/3` (design doc §11.8).
   """
 
-  use Coconut.Track
-  @behaviour Coconut.Track.ElementCodec
+  use Coconut.Edit.Track
+  @behaviour Coconut.Edit.Track.ElementCodec
 
   alias Coconut.Score.Note
-  alias Coconut.Track
+  alias Coconut.Edit.Track
 
   @impl true
   def coord_domain, do: :tick
@@ -36,12 +36,12 @@ defmodule Coconut.Track.Vocal do
   @impl true
   def split_inherit(%Note{} = parent, new_id), do: %{parent | id: new_id}
 
-  # 可选能力 :element_codec（Coconut.Track.ElementCodec）：元素编解码
+  # 可选能力 :element_codec（Coconut.Edit.Track.ElementCodec）：元素编解码
   # 委托 Coconut.Pickle.Note。
-  @impl Coconut.Track.ElementCodec
+  @impl Coconut.Edit.Track.ElementCodec
   def dump_element(%Note{} = note), do: Coconut.Pickle.Note.dump(note)
 
-  @impl Coconut.Track.ElementCodec
+  @impl Coconut.Edit.Track.ElementCodec
   def load_element(dumped), do: Coconut.Pickle.Note.load(dumped)
 
   @impl true

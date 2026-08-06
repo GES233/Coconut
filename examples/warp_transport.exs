@@ -13,7 +13,8 @@
 # (track.dead_patches) for the policy layer. The explicit transport calls
 # below therefore re-fold nothing — they just re-verify the persisted state.
 
-alias Coconut.{Edit.Operation, Patch, Resolve, Track, WarpProvider, Workspace}
+alias Coconut.Edit.{Operation, Patch, Track, WarpProvider, Workspace}
+alias Coconut.Render.Resolve
 alias Coconut.Util.ID
 alias Tamale.Warp
 

@@ -1,6 +1,6 @@
 defmodule Coconut.Pickle.Workspace do
   @moduledoc """
-  `Coconut.Workspace` 的原生对象 codec（arity-2：`dump/2` / `load/2`）。
+  `Coconut.Edit.Workspace` 的原生对象 codec（arity-2：`dump/2` / `load/2`）。
 
   与 `Coconut.Pickle.Track` 一样不实现 `Coconut.Pickle` behaviour——
   需要注入 registry 的 codec 用 arity-2 同风格签名。
@@ -13,14 +13,14 @@ defmodule Coconut.Pickle.Workspace do
   - `time_sigs` 是 `[{bar, {num, den}}]`，dump 为
     `[[bar, [num, den]], ...]`，load 反向还原为 tuple。
 
-  load 还原后经 `Coconut.Workspace.new/1` 重建——`validate/1` 自然生效：
+  load 还原后经 `Coconut.Edit.Workspace.new/1` 重建——`validate/1` 自然生效：
   tempo 轨能力、tempo id 冲突、time_sigs 合法性都会被复检。
   """
 
   alias Coconut.Pickle.{Registry, Track}
-  alias Coconut.Workspace
+  alias Coconut.Edit.Workspace
 
-  @doc "把 `Coconut.Workspace` 摊平为仅含允许类型的 plain map。"
+  @doc "把 `Coconut.Edit.Workspace` 摊平为仅含允许类型的 plain map。"
   @spec dump(Workspace.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
   def dump(%Workspace{} = ws, %Registry{} = registry) do
     with {:ok, tracks} <- dump_tracks(ws.tracks, registry),
@@ -39,7 +39,7 @@ defmodule Coconut.Pickle.Workspace do
 
   def dump(other, %Registry{}), do: {:error, {:invalid_workspace, other}}
 
-  @doc "从 plain map 重建 `Coconut.Workspace`（经 `Workspace.new/1`，校验生效）。"
+  @doc "从 plain map 重建 `Coconut.Edit.Workspace`（经 `Workspace.new/1`，校验生效）。"
   @spec load(map(), Registry.t()) :: {:ok, Workspace.t()} | {:error, term()}
   def load(%{} = data, %Registry{} = registry) do
     with {:ok, tracks} <- load_tracks(Map.get(data, :tracks), registry),
