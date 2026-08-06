@@ -23,7 +23,7 @@ defmodule Coconut.Project do
   alias Coconut.Workspace
   alias Coconut.Util.ID
 
-  import Coconut.Helpers, only: [normalize_attrs: 2]
+  import Coconut.Util.Helpers, only: [normalize_attrs: 2]
 
   @typedoc "声库签名：名称 + 引擎 + 内容哈希。"
   @type voicebank :: %{name: binary(), engine: atom(), digest: binary()}

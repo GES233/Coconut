@@ -1,4 +1,4 @@
-defmodule Coconut.Helpers do
+defmodule Coconut.Util.Helpers do
   @moduledoc "Some helpers."
 
   @doc """
@@ -13,7 +13,7 @@ defmodule Coconut.Helpers do
 
   ### Examples
 
-      iex> Coconut.Helpers.normalize_attrs(
+      iex> Coconut.Util.Helpers.normalize_attrs(
       ...> [name: "初音ミク", platform: {:yamaha, :vocaloid}, extra: "Miku miku~",
       ...> unrelated_context: %{blabla: nil}], [:name, :platform, extra: ""])
       {:ok,
@@ -23,7 +23,7 @@ defmodule Coconut.Helpers do
         platform: {:yamaha, :vocaloid}
       }}
 
-      iex> Coconut.Helpers.normalize_attrs(%{foo: "a"}, 1)
+      iex> Coconut.Util.Helpers.normalize_attrs(%{foo: "a"}, 1)
       {:error, {:invalid_fields, 1}}
   """
   @spec normalize_attrs(any(), any()) :: {:ok, map()} | {:error, term()}
@@ -52,7 +52,7 @@ defmodule Coconut.Helpers do
 
   ### Examples
 
-      iex> Coconut.Helpers.strictly_normalize_attrs(
+      iex> Coconut.Util.Helpers.strictly_normalize_attrs(
       ...> [name: "初音ミク", platform: {:yamaha, :vocaloid}], [:name, :platform, extra: ""])
       {:ok,
       %{
@@ -60,11 +60,11 @@ defmodule Coconut.Helpers do
         platform: {:yamaha, :vocaloid}
       }}
 
-      iex> Coconut.Helpers.strictly_normalize_attrs(
+      iex> Coconut.Util.Helpers.strictly_normalize_attrs(
       ...> [name: "Miku", unexpected: "x"], [:name])
       {:error, {:extra_attrs, [:unexpected]}}
 
-      iex> Coconut.Helpers.strictly_normalize_attrs(%{foo: "a"}, 1)
+      iex> Coconut.Util.Helpers.strictly_normalize_attrs(%{foo: "a"}, 1)
       {:error, {:invalid_fields, 1}}
   """
   @spec strictly_normalize_attrs(any(), any()) :: {:ok, map()} | {:error, term()}

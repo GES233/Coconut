@@ -1,4 +1,4 @@
 defmodule CoconutTest do
   use ExUnit.Case
-  doctest Coconut.Helpers
+  doctest Coconut.Util.Helpers
 end

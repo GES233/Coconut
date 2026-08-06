@@ -43,7 +43,7 @@ defmodule Coconut.Track do
   alias Coconut.Score.Tick
   alias Coconut.Util.ID
 
-  import Coconut.Helpers, only: [normalize_attrs: 2]
+  import Coconut.Util.Helpers, only: [normalize_attrs: 2]
 
   @typedoc "A span `{start, end}` in the track's coordinate domain."
   @type span :: {Tick.numeric_tick(), Tick.numeric_tick()}

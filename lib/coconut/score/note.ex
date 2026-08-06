@@ -9,7 +9,7 @@ defmodule Coconut.Score.Note do
   """
   alias Coconut.{Util.ID, Score.Key}
 
-  import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
+  import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
   @typedoc """
   metadata is scope => inner.

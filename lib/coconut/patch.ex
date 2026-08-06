@@ -19,7 +19,7 @@ defmodule Coconut.Patch do
 
   alias Coconut.{Util.ID, WarpProvider}
 
-  import Coconut.Helpers, only: [normalize_attrs: 2]
+  import Coconut.Util.Helpers, only: [normalize_attrs: 2]
 
   @type t :: %__MODULE__{
           id: ID.t() | nil,

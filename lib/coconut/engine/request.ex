@@ -17,7 +17,7 @@ defmodule Coconut.Engine.Request do
 
   alias Coconut.{Engine.Snapshot, Workspace}
 
-  import Coconut.Helpers, only: [normalize_attrs: 2]
+  import Coconut.Util.Helpers, only: [normalize_attrs: 2]
 
   @type t :: %__MODULE__{
           snapshot: Snapshot.t(),

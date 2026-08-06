@@ -11,9 +11,9 @@ defmodule Coconut.Pickle do
   Each model should implement its own codec under `Coconut.Pickle.*`.
   `load/1` should use the model's `new/1` (or equivalent) for validation, not `struct!/2`.
 
-  ## dump 产物的允许类型
+  ## Allow type for serialized
 
-  只允许：**map、list、number、binary、atom、boolean、nil**。
+  See `t:serialized/0`.
 
   禁止 **tuple / struct / fun / pid**：tuple 一律编码为 list（如 `[a, b, c]`），
   struct 一律摊平为 map（带 `module` 标签）。map 键允许 atom / binary / integer
@@ -38,6 +38,19 @@ defmodule Coconut.Pickle do
 
   @doc "Loads a domain struct from a plain serialized map."
   @callback load(serialized()) :: {:ok, term()} | {:error, term()}
+
+  defmodule WithRegistry do
+    @moduledoc "Pickle behaviour with outside Registry."
+
+    alias Coconut.Pickle
+    alias Coconut.Pickle.Registry, as: PickleRegistry
+
+    @doc "Dumps a domain struct into a plain serialized map."
+    @callback dump(term(), PickleRegistry.t()) :: {:ok, Pickle.serialized()} | {:error, term()}
+
+    @doc "Loads a domain struct from a plain serialized map."
+    @callback load(Pickle.serialized(), PickleRegistry.t()) :: {:ok, term()} | {:error, term()}
+  end
 
   # ---- Helpers ----
 

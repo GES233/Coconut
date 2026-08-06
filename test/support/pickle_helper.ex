@@ -5,6 +5,8 @@ defmodule Coconut.PickleHelper do
   `assert_pickle_conform/1` 遍历 dump 产物，断言只含 `Coconut.Pickle`
   约定的允许类型：map / list / number / binary / atom / boolean / nil
   （map 键限 atom / binary / integer）；tuple / struct / fun / pid 一律 flunk。
+
+  See `Coconut.Pickle.pickle_conform?/1`.
   """
 
   import ExUnit.Assertions

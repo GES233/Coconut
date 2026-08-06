@@ -20,7 +20,7 @@ defmodule Coconut.Workspace do
   alias Coconut.{Track, Util.ID, WarpProvider}
   alias Coconut.Score.{TempoMap, TimeSigMap}
 
-  import Coconut.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
+  import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
   @type t :: %__MODULE__{
           id: ID.t(t()),
