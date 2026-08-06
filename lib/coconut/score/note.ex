@@ -53,8 +53,8 @@ defmodule Coconut.Score.Note do
 
   ## Examples
 
-      iex> from_element("n1", %{pitch: 60, lyric: "ら", phonemes: [["zh", "a"]]})
-      {:ok, %Note{id: "n1", lyric: "ら", metadata: %{"phonemes" => [["zh", "a"]]}}}
+      iex> from_element("n1", %{pitch: 60, lyric: "ら", phonemes: [["r", "a"]]})
+      {:ok, %Note{id: "n1", lyric: "ら", metadata: %{"phonemes" => [["r", "a"]]}}}
   """
   @spec from_element(Tamale.id(), map()) :: {:ok, t()} | {:error, term()}
   def from_element(id, attrs) do
