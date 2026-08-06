@@ -24,6 +24,7 @@ defmodule Coconut.Pickle.Project do
 
   alias Coconut.Pickle.{Registry, Workspace}
   alias Coconut.Project
+  import Coconut.Pickle
 
   @doc "把 `Coconut.Project` 摊平为仅含允许类型的 plain map。"
   @spec dump(Project.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
@@ -74,17 +75,4 @@ defmodule Coconut.Pickle.Project do
   defp check_conform_metadata(metadata) do
     if pickle_conform?(metadata), do: :ok, else: {:error, {:non_conform_metadata, metadata}}
   end
-
-  defp pickle_conform?(term) when is_map(term) and not is_struct(term) do
-    Enum.all?(term, fn {k, v} ->
-      (is_atom(k) or is_binary(k) or is_integer(k)) and pickle_conform?(v)
-    end)
-  end
-
-  defp pickle_conform?(term) when is_list(term), do: Enum.all?(term, &pickle_conform?/1)
-
-  defp pickle_conform?(term) when is_number(term) or is_binary(term) or is_atom(term),
-    do: true
-
-  defp pickle_conform?(_term), do: false
 end

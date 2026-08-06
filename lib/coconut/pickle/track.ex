@@ -33,6 +33,7 @@ defmodule Coconut.Pickle.Track do
 
   alias Coconut.Pickle.{Patch, Registry, Space}
   alias Coconut.Track
+  import Coconut.Pickle
 
   @doc "自带轨型的默认 registry：`\"vocal\"` / `\"tempo\"`。"
   @spec default_registry() :: Registry.t()
@@ -227,19 +228,6 @@ defmodule Coconut.Pickle.Track do
   defp check_conform_reason(reason) do
     if pickle_conform?(reason), do: :ok, else: {:error, {:non_conform_dead_reason, reason}}
   end
-
-  defp pickle_conform?(term) when is_map(term) and not is_struct(term) do
-    Enum.all?(term, fn {k, v} ->
-      (is_atom(k) or is_binary(k) or is_integer(k)) and pickle_conform?(v)
-    end)
-  end
-
-  defp pickle_conform?(term) when is_list(term), do: Enum.all?(term, &pickle_conform?/1)
-
-  defp pickle_conform?(term) when is_number(term) or is_binary(term) or is_atom(term),
-    do: true
-
-  defp pickle_conform?(_term), do: false
 
   defp reverse_result({:ok, acc}), do: {:ok, Enum.reverse(acc)}
   defp reverse_result(err), do: err

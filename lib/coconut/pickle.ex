@@ -38,4 +38,20 @@ defmodule Coconut.Pickle do
 
   @doc "Loads a domain struct from a plain serialized map."
   @callback load(serialized()) :: {:ok, term()} | {:error, term()}
+
+  # ---- Helpers ----
+
+  @spec pickle_conform?(term()) :: boolean()
+  def pickle_conform?(term) when is_map(term) and not is_struct(term) do
+    Enum.all?(term, fn {k, v} ->
+      (is_atom(k) or is_binary(k) or is_integer(k)) and pickle_conform?(v)
+    end)
+  end
+
+  def pickle_conform?(term) when is_list(term), do: Enum.all?(term, &pickle_conform?/1)
+
+  def pickle_conform?(term) when is_number(term) or is_binary(term) or is_atom(term),
+    do: true
+
+  def pickle_conform?(_term), do: false
 end
