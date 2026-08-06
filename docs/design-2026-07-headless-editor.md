@@ -4,6 +4,18 @@
 > zongzi_feasibility 五个项目的调研结论与架构决策。状态：部分实现
 > （2026-08-03 更新：Track-ification（§11.1–11.3、11.8）、拍号入 Workspace、
 > golden 场景最小集已落地，逐项进度见第 10 节标注）。
+> 
+> 2026-08-06 迁移注记：模块名已按目录命名空间重构——`edit/`、`render/` 目录
+> 下的实现统一加 `Coconut.Edit.` / `Coconut.Render.` 前缀。新旧对照：
+> `Coconut.Patch` → `Coconut.Edit.Patch`；`Coconut.Track` → `Coconut.Edit.Track`
+> （`Track.Tempo`/`Track.Vocal` 随之 `Edit.Track.*`）；`Coconut.WarpProvider` →
+> `Coconut.Edit.WarpProvider`；`Coconut.Workspace` → `Coconut.Edit.Workspace`；
+> `Coconut.Channel` → `Coconut.Render.Channel`；`Coconut.Encoder` →
+> `Coconut.Render.Encoder`；`Coconut.Engine` → `Coconut.Render.Engine`
+> （`Engine.Artifact/Request/Snapshot` 随之）；`Coconut.Resolve` →
+> `Coconut.Render.Resolve`；`Operate` → `Coconut.Edit.Operation`
+> （`Operations.*` → `Edit.Operations.*`）。本文档补记/存档/已定段落保留
+> 当时定名；裸词 Workspace/Track/Resolve/Engine 为架构概念名。
 
 ## 1. 定位与选型
 
@@ -41,7 +53,7 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 术语对齐：**Workspace（工程）→ Track（轨 = 一个 Space + 侧表）→ Element
 （音符 / tempo 事件）**。不使用 "Timeline" 一词（避免与 zongzi 旧机制串味）。
 
-## 3. 桥接层（`Coconut.Resolve`）
+## 3. 桥接层（`Coconut.Render.Resolve`）
 
 > 2026-08-01 补记：实现定名 `Coconut.Resolve`（`lib/coconut/resolve.ex`），
 > 原拟名 ACF 废弃；Engine behaviour 见 `lib/coconut/engine.ex`，两段式
@@ -179,7 +191,7 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 
 tamale scaffold 阶段缺三件辅助 + 适配层函数：
 
-1. warp-provider 参考实现 → 已落地（`Coconut.WarpProvider`，本设计第 5 节的
+1. warp-provider 参考实现 → 已落地（`Coconut.Edit.WarpProvider`，本设计第 5 节的
    v1 非 ripple 版）；
 2. `diff(old, new)` 回退适配器（编辑来源是状态而非 op 时需要，如文件导入）
    ——启发式集中在这一个函数；
@@ -245,7 +257,7 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 ## 10. 实施顺序建议
 
 1. Workspace 纯函数内核：lowering + transport（命令流第 2、4 步）——已完成
-   （`Coconut.Workspace` / `Coconut.Operation`，写时 transport + 死 patch 坟场）；
+   （`Coconut.Edit.Workspace` / `Coconut.Edit.Operation`，写时 transport + 死 patch 坟场）；
 2. golden 场景验证台（移植 zongzi_feasibility 的 Scenario 模式）——
    已落地最小集，暂停扩家族（已定 2026-08-03）：只搬 Scenario 契约 +
    对抗轮驱动（`test/support/scenario.ex`，runner 直接走
@@ -260,12 +272,12 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    需引擎投影级 snapshot，等真实投影/曲线落地后直接对 coconut
    语义写新验收，不再回翻 zongzi；
 3. tamale 接入 + warp_provider（:tick 非 ripple 版）——已完成
-   （`Coconut.WarpProvider`）；
+   （`Coconut.Edit.WarpProvider`）；
 4. Tempo Track Space + TempoMap fold——已完成（`Coconut.Score.Tempo` /
    `TempoMap`，bpm 在 lower 时归一化为 milli-bpm）；
-5. 桥接 + Engine 两段式（check/render）——部分完成：`Coconut.Resolve` +
-   `Coconut.Engine` behaviour + `Coconut.Engines.Mock` 已落地；channel 注册表
-   （`Coconut.Channel` behaviour + 内置 `Engines.Channels.Lyric`）与全局参数闸门
+5. 桥接 + Engine 两段式（check/render）——部分完成：`Coconut.Render.Resolve` +
+   `Coconut.Render.Engine` behaviour + `Coconut.Engines.Mock` 已落地；channel 注册表
+   （`Coconut.Render.Channel` behaviour + 内置 `Engines.Channels.Lyric`）与全局参数闸门
    （`Request.globals` + `info` 声明校验）已落地；首个真实引擎
    `Coconut.Engines.DiffSinger` 已落地（Python worker 经 NDJSON stdio，
    globals 已接入）；orchid/oi 真实接入
@@ -335,7 +347,7 @@ split 继承变为纯 id 置换（`Track.Vocal.split_inherit/2`）。
 ### 11.3 side 杂物抽屉（已落地 2026-08-03）
 
 **已落地**：Side struct 整个删除——spans/elements/patches/dead_patches
-随 `Coconut.Track` 下沉（tempos_by_version 占位随之消失，v2 变 tempo 需要时
+随 `Coconut.Edit.Track` 下沉（tempos_by_version 占位随之消失，v2 变 tempo 需要时
 再议）；`Track.truncate/2` + `Workspace.truncate/3` 已接入同步裁剪
 （span 快照保留 cut 处最新一份作 baseline，warp 的 `spans_at(v-1)` 需要它）。
 
@@ -382,7 +394,7 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
 - 错误词汇两套：`missing_x` / `bad_x` / `unknown_x` 混用，接口层对外前
   统一。
 - ~~Operate request 为 6~7 元 tagged tuple，位置参数多；成为 wire format
-  前再评。~~ 已解决：request 改为 `Coconut.Operations.*` struct
+  前再评。~~ 已解决：request 改为 `Coconut.Edit.Operations.*` struct
   （`Operate` 仅做 dispatch）。
 - `Note.to_canonical` 的 key 形状（`%{midi: n}`）是隐性契约：换 tuning
   或改形状 = 全部已挂 patch 的 base_digest 失效。改 canonical 形状视为

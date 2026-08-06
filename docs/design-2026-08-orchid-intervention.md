@@ -7,8 +7,8 @@
 
 coconut 的干预链路已落地到 equinox 集成路径的中段：
 
-- `Coconut.Patch`（anchor + tamale patch + channel）→ `Workspace` 写时 transport
-- `Coconut.Resolve.run_check/3`：channel spec 投影 → digest 零容差比对 →
+- `Coconut.Edit.Patch`（anchor + tamale patch + channel）→ `Workspace` 写时 transport
+- `Coconut.Render.Resolve.run_check/3`：channel spec 投影 → digest 零容差比对 →
   `fold_resolved` 产出 `%{port_ref => %{input: value}}`
 - 三路 channel 已接 DiffSinger：Lyric / Pitch / Duration
   （`lib/coconut/engines/channels/`）
@@ -18,7 +18,7 @@ coconut 的干预链路已落地到 equinox 集成路径的中段：
 1. 渲染管线的 DAG 声明与编译（`Oi.compile`，按图结构缓存）
 2. interventions → oi 嵌套 `data:` 的翻译（`{:override, value}` 沿出边 fan-out）
 3. `lib/coconut/engines/orchid_adapter.ex` 从占位注释变成真的
-   `Coconut.Engine` 实现
+   `Coconut.Render.Engine` 实现
 
 ## 2. 生态侧的既定事实（2026-08-04 核实）
 
@@ -86,18 +86,19 @@ coconut 的 port_ref 是 per-note 的（`{:port, note_id, :pitch}`），而 DAG
 
 ## 4. 模块设计（coconut 侧新增）
 
-```
-Coconut.Engine.Graph        # 渲染管线 DAG 的声明（节点/端口/边的纯数据）
-Coconut.Engine.Compiler     # Graph → Oi.compile，按图结构相等缓存 Compiled
-Coconut.Engine.Assemble     # interventions + 图边 → oi 嵌套 data（§3.2 规则）
-Coconut.Engines.OrchidAdapter  # 实现 Coconut.Engine behaviour：
-                            # check = 静态校验（Recipe validate + globals 闸门）
-                            # render = Oi.execute + adapters + baggage
-```
+> 2026-08-06 更新：按 2026-08-05 决议落实为 **thin wrap**——不建 Graph DSL /
+> Compiler：渲染管线 DAG 直接用 `Oi.Graph` 声明（节点/端口/边是 oi 的纯数据，
+> 图结构相等缓存 `Oi.compile` 自带）；coconut 只补 per-note → per-node 的
+> 聚合翻译（§3.2 规则），无需 DSL 层。原拟 `Coconut.Engine.Graph` /
+> `Compiler` 废弃；`GraphTranslator` 的 UI 图翻译参照（equinox）属可视化
+> Phase 3 的事。
 
-> **用户**：
->
-> 为啥不直接用 Oi.Graph 呢？
+```
+Coconut.Engines.OrchidAdapter      # 实现 Coconut.Render.Engine behaviour：
+                               # check = 静态校验（Recipe validate + globals 闸门）
+                               # render = Oi.execute + adapters + baggage
+Coconut.Engines.OrchidAdapter.Assemble  # interventions + 图边 → oi 嵌套 data（§3.2 规则）
+```
 
 数据流：
 
@@ -105,11 +106,9 @@ Coconut.Engines.OrchidAdapter  # 实现 Coconut.Engine behaviour：
 Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间形状, 不变)
         └─Snapshot.from_workspace──> Snapshot
                                     │
-                Engine.Graph.declare (按引擎/声库)
+            Oi.Graph 声明（按引擎/声库）──Oi.compile──> Oi.Compiled (缓存)
                                     │
-                          Compiler.compile ──> Oi.Compiled (缓存)
-                                    │
-                          Assemble.data ──> oi 嵌套 data + {:override, _}
+        Assemble.data ──> oi 嵌套 data + {:override, _}
                                     │
         Oi.execute(compiled, data: ..., orchid_adapters: [intervention, stratum])
 ```
@@ -123,7 +122,7 @@ Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间�
 
 ## 5. 阶段计划
 
-- **Phase 0**：挂 hex 依赖；`OrchidAdapter` 变 `Coconut.Engine` 骨架
+- **Phase 0**：挂 hex 依赖；`OrchidAdapter` 变 `Coconut.Render.Engine` 骨架
   （Mock 兜底，无 orchid 时行为不变）。
 - **Phase 1**：最小端到端——toy 四节点管线（G2P/时长/Pitch/声学 均为
   mock step）走通 声明 → compile → 干预注入（验证 §3.2 聚合规则与
