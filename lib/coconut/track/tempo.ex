@@ -13,6 +13,7 @@ defmodule Coconut.Track.Tempo do
 
   use Coconut.Track
   @behaviour Coconut.Track.TempoDerive
+  @behaviour Coconut.Track.ElementCodec
 
   alias Coconut.Score.Tempo
   alias Coconut.Track
@@ -44,13 +45,14 @@ defmodule Coconut.Track.Tempo do
   @impl Coconut.Track
   def split_inherit(element, _new_id), do: element || %{}
 
-  # Pickle 能力回调（可选能力，同 tempo_events/1 的先例，不进 Track
-  # behaviour 必需回调清单）：元素是 %{bpm: 整数 milli-bpm} 裸 map，
-  # dump 校验形状后原样透传，load 同。
+  # 可选能力 :element_codec（Coconut.Track.ElementCodec）：元素是
+  # %{bpm: 整数 milli-bpm} 裸 map，dump 校验形状后原样透传，load 同。
+  @impl Coconut.Track.ElementCodec
   def dump_element(%{bpm: bpm} = element) when is_integer(bpm), do: {:ok, element}
 
   def dump_element(other), do: {:error, {:invalid_tempo_element, other}}
 
+  @impl Coconut.Track.ElementCodec
   def load_element(%{bpm: bpm} = dumped) when is_integer(bpm), do: {:ok, dumped}
 
   def load_element(other), do: {:error, {:invalid_tempo_element_dump, other}}
@@ -79,8 +81,9 @@ defmodule Coconut.Track.Tempo do
   `{start_tick, Tempo.Event}` pairs in sequence order, bpm denormalized
   from milli-bpm back to plain bpm.
 
-  This is the tempo track's capability marker — `Coconut.Workspace` binds
-  its `tempo` field by `tempo_events/1` export, not by module identity.
+  This is the tempo track's `:tempo_derive` capability —
+  `Coconut.Workspace` binds its `tempo` field by capability
+  (`Coconut.Track.supports?/2`), not by module identity.
   """
   @impl Coconut.Track.TempoDerive
   @spec tempo_events(Track.t()) :: [{Coconut.Score.Tick.numeric_tick(), Tempo.Event.t()}]

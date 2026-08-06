@@ -9,6 +9,7 @@ defmodule Coconut.Track.Vocal do
   """
 
   use Coconut.Track
+  @behaviour Coconut.Track.ElementCodec
 
   alias Coconut.Score.Note
   alias Coconut.Track
@@ -35,10 +36,12 @@ defmodule Coconut.Track.Vocal do
   @impl true
   def split_inherit(%Note{} = parent, new_id), do: %{parent | id: new_id}
 
-  # Pickle 能力回调（可选能力，同 tempo_events/1 的先例，不进 Track
-  # behaviour 必需回调清单）：元素编解码委托 Coconut.Pickle.Note。
+  # 可选能力 :element_codec（Coconut.Track.ElementCodec）：元素编解码
+  # 委托 Coconut.Pickle.Note。
+  @impl Coconut.Track.ElementCodec
   def dump_element(%Note{} = note), do: Coconut.Pickle.Note.dump(note)
 
+  @impl Coconut.Track.ElementCodec
   def load_element(dumped), do: Coconut.Pickle.Note.load(dumped)
 
   @impl true

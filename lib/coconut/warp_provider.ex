@@ -33,6 +33,11 @@ defmodule Coconut.WarpProvider do
     the watermark, later segments drop out and their domain becomes a hole.
     Collisions surface as transport failures (clip / undefined), never as
     silent misplacement.
+  - Construction sites never name a per-coord builder directly:
+    `for_coord/3` dispatches on the track's `coord_domain/0` through the
+    builder table below, and `supported_coords/0` derives from the same
+    table, so the mount-time guard and the construction sites can never
+    disagree.
 
   ## Caveats
 
@@ -61,15 +66,47 @@ defmodule Coconut.WarpProvider do
     fn :tick, {version, ops} -> build_warp(track_spans, patches, version, ops) end
   end
 
+  # coord → builder dispatch table, the single place naming coordinate
+  # systems: supported_coords/0 derives from it and for_coord/3 dispatches
+  # through it, so a new coordinate system (frame warp, design doc §11.2
+  # v2) is one entry here. The frame builder will need the tempo map
+  # (W_frame = T_new ∘ W_tick ∘ T_old⁻¹), which the (spans, patches)
+  # builder shape does not carry — revisit the entry signature when it
+  # lands rather than guessing it now.
+  @builders %{tick: &__MODULE__.tick/2}
+
   @doc """
-  Coordinate systems this provider can serve.
+  Coordinate systems this provider can serve — the keys of the builder
+  dispatch table, sorted for determinism.
 
   `Coconut.Patch.new/1` rejects Metric anchors outside this list at
-  construction time — that guard is what keeps the single-clause `tick/2`
+  construction time — that guard is what keeps each single-coord provider
   closure total in practice.
   """
   @spec supported_coords() :: [atom()]
-  def supported_coords, do: [:tick]
+  def supported_coords, do: @builders |> Map.keys() |> Enum.sort()
+
+  @doc """
+  Returns the `warp_provider` closure serving `coord`, or `nil` when the
+  dispatch table has no builder for it.
+
+  Construction sites (write-time: `Coconut.Workspace`; check-time:
+  `Coconut.Resolve`) dispatch on the track's `coord_domain/0` through
+  here. A `nil` return plugs into `Workspace.transport_patches/3`'s nil
+  semantics: Ordinal/Relative anchors still travel by identity, while a
+  `Tamale.Anchor.Metric` anchor dies as `:warp_provider_required` — a
+  surfaced transport failure instead of a clause-less-closure crash. Via
+  `Coconut.Patch.new/1` the Metric case is unreachable anyway (its guard
+  derives from the same table).
+  """
+  @spec for_coord(atom(), map(), [Coconut.Patch.t()]) ::
+          Tamale.Transport.warp_provider() | nil
+  def for_coord(coord, track_spans, patches \\ []) do
+    case Map.fetch(@builders, coord) do
+      {:ok, builder} -> builder.(track_spans, patches)
+      :error -> nil
+    end
+  end
 
   # ---- Batch warp construction (v1: non-ripple) ----
 

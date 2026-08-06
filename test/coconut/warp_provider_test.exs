@@ -161,4 +161,21 @@ defmodule Coconut.WarpProviderTest do
   test "supported_coords advertises :tick only" do
     assert WarpProvider.supported_coords() == [:tick]
   end
+
+  describe "for_coord/3" do
+    test ":tick dispatches to the tick builder" do
+      spans = %{1 => %{"n1" => {480, 960}}, 2 => %{"n1" => {480, 720}}}
+      wp = WarpProvider.for_coord(:tick, spans)
+
+      w = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {480, 960}, new_span: {480, 720}}]})
+
+      assert Warp.at!(w, 700) == {:ok, {590, 1}}
+    end
+
+    test "a coord without a builder entry returns nil" do
+      assert WarpProvider.for_coord(:frame, %{1 => %{"n1" => {0, 480}}}) == nil
+      # ...and supported_coords/0 (the Patch.new guard source) agrees
+      refute :frame in WarpProvider.supported_coords()
+    end
+  end
 end

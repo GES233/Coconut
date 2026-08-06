@@ -120,6 +120,15 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 4. 帧空间 warp（v2）：`W_frame = T_new ∘ W_tick ∘ T_old⁻¹`，用
    `Warp.compose/invert` 组合。验收用 tamale 一致性向量 metric 族
    （G-INT-03/05 场景）。
+5. provider 分派（2026-08-06 对齐）：构造点（写时 `Workspace` / 检查时
+   `Resolve`）经 `WarpProvider.for_coord/3` 按轨的 `coord_domain/0`
+   查 core 分派表构造 closure，`supported_coords/0` 从同一张表推导
+   （`Patch.new` 挂载守卫随之自动放开，不再散落硬编码）；无 builder
+   的 coord 返回 nil，走 `transport_patches` 既有 nil 语义（Ordinal
+   恒等 transport，Metric 以 `:warp_provider_required` 判死而非
+   clause 缺失崩溃）。帧 builder 的入参签名（需 tempo map，与本表
+   (spans, patches) 形状不同质）随第 4 条落地时再定；锚 coord 与轨
+   domain 的一致性校验仍挂在 attach_patch 待办（Audio 落地项）。
 
 ## 6. Tempo Track = 一条独立 Space
 
@@ -380,6 +389,10 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
   breaking change。
 - `Workspace.tempo_map/1` 每次现编 TempoMap；大工程下考虑缓存
   （与 tempos_by_version 一并想）。
+- `Engine.Snapshot.from_workspace/1` 的 `tracks` 只含 `ws.tracks`，
+  tempo 轨缺席——引擎只能拿到编译后的 `tempo_map`，拿不到原始 tempo
+  事件/元素（未来 tempo ramp 干预、tempo 编辑的 patch 投影都会卡在这）；
+  当前 DiffSinger 用不到，v2 定 tempo 干预时再补 track view。
 
 ### 11.8 Track 抽象（已定 2026-08-03，与 11.1–11.3 同期施工；Vocal/Tempo 已落地）
 
@@ -400,6 +413,13 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
   `split_inherit/2`、`view/1`。`edit_element/2`（2026-08-03 补）：
   内容编辑的合并+重铸，`edit_note` lowering 经它一步写回（原 `:touch`
   stub 退役，调用方不再各自扮演 cast 义务）。
+- 可选能力（2026-08-06 收编）：`tempo_events/1`（`:tempo_derive`）与
+  `dump_element/1`+`load_element/1`（`:element_codec`，成对探测——
+  只导出一半视同不具备）统一由 `Track.supports?/2` 嗅探，回调名不再
+  散落各调用点；配套内嵌 behaviour（`Track.TempoDerive` /
+  `Track.ElementCodec`）给编译期警告，但绑定仍按导出不按声明。
+  插件轨型（`Track.Audio`、宿主自定义）只需实现回调 + 注册
+  `Pickle.Registry`，能力自动被发现。
 - 首发模块：`Track.Vocal`（Note 元素，tick 域）、`Track.Tempo`（bpm 裸 map，
   tick 域，首元素删除保护落 validate_gesture）。`Track.Audio` 紧随其后，
   `Track.Synth` 留位（参数面比 Vocal 简单，不预留实现）。

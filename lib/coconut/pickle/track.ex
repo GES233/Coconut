@@ -13,10 +13,10 @@ defmodule Coconut.Pickle.Track do
   - `spans_by_version` 的 version 整数键直出（约定允许的 map 键类型），
     span `{start, end}` → 二元 list `[start, end]`，端点按
     `Coconut.Track.span()` 约定为整数直出；
-  - `elements_by_id` 按能力委托：track module 导出 `dump_element/1` /
-    `load_element/1` 则逐元素委托（对照 `tempo_events/1` 的
-    `function_exported?` 能力探测先例）；不导出且元素表为空则放行，
-    不导出且非空报 `{:error, {:no_element_codec, module}}`；
+  - `elements_by_id` 按能力委托：track module 具备 `:element_codec`
+    能力（`dump_element/1` + `load_element/1` 成对导出，统一经
+    `Coconut.Track.supports?/2` 探测）则逐元素委托；不具备且元素表
+    为空则放行，不具备且非空报 `{:error, {:no_element_codec, module}}`；
   - `patches` 走 `Coconut.Pickle.Patch` codec；
   - `dead_patches` 的 `{patch, reason}` → `[patch_dump, reason]`，reason
     原样透传但须满足 `Coconut.Pickle` 允许类型约定，否则
@@ -138,7 +138,7 @@ defmodule Coconut.Pickle.Track do
       map_size(elements) == 0 ->
         {:ok, %{}}
 
-      element_codec?(module, :dump_element) ->
+      Track.supports?(module, :element_codec) ->
         Enum.reduce_while(elements, {:ok, %{}}, fn {id, element}, {:ok, acc} ->
           case module.dump_element(element) do
             {:ok, dumped} -> {:cont, {:ok, Map.put(acc, id, dumped)}}
@@ -156,7 +156,7 @@ defmodule Coconut.Pickle.Track do
       map_size(elements) == 0 ->
         {:ok, %{}}
 
-      element_codec?(module, :load_element) ->
+      Track.supports?(module, :element_codec) ->
         Enum.reduce_while(elements, {:ok, %{}}, fn {id, dumped}, {:ok, acc} ->
           case module.load_element(dumped) do
             {:ok, element} -> {:cont, {:ok, Map.put(acc, id, element)}}
@@ -170,11 +170,6 @@ defmodule Coconut.Pickle.Track do
   end
 
   defp load_elements(_module, other), do: {:error, {:invalid_elements_dump, other}}
-
-  # 能力探测先例：Workspace.tempo_events_capable?/1（tempo_events/1）
-  defp element_codec?(module, fun) do
-    Code.ensure_loaded?(module) and function_exported?(module, fun, 1)
-  end
 
   # ---- patches / dead_patches ----
 

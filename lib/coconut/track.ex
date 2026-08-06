@@ -24,6 +24,19 @@ defmodule Coconut.Track do
   - `view/1` — the flattened score view for `Coconut.Engine.Snapshot`:
     `[{id, element, span}]` ordered by `{start, id}`.
 
+  ## Optional capabilities
+
+  A track module may additionally export optional capability callbacks,
+  sniffed by `supports?/2` (export-based, not behaviour-enforced — they
+  are opt-in, so required-callback enforcement cannot apply):
+
+  - `:tempo_derive` — `tempo_events/1` (see `TempoDerive`): the tempo-map
+    projection; `Coconut.Workspace` binds (and reserves) its `tempo`
+    field by it.
+  - `:element_codec` — `dump_element/1` + `load_element/1` (see
+    `ElementCodec`), sniffed as a pair: per-element archive codec for
+    `Coconut.Pickle.Track`.
+
   `use Coconut.Track` supplies a permissive `validate_gesture/3` default.
   """
 
@@ -126,9 +139,9 @@ defmodule Coconut.Track do
 
   # Call sites delegate through these rather than touching `track.module`
   # directly (same convention as `Coconut.Score.Key`'s Facade API).
-  # `tempo_events/1` is deliberately absent: it is a tempo-track capability,
-  # not a behaviour callback, and stays a composition-root concern
-  # (`Coconut.Workspace.tempo_map/1`).
+  # `tempo_events/1` is deliberately absent: it is a tempo-track capability
+  # (see the Capabilities section), not a behaviour callback, and stays a
+  # composition-root concern (`Coconut.Workspace.tempo_map/1`).
 
   @doc "The track's coordinate domain (`:tick` | `:frame`)."
   @spec coord_domain(t()) :: :tick | :frame
@@ -158,9 +171,56 @@ defmodule Coconut.Track do
   @spec view(t()) :: view()
   def view(%__MODULE__{module: module} = track), do: module.view(track)
 
+  # ---- Capabilities ----
+
+  # Optional capabilities are sniffed by export, not declared in the
+  # behaviour above (they are opt-in, so required-callback enforcement
+  # cannot apply). This table is the single place that names their
+  # callbacks; call sites ask supports?/2 instead of hardcoding function
+  # names, so a new track type (e.g. a plugin module) is discovered
+  # automatically once it exports the callbacks.
+
+  @typedoc """
+  Optional track-module capabilities (see `supports?/2`).
+
+  - `:tempo_derive` — `tempo_events/1` (`TempoDerive`): the tempo-map
+    projection; `Coconut.Workspace.validate/1` binds (and reserves) the
+    `tempo` field by it.
+  - `:element_codec` — `dump_element/1` + `load_element/1`
+    (`ElementCodec`), sniffed as a pair: per-element archive codec for
+    `Coconut.Pickle.Track`.
+  """
+  @type capability :: :tempo_derive | :element_codec
+
+  @capabilities %{
+    tempo_derive: [tempo_events: 1],
+    element_codec: [dump_element: 1, load_element: 1]
+  }
+
+  @doc """
+  Whether `module` exports every callback of the optional `capability`.
+
+  The single sniffing point (`Code.ensure_loaded?` + `function_exported?`
+  per callback), keeping capability callback names out of call sites. A
+  multi-callback capability (`:element_codec`) counts only when the full
+  set is exported — a module exporting half of it is treated as not
+  supporting it at all (no half-broken dump/load).
+
+  Declaring the matching `@behaviour` (`TempoDerive` / `ElementCodec`)
+  buys compile-time warnings but is not required: binding stays by
+  export, not by declaration.
+  """
+  @spec supports?(module(), capability()) :: boolean()
+  def supports?(module, capability) when is_atom(module) do
+    Code.ensure_loaded?(module) and
+      Enum.all?(Map.fetch!(@capabilities, capability), fn {fun, arity} ->
+        function_exported?(module, fun, arity)
+      end)
+  end
+
   # ---- Span table ----
 
-  @doc "The track's versioned span table, for `Coconut.WarpProvider.tick/2`."
+  @doc "The track's versioned span table, for `Coconut.WarpProvider.for_coord/3`."
   @spec spans(t()) :: %{Tamale.version() => %{Tamale.id() => span()}}
   def spans(%__MODULE__{spans_by_version: spans_by_version}), do: spans_by_version
 
@@ -292,8 +352,28 @@ defmodule Coconut.Track do
   defp drop_patches(track, removes), do: %{track | patches: track.patches -- removes}
 
   defmodule TempoDerive do
+    @moduledoc """
+    Optional `:tempo_derive` capability: the tempo-map projection
+    (`Coconut.Workspace.tempo_map/1`). Sniffed via
+    `Coconut.Track.supports?/2`; declaring this behaviour buys
+    compile-time warnings but is not required.
+    """
+
     @callback tempo_events(Coconut.Track.t()) :: [
                 {Coconut.Score.Tick.numeric_tick(), Coconut.Score.Tempo.Event.t()}
               ]
+  end
+
+  defmodule ElementCodec do
+    @moduledoc """
+    Optional `:element_codec` capability: per-element archive codec for
+    `Coconut.Pickle.Track`. Both callbacks are sniffed as a pair via
+    `Coconut.Track.supports?/2` — a module exporting only one is treated
+    as codec-less (archiving a non-empty element table then fails with
+    `{:error, {:no_element_codec, module}}`).
+    """
+
+    @callback dump_element(element :: term()) :: {:ok, term()} | {:error, term()}
+    @callback load_element(dumped :: term()) :: {:ok, term()} | {:error, term()}
   end
 end

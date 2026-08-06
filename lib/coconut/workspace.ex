@@ -174,7 +174,7 @@ defmodule Coconut.Workspace do
   # graveyard, and this batch's own `patches_add` join untouched.
   defp transport_track_patches(ws, track_id, patches_add) do
     {:ok, track} = fetch_track(ws, track_id)
-    provider = WarpProvider.tick(Track.spans(track), track.patches)
+    provider = WarpProvider.for_coord(Track.coord_domain(track), Track.spans(track), track.patches)
     {:ok, survivors, dead} = transport_patches(ws, track_id, provider)
 
     track = %{
@@ -231,7 +231,7 @@ defmodule Coconut.Workspace do
   end
 
   @doc """
-  Returns the track's versioned span table, for `WarpProvider.tick/2`.
+  Returns the track's versioned span table, for `WarpProvider.for_coord/3`.
   """
   @spec track_spans(t(), Track.track_id()) :: %{
           Tamale.version() => %{Tamale.id() => Track.span()}
@@ -365,16 +365,20 @@ defmodule Coconut.Workspace do
     TimeSigMap.compile(ws.time_sigs, tpqn: ws.tpqn)
   end
 
+  # The tempo field is bound by capability, not module identity: any track
+  # module with the `:tempo_derive` capability may type the tempo track.
+  # The concrete choice lives here (composition root); the projection
+  # lives on the module.
   @spec validate(t()) :: {:ok, t()} | {:error, term()}
   def validate(%{tempo: tempo, time_sigs: time_sigs} = ws) do
     cond do
-      not tempo_events_capable?(tempo.module) ->
+      not Track.supports?(tempo.module, :tempo_derive) ->
         {:error, {:invalid_tempo_track, tempo.module}}
 
       Map.has_key?(ws.tracks, tempo.id) ->
         {:error, {:tempo_id_collision, tempo.id}}
 
-      Enum.any?(ws.tracks, fn {_id, track} -> tempo_events_capable?(track.module) end) ->
+      Enum.any?(ws.tracks, fn {_id, track} -> Track.supports?(track.module, :tempo_derive) end) ->
         {:error, :tempo_track_in_tracks}
 
       not valid_time_sigs?(time_sigs) ->
@@ -383,13 +387,6 @@ defmodule Coconut.Workspace do
       true ->
         {:ok, ws}
     end
-  end
-
-  # The tempo field is bound by capability, not module identity: any track
-  # module exporting tempo_events/1 may type the tempo track. The concrete
-  # choice lives here (composition root); the projection lives on the module.
-  defp tempo_events_capable?(module) do
-    Code.ensure_loaded?(module) and function_exported?(module, :tempo_events, 1)
   end
 
   # The bar is the authoritative coordinate: the first event must sit at

@@ -102,8 +102,14 @@ defmodule Coconut.Resolve do
             {surv_acc, entry_acc}
 
           patches ->
-            warp_provider = WarpProvider.tick(Coconut.Track.spans(track), patches)
-            {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, warp_provider)
+            provider =
+              WarpProvider.for_coord(
+                Coconut.Track.coord_domain(track),
+                Coconut.Track.spans(track),
+                patches
+              )
+
+            {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, provider)
             entries = Enum.map(dead, &transport_entry(elem(&1, 0), elem(&1, 1)))
 
             {Enum.reverse(survivors, surv_acc), Enum.reverse(entries, entry_acc)}
@@ -173,6 +179,19 @@ defmodule Coconut.Resolve do
            patch: patch,
            channel: patch.channel,
            reason: reason
+         }}
+
+      # Bare non-tuple failures (e.g. `Map.fetch/2`'s raw `:error` leaking
+      # out of an ad-hoc projection) land here instead of crashing the
+      # whole round with a CaseClauseError.
+      other ->
+        {:error,
+         %{
+           kind: :projection_failed,
+           track_id: patch.track_id,
+           patch: patch,
+           channel: patch.channel,
+           reason: other
          }}
     end
   end
