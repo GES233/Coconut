@@ -2,7 +2,7 @@ defmodule Coconut.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @description "headless SVS editor"
+  @description "An engine-agnostic editor core that treats user intervention as first-class"
 
   def project do
     [

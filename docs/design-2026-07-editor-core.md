@@ -1,9 +1,18 @@
-# Coconut 设计草案：Headless Editor
+# Coconut 设计草案：引擎无关编辑器内核（Intervention First-class）
 
 > 2026-07-29 调研讨论存档。来源：对 Qy 下 tamale / oi / equinox / zongzi /
 > zongzi_feasibility 五个项目的调研结论与架构决策。状态：部分实现
 > （2026-08-03 更新：Track-ification（§11.1–11.3、11.8）、拍号入 Workspace、
 > golden 场景最小集已落地，逐项进度见第 10 节标注）。
+>
+> 2026-08-07 定位注记：项目定位由 "A headless SVS Editor" 更新为
+> "An engine-agnostic editor core that treats user intervention as
+> first-class"（README 同步）；本文档随之更名（旧文件名
+> design-2026-07-headless-editor.md，原标题"Headless Editor"），§1 定位段、
+> §3 标题与框架已重写，其余存档段落保留当时表述。下述 08-06 迁移注记的
+> 模块映射同样适用于文件路径（如 `lib/coconut/resolve.ex` →
+> `lib/coconut/render/resolve.ex`、`lib/coconut/engine.ex` →
+> `lib/coconut/render/engine.ex`），正文/补记中的旧路径不再有效。
 > 
 > 2026-08-06 迁移注记：模块名已按目录命名空间重构——`edit/`、`render/` 目录
 > 下的实现统一加 `Coconut.Edit.` / `Coconut.Render.` 前缀。新旧对照：
@@ -19,9 +28,13 @@
 
 ## 1. 定位与选型
 
-coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不是重写这些库：
+coconut 是一个**引擎无关（engine-agnostic）的编辑器内核，将用户干预
+（intervention）视为一等公民**（2026-08-07 定位更新；旧定位"无 UI 的 SVS
+编辑器内核"，SVS 降为首发应用域而非定义）。干预——Patch 挂载、写时
+transport、digest 零容差比对、两段式否决——是内核的主轴，渲染引擎只是
+其下游消费者之一。它不是重写这些库：
 
-- **介入机制 = tamale**（`Qy/tamale`）：Space / Op / Anchor / Transport / Patch，
+- **干预机制 = tamale**（`Qy/tamale`）：Space / Op / Anchor / Transport / Patch，
   零依赖纯函数内核，三方合并模型，测试 + JSON 一致性向量齐全。
 - **调度引擎 = orchid/oi**（`Qy/Orchid` + `Qy/oi`）：已固化，维护者即本人；
   未来变化只会以新 Executor/Hook 形式出现。直接作为稳定平台依赖，不重写。
@@ -47,13 +60,14 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
       2. lowering：编辑手势 → op 批次（拖音符 = Move+Retime 同批）
       3. apply_batch 到各 Space，版本 +1，侧表/快照同步写回
       4. transport：存活 patch 的 anchor 沿新 log 运输（写时回写；死 patch 入坟场）
-      5. 存活集合 → Resolve → Engine check/render（异步 job，事件回推）
+      5. 存活集合 → Resolve → Snapshot/Request（钉 edit_version，§11.1/§11.5）
+         → Engine check/render（异步 job，事件回推；产物为 Artifact）
 ```
 
 术语对齐：**Workspace（工程）→ Track（轨 = 一个 Space + 侧表）→ Element
 （音符 / tempo 事件）**。不使用 "Timeline" 一词（避免与 zongzi 旧机制串味）。
 
-## 3. 桥接层（`Coconut.Render.Resolve`）
+## 3. 干预裁决层（`Coconut.Render.Resolve`；旧称"桥接层"）
 
 > 2026-08-01 补记：实现定名 `Coconut.Resolve`（`lib/coconut/resolve.ex`），
 > 原拟名 ACF 废弃；Engine behaviour 见 `lib/coconut/engine.ex`，两段式
@@ -79,10 +93,15 @@ coconut 是一个 **Headless Editor**（无 UI 的 SVS 编辑器内核），不�
 > 元素仍存裸 map。digest 场景走 `Note.to_canonical/1`（key 经
 > `Map.from_struct` 归约为 `%{midi: n}`，Tamale.Digest 拒 struct）。
 
-tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
+tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两者——它是干预
+链路的裁决层，而非某个渲染后端的适配器（2026-08-07 定位更新：本节旧称
+"桥接层"，原表述"tamale 与 oi 范式不同"预设了 oi 终点，与 engine-agnostic
+定位不符）。职责只三条：
 
-1. tamale transport/resolve 结果 → 折叠为 oi 的 `%{PortRef => %{input: value}}`
-   data 干预（存活干预转 `:override`，按 producer 端口 keying）；
+1. tamale transport/resolve 结果 → 折叠为引擎无关的中间形状
+   `%{port_ref => %{input: value}}`（存活干预转 `:override`、按 producer
+   端口 keying 的 oi data 翻译发生在 dispatch 边界，见
+   design-2026-08-orchid-intervention.md §2/§4）；
 2. conflict（含 clip / ambiguous）全量聚合为一票否决（verdict
    `%{passed: false, entries}`；equinox Runner 语义照搬）；
 3. 反向：用户编辑手势 → tamale Op 脚本。
@@ -91,11 +110,11 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 
 ## 4. 时间基准（硬约定）
 
-- **tick = 结构层权威坐标**：音符、介入锚都挂 tick（Metric 或 Ordinal）。
+- **tick = 结构层权威坐标**：音符、干预锚都挂 tick（Metric 或 Ordinal）。
 - **帧/采样点 = 引擎层坐标**：digest 投影与渲染窗口使用，整数帧号。
 - **秒只允许以整数微秒出现在导出/展示边界**。float 在所有内核边界被拒绝
   （tamale Coord 学说），归一化在适配层完成，舍入只发生在最终消费点。
-- **tempo 只支持阶梯（step），不支持线性 ramp**——Warp 段是有理数端点的
+- **tempo 结构层只支持阶梯（step），不支持线性 ramp**——Warp 段是有理数端点的
   线性段，ramp 的二次曲线无法精确表达，会破坏 digest 零容忍比对。
   渐速靠加密 tempo 点逼近，采样端拟合。
 - tick↔帧换算收敛到唯一一处（warp_provider / Resolve 采样处），
@@ -105,6 +124,12 @@ tamale 与 oi 范式不同，桥接层显式隔离，职责只三条：
 > `design-2026-08-tempo-curve.md`。Step 为骨、曲线为皮、bake 为界：
 > 内核仍只见阶梯，曲线是适配层编辑投影，经确定性 bake 落到阶梯事件；
 > 本条硬约定不变。
+>
+> 2026-08-07 补记：`Tempo.Linear` 已作为 `Tempo.Segment` 实现落地
+> （`lib/coconut/score/tempo.ex`）。本条约定锁的是**结构层**——tempo 轨
+> 只产 Step 事件（`Track.Tempo.tempo_events/1`），op / digest / warp 只见
+> 阶梯；Linear 属消费层插值设施，渲染侧消费点尚未接线（见 tempo-curve
+> 文档 §2）。
 
 ## 5. warp_provider 设计
 
@@ -239,7 +264,10 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 1. 引擎面：驱动的引擎是谁（决定 Engine behaviour 与 digest 投影实现）
    ——已定（2026-08-02）：首发 DiffSinger（OpenUTAU 格式声库），经
    `Coconut.Engines.DiffSinger` + `lib/coconut/engines/diffsinger/worker.py`（NDJSON stdio）
-   接入；UTAU classic 备选，歌词→请求 token 的 Encoder 层单开；
+   接入；UTAU classic 备选，歌词→请求 token 的 Encoder 层单开。
+   （2026-08-07 定位注记：engine-agnostic 定位下，引擎面边界由 Engine /
+   Channel / Encoder 三契约定义，DiffSinger 是契约的首个参考实现而非
+   引擎面本身；）
 2. 坐标基准：已定（tick 权威 + 帧 + 微秒，见第 4 节）；
 3. 首发 channel 清单——已定（2026-08-02）：抽象为 `Coconut.Channel`
    behaviour，不写死；首发音素 / 音素时长 / 音高三路已落地
@@ -358,13 +386,18 @@ split 继承变为纯 id 置换（`Track.Vocal.split_inherit/2`）。
 **方向**：启用 `tempos_by_version`（变 tempo 时的 transport 锚定需要它）
 或删字段；接入 truncate 裁剪；side 拆分命名（乐谱侧表 / 干预侧表）。
 
-### 11.4 port_ref 语义（已定：废元组，改 DTO）
+### 11.4 port_ref 语义（DTO 化已推迟 2026-08-04；现状仍为 `{:port, node, port}`）
+
+**已推迟**：oi 的 PortRef 与本项目 port_ref 同形（`{:port, node, port}`），
+DTO 化决议无限期推迟，转换（若做）放在 coconut↔oi 边界；fold 同 port
+覆盖问题经 orchid-intervention 文档 §3.2 的聚合规则在 assemble 层事实上
+消解，等真出现再议（见该文档 §2/§7）。以下"已定方向"存档保留。
 
 **现象**：`{:port, node, port}` 的 node 位一会是角色名（`:synth`）一会是
 音符 id；fold 同 port 后来者**静默**覆盖先来者；端口认领靠各 adapter
 模式匹配自觉，无注册机制。
 
-**已定方向**：port 引用改为显式 DTO（Map 或 Struct，不用位置元组），
+**已定方向**（存档）：port 引用改为显式 DTO（Map 或 Struct，不用位置元组），
 字段命名语义（如 `%{scope, kind, id}`）；fold 的覆盖语义显式化——同
 port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认领在多引擎
 并存前要有注册/声明处（配合 capability 声明）。
@@ -440,14 +473,17 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
   若用 tick 定位，span 随 tempo 编辑漂移，破坏 §4 "tick warp 与 tempo
   无关"硬约定；v1 不做 time-stretch（DAW 的 musical/linear 之辩以
   "帧域固定"收尾）。导入时经 TempoMap 换算落帧，之后 tempo 编辑不影响。
-  音量自动化等介入 = 将来的帧域 Metric 锚 channel（接 v2 帧空间锚）。
+  音量自动化等干预 = 将来的帧域 Metric 锚 channel（接 v2 帧空间锚）。
 - tempo 编辑的 Operation 同步：跨轨拖动 = 两轨各一次 apply_batch，
   `edit_version` 全局每批 +1，客户端两批之间需重读版本；多轨原子入口
   `apply_batches` 待跨轨拖动真做时再加。
 - 渲染管线形状向 `CheckRequest -> Artifact[Conflict] -> RenderRequest`
   演进；本轮先做 Snapshot（11.1）+ edit_version 钉（11.5 的钉部分，
   强制校验留给 GenServer 壳）。
-- 曲线模块与曲线参数的合并：留待 Audio 落地时一并评（音量自动化即曲线）。
+- 曲线模块与曲线参数的合并：已了断（2026-08-07）——Curve 收编为适配层
+  曲线参数化库，payload 为控制点容器，rasterize 在消费边界；见
+  design-2026-08-orchid-intervention.md §6.3。音量自动化即曲线，Audio
+  落地时复用同一套。
 - 在接 Oi（主要是 orchid_stratum）前，不用考虑数据缓存，唯一要考虑的是
   乐句分割。
 

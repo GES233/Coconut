@@ -1,7 +1,13 @@
-# 设计：Intervention 层落地与 Orchid/oi 接入（2026-08-04）
+# 设计：Intervention 层与渲染后端（Orchid/oi）接入（2026-08-04）
 
-> 前置文档：`design-2026-07-headless-editor.md`（§3 桥接层、§11.4 port_ref、§11.5 版本钉）。
+> 前置文档：`design-2026-07-editor-core.md`（§3 干预裁决层、§11.4 port_ref、§11.5 版本钉）。
 > 本文档拍板 intervention 层的落地路径与 orchid 生态的接入方式。
+>
+> 2026-08-07 定位注记：项目定位更新为 "engine-agnostic editor core that
+> treats user intervention as first-class"——干预层是 coconut 的主体，而非
+> 渲染管线的上游配角；orchid/oi 是渲染后端的选项之一（本文 §5 Phase 0–2
+> 尚未开始）。§1"缺的半层"叙事以 equinox Runner 为参照系、写于旧定位下，
+> 存档保留；§4 边界原则（Resolve 及以下不感知 oi）与新定位一致，不变。
 
 ## 1. 背景与现状
 
@@ -128,40 +134,108 @@ Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间�
   mock step）走通 声明 → compile → 干预注入（验证 §3.2 聚合规则与
   producer 短路）→ execute。ExUnit 覆盖。
 - **Phase 2**：DiffSinger 真实接入——worker 协议暴露 stage 边界，四节点
-  换成真 step；pitch/duration/lyric 干预改经 oi override 注入；
-  stratum 缓存挂上（声库/模型输出按内容寻址复用）。
+  换成真 step；pitch/duration/lyric 干预改经 oi override 注入；stage
+  输出对 extract 开放读取（§6.3）；stratum 缓存挂上（声库/模型输出
+  按内容寻址复用）。
 - **Phase 3（远期）**：可视化。kino_orchid 补编辑回路；参照 equinox
   `GraphTranslator` 定义 coconut 的"UI 图 payload → Graph"契约。
   帧域 Metric 锚 channel（音量自动化）随 Audio 落地一并评（前文档
-  :367、:374）。
+  §11.8）。
 
-## 6. 待深入讨论：intervention 的载荷设计（stub）
+## 6. Intervention 载荷设计（2026-08-07 拍板）
 
-以下三点相互咬合，是下一版设计的核心问题，先立 stub，**未定**：
+> 本节由原 stub（2026-08-04）填实：载荷分类学（§6.1）、多音符身份（§6.2）、
+> 参数曲线工作流（§6.3）、精确化 spec（§6.4）已定；oi 注入选型（§6.5）
+> 仍开放，随 Phase 1/2 定。
 
-### 6.1 干预怎么挂在 Patch 上
+### 6.1 payload 分类学：三种形状（已定）
 
-- 现在 `Tamale.Patch.payload` 是 opaque `term()`，内核不过问形状。
-- 需要拍板：每个 channel 是否声明自己的 payload schema（pitch 曲线 /
-  时长表 / 歌词音素），schema 校验放在 `Patch.new/1`、channel 的
-  projection，还是 check 阶段。
-- payload 的版本化/迁移（工程文件序列化后，payload 形状演进怎么兼容，
-  与 `Coconut.Project` 序列化联动）。
+干预按载荷形状分三类；channel 声明自己属于哪类并携带对应 schema：
 
-### 6.2 怎么和 Curve 结合
+| 类 | 锚 | payload 形状 | 现存 channel |
+|---|---|---|---|
+| 身份（identity） | Ordinal（单音，或 §6.2 的多音 group） | 离散内容序列（音素对 `[[lang, ph]]` 等） | Lyric |
+| 时值（timing） | Ordinal / Relative | 稀疏钉 `[[ph_index, dur_tick]]` + phoneme→note 对齐 + pre-utterance | Duration |
+| 参数曲线（curve） | Ordinal / Metric 区段 | 控制点容器（§6.3、§6.4） | Pitch（现为稀疏折线 `[[tick, midi]]`，待升级为控制点容器） |
 
-- `Coconut.Curve.*`（ControlPoint / Adapter / Bezier / CatmullRom）目前是
-  parked 代码，零调用方（见 2026-08-04 清理记录）。
-- 现在 pitch/duration 干预 payload 是稀疏折线数组（`[[tick, midi]]`），
-  是否升级成 Curve container（Bezier 手柄、CatmullRom 张力）？
-- 若升级：rasterize 发生在哪一层——内核（干预落地即定栅）、dispatch
-  边界（assemble 时按 TempoMap 转秒域）、还是引擎/worker 内（帧域）？
-  这决定 digest 比对的输入形状，也决定 §3.2 聚合端口的 override 值
-  是曲线还是采样结果。
-- 设计文档 :374 的旧决议"曲线模块与曲线参数的合并留待 Audio 落地"
-  需要在这里一并重评。
+拍板：
 
-### 6.3 怎么注入 orchid_intervention
+- `Tamale.Patch.payload` 保持 opaque `term()`，内核不过问形状（不变）。
+- **schema 校验点 = 挂载/lower 边界**：channel 提供 cast（适配层义务），
+  不进 `Patch.new/1`（内核只查锚的 coord 合法性）；check 阶段的投影产
+  canonical form 供 digest。
+- **版本化/迁移归 channel**：payload 形状演进由 owning channel 负责；
+  `Pickle.Patch` 原样存 term，老档加载时 channel cast 失败 = loud error
+  （pickle 惯例），不做静默迁移。
+- timing 类显式包含两个维度（2026-08-07 补入）：**phoneme→note 对齐**
+  （音素归属哪个音符 / group 成员，melisma 下与 §6.2 同一份数据）与
+  **pre-utterance**——锚定用 `Anchor.Relative` 负偏移（tamale 原生允许
+  越界 overhang，无宿主内不变式），投影与消费按引擎语义处理。
+
+### 6.2 多音符抽象身份：syllable group（已定，frame–content）
+
+动机：melisma（一个音节跨多音）的音素序列属于音节而非单个音符，
+per-note 锚无法表达"这组音符共同承载一份内容"。这是 Frame/Content
+结构——frame（音节框架 = 跨音符的身份）+ content（音素序列），也为
+基于 Frame/Content 的引擎设计预留接口形状。
+
+拍板：**不引入新锚类型**，复用 tamale 既有机制：
+
+- **frame 身份 = `Anchor.Ordinal{refs: [note_id, ...], adjacent?: true}`**：
+  conjunctive refs（丢任一成员即死）+ adjacency（成员须保持顺序相邻，
+  断裂即 `{:undefined, :adjacency_broken}`）。Move 同批存活；成员
+  Delete/Merge 杀锚；成员 Split 破坏 adjacency（新 id 插入 refs 之间）
+  锚死——v1 取此保守语义（同 tempo_ramps"简单狠"先例：被打散的
+  melisma 其音节级干预失效，重开编辑器时按现状重推成员）；放宽
+  （split 后成员自动扩列）留作策略层后话。
+- **content = payload 的音素序列 + 成员对齐**（即 §6.1 timing 类的
+  phoneme→note 对齐）。
+- group 的编辑侧记录（成员有序表、音节元数据）走内容级侧表，不落
+  op——与"歌词/控制点不落 op"先例同构；group 级 projection（成员 id
+  有序表 + 各成员 canonical）由 channel 实现，作为 digest 的 base。
+
+### 6.3 参数曲线：extract → edit → land（已定）
+
+1. **extract**：Base = 引擎 stage 输出投影（如 pitch predict 的 f0）。
+   渲染 DAG 因此须暴露 stage 输出**用于读取**，不只是 override 的短路
+   点——§5 Phase 2 的 worker stage 拆分范围随之包含"可抽出"。extract
+   是异步引擎往返，GenServer 壳的 job/事件模型按"编辑 + extract 两类
+   往返"设计。
+2. **edit**：payload = 控制点容器（Bezier 手柄 / CatmullRom 张力为适配层
+   参数化），坐标按 §6.4 spec 精确化。**rasterize 发生在消费边界**
+   （dispatch/engine，经 TempoMap 转秒/帧域），不进内核、不进
+   digest——digest 的输入是控制点 canonical form。与 tempo-curve
+   "Step 为骨、曲线为皮"同构：内核只见精确值，连续曲线是编辑投影。
+3. **land**：`base_digest` 钉在 extract 时刻的 Base 投影上。**Base 漂移
+   语义（显式化）**：模型/声库更换或上游编辑使 Base 变化 → digest 失配
+   → conflict，干预否决、交由用户确认重录。这是预期行为而非故障：
+   干预钉死在它诞生时的底料上。
+
+对 `Coconut.Curve.*` 的处置（07 文档 §11.8"曲线模块与曲线参数的合并
+留待 Audio 落地"旧决议由此了断）：parked 代码收编为**适配层曲线参数化
+库**——Bezier / CatmullRom 作控制点容器的插值模式；当前实现是 float
+世界（`tension: 0.5` 等），完成 §6.4 exact 化之前只用于编辑投影与
+rasterize，不出现于 canonical form。
+
+### 6.4 精确化 spec：canonical payload 整数化规范（已定）
+
+凡进入 digest 的 payload 与其 canonical 投影必须满足（`Tamale.Digest`
+拒 float / 拒 struct 的直接推论）：
+
+1. **时间**：tick / frame 一律整数；秒只以整数微秒出现在导出/展示边界
+   （前文档 §4 既有约定延伸至 payload）。
+2. **值**：尽量整数化，量化单位由 channel 声明——bpm → milli-bpm（既有
+   先例）；音高偏移 → 整数 cents / milli-cents；无法整数化的用
+   `{num, den}` 有理数。float 与 struct 一律禁止。
+3. **音高**：canonical 形状由 Key 模块拥有——TwelveET 为 `%{midi: n}`
+   （音符）/ 整数 cents 偏移（曲线点）。Key 可插拔的设计动机即将来
+   引入民族调式 / 微分音：新 Key 模块定义自己的精确 canonical，内核
+   与本 spec 不预设 midi。改任一 canonical 形状 = breaking change
+   （全部已挂 patch 的 base_digest 失效，前文档 §11.7 既有）。
+4. **schema 版本**：channel 声明 payload schema 版本；落盘随
+   `Pickle.Patch` 原样存取，加载由 channel 校验/迁移（§6.1）。
+
+### 6.5 怎么注入 orchid_intervention（仍开放，随 Phase 1/2 定）
 
 oi 有两条干预通道，需要选型（或明确分工）：
 

@@ -1,9 +1,12 @@
 # 设计：速度曲线（Tempo Curve）编辑投影与 bake 边界（2026-08-05）
 
-> 前置文档：`design-2026-07-headless-editor.md`（§4 时间基准硬约定、§6 Tempo Track）、
+> 前置文档：`design-2026-07-editor-core.md`（§4 时间基准硬约定、§6 Tempo Track）、
 > `design-2026-08-orchid-intervention.md`。
 > 本文档拍板"渐速/渐慢"的落地路径：**Step 为骨、曲线为皮、bake 为界**——
 > 内核只认阶梯 tempo 事件，曲线是适配层的编辑投影，经确定性 bake 落到阶梯。
+>
+> 2026-08-07 定位注记：本设计（语义手势 → 确定性 bake → 一个 op 批次）是
+> "user intervention as first-class" 定位在 tempo 域的实例。
 
 ## 1. 背景与约束
 
@@ -23,7 +26,7 @@
 |---|---|---|
 | 内核（tamale / Workspace / TempoMap / digest / warp / 序列化） | 只见 step 事件（整数 tick + 整数 milli-bpm） | **零改动** |
 | 适配层（新增） | 曲线 schema、编辑手势、bake 算法、stale 规则 | 本文档主体 |
-| 引擎消费层 | 密集阶梯的渲染侧平滑（`Tempo.Linear` 为候选实现），消费点插值 | 不回流内核 |
+| 引擎消费层 | 密集阶梯的渲染侧平滑（`Tempo.Linear` 已实现为 `Tempo.Segment`，渲染侧消费点尚未接线），消费点插值 | 不回流内核 |
 
 编辑侧拟合（bake）与渲染侧拟合（平滑）相互独立：前者产出规范数据、要
 确定性；后者只是消费点插值、怎么舒服怎么来。

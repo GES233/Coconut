@@ -2,7 +2,10 @@ defmodule Coconut.Score.Key do
   @moduledoc """
   Domain model for pitch.
 
-  Uses an adapter pattern to support different tuning systems.
+  Uses an adapter pattern to support different tuning systems. The motivation
+  for pluggability is future non-12ET systems or microtonality: each
+  Key module owns its exact, digest-safe canonical form, so the kernel never
+  presupposes MIDI (see docs/design-2026-08-orchid-intervention.md §6.4).
 
   Handles conversion between two representations:
 
