@@ -1,4 +1,7 @@
 defmodule Coconut.Edit.Operations.InsertNote do
+  @moduledoc """
+  Lowers and validates an insert-note gesture into a batch of operations.
+  """
   import Coconut.Edit.Operations.CoreComponents
 
   alias Coconut.Edit.{Operation, Track, Workspace}
@@ -31,9 +34,8 @@ defmodule Coconut.Edit.Operations.InsertNote do
          :ok <- check_id(track.space, id),
          :ok <- check_valid(track.space, after_id),
          :ok <- validate_span(start_t, end_t),
-         {:ok, _element} <- Track.cast_element(track, id, {start_t, end_t}, attrs),
-         :ok <- Track.validate_gesture(track, :insert, %{id: id, span: {start_t, end_t}}) do
-      :ok
+         {:ok, _element} <- Track.cast_element(track, id, {start_t, end_t}, attrs) do
+      Track.validate_gesture(track, :insert, %{id: id, span: {start_t, end_t}})
     end
   end
 

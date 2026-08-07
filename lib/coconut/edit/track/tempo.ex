@@ -15,8 +15,8 @@ defmodule Coconut.Edit.Track.Tempo do
   @behaviour Coconut.Edit.Track.TempoDerive
   @behaviour Coconut.Edit.Track.ElementCodec
 
-  alias Coconut.Score.Tempo
   alias Coconut.Edit.Track
+  alias Coconut.Score.Tempo
 
   @impl Coconut.Edit.Track
   def coord_domain, do: :tick

@@ -8,11 +8,7 @@ defmodule Coconut.Util.ID do
   @typedoc "An identifier for a domain entity."
   @type t :: binary()
 
-  @typedoc """
-  Phantom type tag associating an ID with a specific model.
-
-  Like `Enumerable.t/1`, this parameter is only for documentation.
-  """
+  @typedoc "Phantom type tag associating an ID with a specific model."
   @type t(_any_model) :: t()
 
   @doc """

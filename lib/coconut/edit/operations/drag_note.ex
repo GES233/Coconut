@@ -1,4 +1,7 @@
 defmodule Coconut.Edit.Operations.DragNote do
+  @moduledoc """
+  Lowers and validates a drag-note gesture into a batch of operations.
+  """
   import Coconut.Edit.Operations.CoreComponents
 
   alias Coconut.Edit.{Operation, Track, Workspace}
@@ -30,9 +33,8 @@ defmodule Coconut.Edit.Operations.DragNote do
          :ok <- ensure_id_live(track, id),
          :ok <- ensure_id_in_space(track.space, id),
          :ok <- check_valid(track.space, new_after),
-         :ok <- ensure_not_self(id, new_after),
-         :ok <- validate_span(new_s, new_e) do
-      :ok
+         :ok <- ensure_not_self(id, new_after) do
+      validate_span(new_s, new_e)
     end
   end
 

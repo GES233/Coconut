@@ -1,4 +1,7 @@
 defmodule Coconut.Edit.Operations.SplitNote do
+  @moduledoc """
+  Lowers and validates a split-note gesture into a batch of operations.
+  """
   import Coconut.Edit.Operations.CoreComponents
 
   alias Coconut.Edit.{Operation, Track, Workspace}
@@ -20,9 +23,8 @@ defmodule Coconut.Edit.Operations.SplitNote do
     with {:ok, %Track{} = track} <- track_context(ws, track_id),
          :ok <- ensure_id_live(track, id),
          :ok <- ensure_id_in_space(track.space, id),
-         :ok <- check_id(track.space, new_id),
-         :ok <- within_span?(ws, track_id, id, at_tick) do
-      :ok
+         :ok <- check_id(track.space, new_id) do
+      within_span?(ws, track_id, id, at_tick)
     end
   end
 

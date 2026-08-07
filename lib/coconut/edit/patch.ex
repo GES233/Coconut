@@ -36,10 +36,9 @@ defmodule Coconut.Edit.Patch do
   @doc "Create a new patch from the given attributes, then validate it."
   @spec new(map() | keyword()) :: {:ok, t()} | {:error, term()}
   def new(attrs) do
-    with {:ok, normalized} <- normalize_attrs(attrs, @keys),
-         patch = struct(__MODULE__, normalized),
-         {:ok, patch} <- validate(patch) do
-      {:ok, patch}
+    with {:ok, normalized} <- normalize_attrs(attrs, @keys) do
+      patch = struct(__MODULE__, normalized)
+      validate(patch)
     end
   end
 

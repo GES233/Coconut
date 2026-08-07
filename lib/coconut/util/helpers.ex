@@ -71,24 +71,23 @@ defmodule Coconut.Util.Helpers do
   def strictly_normalize_attrs(attrs, fields) do
     with {:ok, allowed_set} <- build_allowed_set(fields),
          {:ok, pairs} <- to_pairs(attrs) do
-      {extras, normalized} =
-        Enum.reduce(pairs, {[], %{}}, fn {k, v}, {extras, acc} ->
-          normalized_key = normalize_key(k)
-
-          cond do
-            is_nil(normalized_key) or normalized_key not in allowed_set ->
-              {[k | extras], acc}
-
-            true ->
-              {extras, Map.put(acc, normalized_key, v)}
-          end
-        end)
+      {extras, normalized} = Enum.reduce(pairs, {[], %{}}, &add_pair(&1, &2, allowed_set))
 
       if extras == [] do
         {:ok, normalized}
       else
         {:error, {:extra_attrs, Enum.reverse(extras)}}
       end
+    end
+  end
+
+  defp add_pair({k, v}, {extras, acc}, allowed_set) do
+    normalized_key = normalize_key(k)
+
+    if is_nil(normalized_key) or normalized_key not in allowed_set do
+      {[k | extras], acc}
+    else
+      {extras, Map.put(acc, normalized_key, v)}
     end
   end
 
@@ -128,11 +127,9 @@ defmodule Coconut.Util.Helpers do
   defp normalize_key(k) when is_atom(k), do: k
 
   defp normalize_key(k) when is_binary(k) do
-    try do
-      String.to_existing_atom(k)
-    rescue
-      ArgumentError -> nil
-    end
+    String.to_existing_atom(k)
+  rescue
+    ArgumentError -> nil
   end
 
   defp normalize_key(_), do: nil

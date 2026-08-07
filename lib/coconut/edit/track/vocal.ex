@@ -11,8 +11,8 @@ defmodule Coconut.Edit.Track.Vocal do
   use Coconut.Edit.Track
   @behaviour Coconut.Edit.Track.ElementCodec
 
-  alias Coconut.Score.Note
   alias Coconut.Edit.Track
+  alias Coconut.Score.Note
 
   @impl true
   def coord_domain, do: :tick

@@ -2,9 +2,11 @@ defmodule Coconut.ResolveTest do
   use ExUnit.Case, async: true
 
   alias Coconut.Edit.{Operation, Patch, Track, Workspace}
-  alias Coconut.Render.{Engine, Resolve}
-  alias Coconut.Render.Engine.Request
   alias Coconut.Engines.Mock
+  alias Coconut.Render.Engine
+  alias Coconut.Render.Engine.Request
+  alias Coconut.Render.Resolve
+  alias Coconut.Score.Note
   alias Coconut.Util.ID
 
   @track "vocal"
@@ -46,7 +48,7 @@ defmodule Coconut.ResolveTest do
   # canonical projection as base — same as a real mount-at-edit-time flow.
   defp attach_lyric_patch(ws, note_id, payload) do
     data = Map.fetch!(ws.tracks[@track].elements_by_id, note_id)
-    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), payload)
+    {:ok, tp} = Tamale.Patch.new(Note.to_canonical(data), payload)
 
     {:ok, cp} =
       Patch.new(%{
@@ -65,7 +67,7 @@ defmodule Coconut.ResolveTest do
 
   # Rewrites a note's element data in place (simulating a content edit).
   defp rewrite_note(ws, note_id, attrs) do
-    {:ok, note} = Coconut.Score.Note.from_element(note_id, attrs)
+    {:ok, note} = Note.from_element(note_id, attrs)
     put_in(ws.tracks[@track].elements_by_id[note_id], note)
   end
 
@@ -75,7 +77,7 @@ defmodule Coconut.ResolveTest do
         case patch.anchor do
           %Tamale.Anchor.Ordinal{refs: [id | _]} ->
             with {:ok, element} <- Map.fetch(ws.tracks[@track].elements_by_id, id) do
-              {:ok, Coconut.Score.Note.to_canonical(element)}
+              {:ok, Note.to_canonical(element)}
             end
 
           _other ->
@@ -181,7 +183,7 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
 
     data = Map.fetch!(ws.tracks[@track].elements_by_id, "n1")
-    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), [[0, 60], [480, 62]])
+    {:ok, tp} = Tamale.Patch.new(Note.to_canonical(data), [[0, 60], [480, 62]])
 
     {:ok, cp} =
       Patch.new(%{
@@ -203,7 +205,7 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
 
     data = Map.fetch!(ws.tracks[@track].elements_by_id, "n1")
-    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(data), [[0, 96], [1, 384]])
+    {:ok, tp} = Tamale.Patch.new(Note.to_canonical(data), [[0, 96], [1, 384]])
 
     {:ok, cp} =
       Patch.new(%{

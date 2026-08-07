@@ -7,7 +7,7 @@ defmodule Coconut.Score.TimeSigMap do
   resolution argument — compile-time and query-time can never disagree.
   """
 
-  alias Coconut.Score.{TimeSig, RecordMap, Record, Tick}
+  alias Coconut.Score.{Record, RecordMap, Tick, TimeSig}
   import Tick
 
   @type compiled_event :: %{
@@ -34,66 +34,76 @@ defmodule Coconut.Score.TimeSigMap do
 
     with {:ok, record_events} <- normalize_bar_events(events),
          {:ok, record_end} <- normalize_end_bar(end_bar) do
-      reducer = fn start_pos, end_pos, time_sig, current_tick ->
-        tpb = TimeSig.ticks_per_bar(time_sig, tpqn)
-
-        case {tpb, end_pos} do
-          {nil, _} ->
-            {:ok,
-             %{
-               start_pos: start_pos,
-               end_pos: end_pos,
-               start_bar: start_pos + 1,
-               start_tick: current_tick,
-               end_tick: Tick.get_dynamic_tick(),
-               time_sig: time_sig
-             }, current_tick}
-
-          {tpb, end_pos} when is_integer(tpb) and is_integer(end_pos) ->
-            num_bars = end_pos - start_pos
-            end_tick = current_tick + tpb * num_bars
-
-            {:ok,
-             %{
-               start_pos: start_pos,
-               end_pos: end_pos,
-               start_bar: start_pos + 1,
-               start_tick: current_tick,
-               end_tick: end_tick,
-               time_sig: time_sig
-             }, end_tick}
-
-          {tpb, :open_end} when is_integer(tpb) ->
-            {:ok,
-             %{
-               start_pos: start_pos,
-               end_pos: end_pos,
-               start_bar: start_pos + 1,
-               start_tick: current_tick,
-               end_tick: Tick.get_dynamic_tick(),
-               time_sig: time_sig
-             }, current_tick}
-        end
-      end
+      reducer = &build_segment(&1, &2, &3, &4, tpqn)
 
       case RecordMap.compile({record_events, record_end}, reducer, 0) do
-        {:ok, tuple} ->
-          {:ok, %__MODULE__{segments: tuple, tpqn: tpqn}}
-
-        {:error, {:first_record_must_start_at_zero, pos}} ->
-          {:error, {:first_time_sig_event_must_start_at_one, pos}}
-
-        {:error, {:invalid_record_position, bad}} ->
-          {:error, {:invalid_time_sig_event_position, bad}}
-
-        {:error, :duplicate_record_positions} ->
-          {:error, :duplicate_time_sig_events}
-
-        {:error, reason} ->
-          {:error, reason}
+        {:ok, tuple} -> {:ok, %__MODULE__{segments: tuple, tpqn: tpqn}}
+        {:error, reason} -> translate_compile_error(reason)
       end
     end
   end
+
+  defp build_segment(start_pos, end_pos, time_sig, current_tick, tpqn) do
+    build_segment_by_end(
+      TimeSig.ticks_per_bar(time_sig, tpqn),
+      start_pos,
+      end_pos,
+      time_sig,
+      current_tick
+    )
+  end
+
+  defp build_segment_by_end(nil, start_pos, end_pos, time_sig, current_tick) do
+    {:ok,
+     %{
+       start_pos: start_pos,
+       end_pos: end_pos,
+       start_bar: start_pos + 1,
+       start_tick: current_tick,
+       end_tick: Tick.get_dynamic_tick(),
+       time_sig: time_sig
+     }, current_tick}
+  end
+
+  defp build_segment_by_end(tpb, start_pos, end_pos, time_sig, current_tick)
+       when is_integer(tpb) and is_integer(end_pos) do
+    num_bars = end_pos - start_pos
+    end_tick = current_tick + tpb * num_bars
+
+    {:ok,
+     %{
+       start_pos: start_pos,
+       end_pos: end_pos,
+       start_bar: start_pos + 1,
+       start_tick: current_tick,
+       end_tick: end_tick,
+       time_sig: time_sig
+     }, end_tick}
+  end
+
+  defp build_segment_by_end(tpb, start_pos, :open_end, time_sig, current_tick)
+       when is_integer(tpb) do
+    {:ok,
+     %{
+       start_pos: start_pos,
+       end_pos: :open_end,
+       start_bar: start_pos + 1,
+       start_tick: current_tick,
+       end_tick: Tick.get_dynamic_tick(),
+       time_sig: time_sig
+     }, current_tick}
+  end
+
+  defp translate_compile_error({:first_record_must_start_at_zero, pos}),
+    do: {:error, {:first_time_sig_event_must_start_at_one, pos}}
+
+  defp translate_compile_error({:invalid_record_position, bad}),
+    do: {:error, {:invalid_time_sig_event_position, bad}}
+
+  defp translate_compile_error(:duplicate_record_positions),
+    do: {:error, :duplicate_time_sig_events}
+
+  defp translate_compile_error(reason), do: {:error, reason}
 
   @spec bar_to_tick(t(), TimeSig.bar()) ::
           {:ok, Tick.numeric_tick()} | {:error, term()}

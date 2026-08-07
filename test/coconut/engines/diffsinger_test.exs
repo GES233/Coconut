@@ -2,9 +2,9 @@ defmodule Coconut.Engines.DiffSingerTest do
   use ExUnit.Case, async: true
 
   alias Coconut.Edit.{Operation, Track, Workspace}
+  alias Coconut.Engines.DiffSinger
   alias Coconut.Render.Engine
   alias Coconut.Render.Engine.Request
-  alias Coconut.Engines.DiffSinger
   alias Coconut.Util.ID
 
   defmodule FakeClient do

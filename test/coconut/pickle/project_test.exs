@@ -3,10 +3,10 @@ defmodule Coconut.Pickle.ProjectTest do
 
   import Coconut.PickleHelper
 
+  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Pickle.Project, as: PickleProject
   alias Coconut.Pickle.Track, as: PickleTrack
   alias Coconut.Project
-  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Util.ID
 
   # 沿用 workspace_test 的构造方式：vocal 音符 + tempo 事件

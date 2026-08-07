@@ -24,7 +24,7 @@ defmodule Coconut.Render.Resolve do
   `Coconut.Render.Channel` behaviour or an ad-hoc `%{projection, target}` map.
   """
 
-  alias Coconut.Edit.{Patch, WarpProvider, Workspace}
+  alias Coconut.Edit.{Patch, Track, WarpProvider, Workspace}
 
   @typedoc "Engine port reference: `{:port, node, port}`."
   @type port_ref :: {:port, node :: term(), port :: term()}
@@ -104,8 +104,8 @@ defmodule Coconut.Render.Resolve do
           patches ->
             provider =
               WarpProvider.for_coord(
-                Coconut.Edit.Track.coord_domain(track),
-                Coconut.Edit.Track.spans(track),
+                Track.coord_domain(track),
+                Track.spans(track),
                 patches
               )
 
@@ -133,27 +133,29 @@ defmodule Coconut.Render.Resolve do
 
   defp resolve_all(ws, survivors, channels) do
     {ok_acc, entry_acc} =
-      Enum.reduce(survivors, {[], []}, fn patch, {ok_acc, entry_acc} ->
-        case Map.fetch(channels, patch.channel) do
-          :error ->
-            entry = %{
-              kind: :unknown_channel,
-              track_id: patch.track_id,
-              patch: patch,
-              channel: patch.channel
-            }
-
-            {ok_acc, [entry | entry_acc]}
-
-          {:ok, spec} ->
-            case resolve_one(ws, patch, normalize_spec(spec)) do
-              {:ok, payload} -> {[{patch, payload} | ok_acc], entry_acc}
-              {:error, entry} -> {ok_acc, [entry | entry_acc]}
-            end
-        end
-      end)
+      Enum.reduce(survivors, {[], []}, &resolve_patch(&1, &2, ws, channels))
 
     {Enum.reverse(ok_acc), Enum.reverse(entry_acc)}
+  end
+
+  defp resolve_patch(patch, {ok_acc, entry_acc}, ws, channels) do
+    case Map.fetch(channels, patch.channel) do
+      :error ->
+        entry = %{
+          kind: :unknown_channel,
+          track_id: patch.track_id,
+          patch: patch,
+          channel: patch.channel
+        }
+
+        {ok_acc, [entry | entry_acc]}
+
+      {:ok, spec} ->
+        case resolve_one(ws, patch, normalize_spec(spec)) do
+          {:ok, payload} -> {[{patch, payload} | ok_acc], entry_acc}
+          {:error, entry} -> {ok_acc, [entry | entry_acc]}
+        end
+    end
   end
 
   defp resolve_one(ws, %Patch{} = patch, spec) do

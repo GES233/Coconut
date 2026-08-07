@@ -18,8 +18,8 @@ defmodule Coconut.Edit.Workspace do
   """
 
   alias Coconut.Edit.{Track, WarpProvider}
-  alias Coconut.Util.ID
   alias Coconut.Score.{TempoMap, TimeSigMap}
+  alias Coconut.Util.ID
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
@@ -60,8 +60,8 @@ defmodule Coconut.Edit.Workspace do
   @spec update(t(), map() | keyword()) :: {:ok, t()} | {:error, term()}
   def update(ws, attrs) do
     with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
-         :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok),
-         new_ws = struct(ws, normalized) do
+         :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok) do
+      new_ws = struct(ws, normalized)
       validate(new_ws)
     end
   end
@@ -334,7 +334,7 @@ defmodule Coconut.Edit.Workspace do
   """
   @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
   def tempo_map(ws) do
-    case apply(ws.tempo.module, :tempo_events, [ws.tempo]) do
+    case ws.tempo.module.tempo_events(ws.tempo) do
       [] -> {:error, :no_tempo_track}
       events -> TempoMap.compile(events, tpqn: ws.tpqn)
     end

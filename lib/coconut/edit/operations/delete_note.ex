@@ -1,4 +1,7 @@
 defmodule Coconut.Edit.Operations.DeleteNote do
+  @moduledoc """
+  Lowers and validates a delete-note gesture into a batch of operations.
+  """
   import Coconut.Edit.Operations.CoreComponents
 
   alias Coconut.Edit.{Operation, Track, Workspace}
@@ -17,9 +20,8 @@ defmodule Coconut.Edit.Operations.DeleteNote do
   def validate(%__MODULE__{track_id: track_id, note_id: id}, ws) do
     with {:ok, %Track{} = track} <- track_context(ws, track_id),
          :ok <- ensure_id_live(track, id),
-         :ok <- ensure_id_in_space(track.space, id),
-         :ok <- Track.validate_gesture(track, :delete, %{id: id}) do
-      :ok
+         :ok <- ensure_id_in_space(track.space, id) do
+      Track.validate_gesture(track, :delete, %{id: id})
     end
   end
 

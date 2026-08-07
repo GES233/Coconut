@@ -3,9 +3,10 @@ defmodule Coconut.Pickle.WorkspaceTest do
 
   import Coconut.PickleHelper
 
+  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Pickle.{Registry, Track}
   alias Coconut.Pickle.Workspace, as: PickleWorkspace
-  alias Coconut.Edit.{Operation, Workspace}
+  alias Coconut.Score.TempoMap
   alias Coconut.Util.ID
 
   # 照 tempo_test 的方式：Edit.Operation.lower + apply_batch 造 vocal 音符 + tempo 事件
@@ -94,7 +95,7 @@ defmodule Coconut.Pickle.WorkspaceTest do
       {:ok, tm_after} = Workspace.tempo_map(loaded)
       assert tm_after == tm_before
 
-      assert_in_delta Coconut.Score.TempoMap.tick_to_sec(tm_after, 1920), 2.0, 0.01
+      assert_in_delta TempoMap.tick_to_sec(tm_after, 1920), 2.0, 0.01
     end
   end
 

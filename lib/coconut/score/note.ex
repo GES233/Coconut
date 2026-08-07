@@ -7,7 +7,7 @@ defmodule Coconut.Score.Note do
   track's spans table, which remains the single timing authority across
   transport — there is no snapshot to drift out of sync.
   """
-  alias Coconut.{Util.ID, Score.Key}
+  alias Coconut.{Score.Key, Util.ID}
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
@@ -126,8 +126,8 @@ defmodule Coconut.Score.Note do
   @spec update(t(), map() | keyword()) :: {:ok, t()} | {:error, term()}
   def update(note, attrs) do
     with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
-         :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok),
-         new_note = struct(note, normalized) do
+         :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok) do
+      new_note = struct(note, normalized)
       validate(new_note)
     end
   end
@@ -166,9 +166,8 @@ defmodule Coconut.Score.Note do
   def drag_note(note, new_key) do
     {new_key, rest} = new_key |> Map.new() |> Map.pop(:key, note.key)
 
-    with 0 <- map_size(rest) do
-      update(note, key: new_key)
-    else
+    case map_size(rest) do
+      0 -> update(note, key: new_key)
       _num -> {:error, {:extra_fields_exist, rest}}
     end
   end

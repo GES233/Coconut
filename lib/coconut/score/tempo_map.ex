@@ -7,7 +7,7 @@ defmodule Coconut.Score.TempoMap do
   resolution argument — compile-time and query-time can never disagree.
   """
 
-  alias Coconut.{Score.Tempo, Score.Tick, Score.RecordMap, Score.Record}
+  alias Coconut.{Score.Record, Score.RecordMap, Score.Tempo, Score.Tick}
   import Tick
 
   @type compiled_event :: %{
@@ -33,19 +33,7 @@ defmodule Coconut.Score.TempoMap do
     tpqn = Keyword.get(opts, :tpqn, 480)
     record_events = {tempo_events, record_end_from_tick(last_tick)}
 
-    reducer = fn start_tick, end_pos, event, current_sec ->
-      end_tick = tick_end_from_record(end_pos)
-
-      with {:ok, strategy} <-
-             Tempo.build_segment_from_event(event.module, start_tick, end_tick, event.context) do
-        duration = Tempo.duration_sec(strategy, tpqn)
-        next_sec = if duration == :infinity, do: current_sec, else: current_sec + duration
-
-        {:ok,
-         %{start_pos: start_tick, end_pos: end_tick, start_sec: current_sec, strategy: strategy},
-         next_sec}
-      end
-    end
+    reducer = &build_tempo_segment(&1, &2, &3, &4, tpqn)
 
     case RecordMap.compile(record_events, reducer, 0.0) do
       {:ok, tuple} ->
@@ -62,6 +50,20 @@ defmodule Coconut.Score.TempoMap do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp build_tempo_segment(start_tick, end_pos, event, current_sec, tpqn) do
+    end_tick = tick_end_from_record(end_pos)
+
+    with {:ok, strategy} <-
+           Tempo.build_segment_from_event(event.module, start_tick, end_tick, event.context) do
+      duration = Tempo.duration_sec(strategy, tpqn)
+      next_sec = if duration == :infinity, do: current_sec, else: current_sec + duration
+
+      {:ok,
+       %{start_pos: start_tick, end_pos: end_tick, start_sec: current_sec, strategy: strategy},
+       next_sec}
     end
   end
 

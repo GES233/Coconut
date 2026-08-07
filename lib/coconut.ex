@@ -1,5 +1,5 @@
 defmodule Coconut do
   @moduledoc """
-  TODO.
+  Main Coconut namespace and application entry point.
   """
 end

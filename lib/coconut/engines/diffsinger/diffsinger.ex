@@ -63,7 +63,7 @@ defmodule Coconut.Engines.DiffSinger do
   @behaviour Coconut.Render.Engine
 
   alias Coconut.Render.Engine.{Artifact, Request}
-  alias Coconut.Score.{Key, TempoMap}
+  alias Coconut.Score.{Key, Note, TempoMap}
 
   @default_client Coconut.Engines.DiffSinger.PortClient
 
@@ -86,24 +86,28 @@ defmodule Coconut.Engines.DiffSinger do
   def check(%Request{} = request, config) do
     with {:ok, config} <- normalize_config(config),
          {:ok, bundle} <- assemble(request, config) do
-      case bundle.override_errors do
-        [] ->
-          with {:ok, probe} <-
-                 call_client(
-                   %{action: "check", words: bundle.words, globals: request.globals},
-                   config
-                 ) do
-            {:ok,
-             %{
-               passed: true,
-               entries: [],
-               checked: %{words: bundle.words, overrides: bundle.overrides, probe: probe}
-             }}
-          end
+      run_check_bundle(bundle, request, config)
+    end
+  end
 
-        entries ->
-          {:ok, %{passed: false, entries: entries, checked: nil}}
-      end
+  defp run_check_bundle(bundle, request, config) do
+    case bundle.override_errors do
+      [] ->
+        with {:ok, probe} <-
+               call_client(
+                 %{action: "check", words: bundle.words, globals: request.globals},
+                 config
+               ) do
+          {:ok,
+           %{
+             passed: true,
+             entries: [],
+             checked: %{words: bundle.words, overrides: bundle.overrides, probe: probe}
+           }}
+        end
+
+      entries ->
+        {:ok, %{passed: false, entries: entries, checked: nil}}
     end
   end
 
@@ -286,7 +290,7 @@ defmodule Coconut.Engines.DiffSinger do
         |> Enum.sort_by(fn {id, _data, {start_tick, _end}} -> {start_tick, id} end)
 
       missing_pitch =
-        for {id, %Coconut.Score.Note{key: nil}, _span} <- notes, do: id
+        for {id, %Note{key: nil}, _span} <- notes, do: id
 
       case missing_pitch do
         [] -> {:ok, notes}
@@ -299,40 +303,49 @@ defmodule Coconut.Engines.DiffSinger do
   # lacking explicit `:phonemes` consume its result.
   defp resolve_phonemes(per_track, encoder, config) do
     Enum.reduce_while(per_track, {:ok, %{}}, fn {track_id, notes}, {:ok, acc} ->
-      unresolved = for {id, data, _span} <- notes, not has_phonemes?(data), do: id
-
-      case {unresolved, encoder} do
-        {[], _any} ->
-          {:cont, {:ok, Map.put(acc, track_id, notes)}}
-
-        {_, nil} ->
-          {:halt, {:error, {:missing_phonemes, unresolved}}}
-
-        {_, encoder} ->
-          case encode_all(encoder, notes, config) do
-            {:ok, by_id} ->
-              case Enum.reject(unresolved, &Map.has_key?(by_id, &1)) do
-                [] ->
-                  notes = Enum.map(notes, &fill_phonemes(&1, by_id))
-                  {:cont, {:ok, Map.put(acc, track_id, notes)}}
-
-                missing ->
-                  {:halt, {:error, {:encoder_incomplete, missing}}}
-              end
-
-            {:error, reason} ->
-              {:halt, {:error, {:encoder_failed, reason}}}
-          end
+      case resolve_track_phonemes(track_id, notes, encoder, config) do
+        {:ok, resolved} -> {:cont, {:ok, Map.put(acc, track_id, resolved)}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
   end
 
-  defp fill_phonemes({id, %Coconut.Score.Note{} = note, span}, by_id) do
+  defp resolve_track_phonemes(_track_id, notes, nil, _config) do
+    unresolved = for {id, data, _span} <- notes, not has_phonemes?(data), do: id
+
+    if unresolved == [] do
+      {:ok, notes}
+    else
+      {:error, {:missing_phonemes, unresolved}}
+    end
+  end
+
+  defp resolve_track_phonemes(_track_id, notes, encoder, config) do
+    unresolved = for {id, data, _span} <- notes, not has_phonemes?(data), do: id
+
+    if unresolved == [] do
+      {:ok, notes}
+    else
+      case encode_all(encoder, notes, config) do
+        {:ok, by_id} -> fill_missing_phonemes(notes, by_id, unresolved)
+        {:error, reason} -> {:error, {:encoder_failed, reason}}
+      end
+    end
+  end
+
+  defp fill_missing_phonemes(notes, by_id, unresolved) do
+    case Enum.reject(unresolved, &Map.has_key?(by_id, &1)) do
+      [] -> {:ok, Enum.map(notes, &fill_phonemes(&1, by_id))}
+      missing -> {:error, {:encoder_incomplete, missing}}
+    end
+  end
+
+  defp fill_phonemes({id, %Note{} = note, span}, by_id) do
     if has_phonemes?(note) do
       {id, note, span}
     else
       {:ok, note} =
-        Coconut.Score.Note.update_metadata(note, %{"phonemes" => Map.fetch!(by_id, id)})
+        Note.update_metadata(note, %{"phonemes" => Map.fetch!(by_id, id)})
 
       {id, note, span}
     end
@@ -347,10 +360,10 @@ defmodule Coconut.Engines.DiffSinger do
   defp encode_all(module, notes, config) when is_atom(module),
     do: module.encode(notes, config)
 
-  defp has_phonemes?(%Coconut.Score.Note{metadata: metadata}),
+  defp has_phonemes?(%Note{metadata: metadata}),
     do: match?([_ | _], Map.get(metadata, "phonemes"))
 
-  defp phonemes_of(%Coconut.Score.Note{metadata: %{"phonemes" => phonemes}}), do: phonemes
+  defp phonemes_of(%Note{metadata: %{"phonemes" => phonemes}}), do: phonemes
 
   # tick→sec via the snapshot's tempo map when available; flat 120 BPM
   # otherwise (the only place float seconds enter; design doc §4).

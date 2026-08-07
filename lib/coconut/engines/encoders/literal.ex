@@ -17,20 +17,19 @@ defmodule Coconut.Engines.Encoders.Literal do
     default_lang = Map.get(config || %{}, :lang, "zh")
 
     Enum.reduce_while(notes, {:ok, %{}}, fn {id, data, _span}, {:ok, acc} ->
-      case data.lyric do
-        lyric when is_binary(lyric) ->
-          case String.split(lyric) do
-            [] ->
-              {:halt, {:error, {:empty_lyric, id}}}
-
-            parts ->
-              lang = Map.get(data.metadata, "lang", default_lang)
-              {:cont, {:ok, Map.put(acc, id, Enum.map(parts, &[lang, &1]))}}
-          end
-
-        _other ->
-          {:halt, {:error, {:missing_lyric, id}}}
+      case encode_note(data, default_lang) do
+        {:ok, phonemes} -> {:cont, {:ok, Map.put(acc, id, phonemes)}}
+        {:error, reason} -> {:halt, {:error, {reason, id}}}
       end
     end)
   end
+
+  defp encode_note(%{lyric: lyric, metadata: metadata}, default_lang) when is_binary(lyric) do
+    case String.split(lyric) do
+      [] -> {:error, :empty_lyric}
+      parts -> {:ok, Enum.map(parts, &[Map.get(metadata, "lang", default_lang), &1])}
+    end
+  end
+
+  defp encode_note(_data, _default_lang), do: {:error, :missing_lyric}
 end

@@ -31,11 +31,11 @@ defmodule Coconut.Pickle.Track do
   并在存取档时显式传入——registry 是存档格式的一部分，不是全局状态。
   """
 
-  alias Coconut.Pickle.{Patch, Registry, Space}
   alias Coconut.Edit.Track
+  alias Coconut.Pickle.{Patch, Registry, Space}
   import Coconut.Pickle
 
-  @doc "自带轨型的默认 registry：`\"vocal\"` / `\"tempo\"`。"
+  @doc ~s(自带轨型的默认 registry：`"vocal"` / `"tempo"`。)
   @spec default_registry() :: Registry.t()
   def default_registry do
     {:ok, registry} =
@@ -136,41 +136,39 @@ defmodule Coconut.Pickle.Track do
 
   defp dump_elements(%Track{module: module, elements_by_id: elements}) do
     cond do
-      map_size(elements) == 0 ->
-        {:ok, %{}}
-
-      Track.supports?(module, :element_codec) ->
-        Enum.reduce_while(elements, {:ok, %{}}, fn {id, element}, {:ok, acc} ->
-          case module.dump_element(element) do
-            {:ok, dumped} -> {:cont, {:ok, Map.put(acc, id, dumped)}}
-            {:error, _} = err -> {:halt, err}
-          end
-        end)
-
-      true ->
-        {:error, {:no_element_codec, module}}
+      map_size(elements) == 0 -> {:ok, %{}}
+      Track.supports?(module, :element_codec) -> dump_elements_with_codec(module, elements)
+      true -> {:error, {:no_element_codec, module}}
     end
+  end
+
+  defp dump_elements_with_codec(module, elements) do
+    Enum.reduce_while(elements, {:ok, %{}}, fn {id, element}, {:ok, acc} ->
+      case module.dump_element(element) do
+        {:ok, dumped} -> {:cont, {:ok, Map.put(acc, id, dumped)}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
   end
 
   defp load_elements(module, elements) when is_map(elements) do
     cond do
-      map_size(elements) == 0 ->
-        {:ok, %{}}
-
-      Track.supports?(module, :element_codec) ->
-        Enum.reduce_while(elements, {:ok, %{}}, fn {id, dumped}, {:ok, acc} ->
-          case module.load_element(dumped) do
-            {:ok, element} -> {:cont, {:ok, Map.put(acc, id, element)}}
-            {:error, _} = err -> {:halt, err}
-          end
-        end)
-
-      true ->
-        {:error, {:no_element_codec, module}}
+      map_size(elements) == 0 -> {:ok, %{}}
+      Track.supports?(module, :element_codec) -> load_elements_with_codec(module, elements)
+      true -> {:error, {:no_element_codec, module}}
     end
   end
 
   defp load_elements(_module, other), do: {:error, {:invalid_elements_dump, other}}
+
+  defp load_elements_with_codec(module, elements) do
+    Enum.reduce_while(elements, {:ok, %{}}, fn {id, dumped}, {:ok, acc} ->
+      case module.load_element(dumped) do
+        {:ok, element} -> {:cont, {:ok, Map.put(acc, id, element)}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+  end
 
   # ---- patches / dead_patches ----
 

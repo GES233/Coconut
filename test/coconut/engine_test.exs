@@ -2,9 +2,9 @@ defmodule Coconut.EngineTest do
   use ExUnit.Case, async: true
 
   alias Coconut.Edit.{Track, Workspace}
+  alias Coconut.Engines.Mock
   alias Coconut.Render.Engine
   alias Coconut.Render.Engine.Request
-  alias Coconut.Engines.Mock
   alias Coconut.Util.ID
 
   defmodule BareEngine do

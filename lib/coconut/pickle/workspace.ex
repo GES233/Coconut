@@ -17,8 +17,8 @@ defmodule Coconut.Pickle.Workspace do
   tempo 轨能力、tempo id 冲突、time_sigs 合法性都会被复检。
   """
 
-  alias Coconut.Pickle.{Registry, Track}
   alias Coconut.Edit.Workspace
+  alias Coconut.Pickle.{Registry, Track}
 
   @doc "把 `Coconut.Edit.Workspace` 摊平为仅含允许类型的 plain map。"
   @spec dump(Workspace.t(), Registry.t()) :: {:ok, map()} | {:error, term()}

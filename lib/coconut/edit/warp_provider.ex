@@ -198,24 +198,23 @@ defmodule Coconut.Edit.WarpProvider do
   defp merge_overlaps(intents) do
     intents
     |> Enum.sort(fn a, b -> Coord.lte?(elem(old_span(a), 0), elem(old_span(b), 0)) end)
-    |> Enum.reduce([], fn intent, acc ->
-      {o0, o1} = old_span(intent)
-
-      case acc do
-        [prev | rest] ->
-          {h0, h1} = old_span(prev)
-
-          if Coord.lt?(o0, h1) do
-            [{:hole, {Coord.min(h0, o0), Coord.max(h1, o1)}} | rest]
-          else
-            [intent | acc]
-          end
-
-        [] ->
-          [intent]
-      end
-    end)
+    |> Enum.reduce([], &add_intent/2)
     |> Enum.reverse()
+  end
+
+  defp add_intent(intent, []) do
+    [intent]
+  end
+
+  defp add_intent(intent, [prev | rest] = acc) do
+    {o0, o1} = old_span(intent)
+    {h0, h1} = old_span(prev)
+
+    if Coord.lt?(o0, h1) do
+      [{:hole, {Coord.min(h0, o0), Coord.max(h1, o1)}} | rest]
+    else
+      [intent | acc]
+    end
   end
 
   defp old_span({:segment, old, _new}), do: old

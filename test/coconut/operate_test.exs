@@ -2,6 +2,7 @@ defmodule Coconut.Edit.OperationTest do
   use ExUnit.Case, async: true
 
   alias Coconut.Edit.{Operation, Track, Workspace}
+  alias Coconut.Edit.WarpProvider
   alias Coconut.Score.{Key.TwelveET, Note}
   alias Coconut.Util.ID
 
@@ -988,7 +989,7 @@ defmodule Coconut.Edit.OperationTest do
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops2, changes2)
 
       wp =
-        Coconut.Edit.WarpProvider.tick(
+        WarpProvider.tick(
           Workspace.track_spans(ws, @track),
           ws.tracks[@track].patches
         )
@@ -1138,7 +1139,7 @@ defmodule Coconut.Edit.OperationTest do
     {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
 
     # Transport with warp_provider — Relative should NOT use it (dispatch to transport/2)
-    wp = Coconut.Edit.WarpProvider.tick(Workspace.track_spans(ws, @track))
+    wp = WarpProvider.tick(Workspace.track_spans(ws, @track))
     {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
 
     assert dead == []

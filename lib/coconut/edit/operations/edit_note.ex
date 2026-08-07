@@ -1,4 +1,7 @@
 defmodule Coconut.Edit.Operations.EditNote do
+  @moduledoc """
+  Lowers and validates an edit-note gesture into a batch of operations.
+  """
   import Coconut.Edit.Operations.CoreComponents
 
   alias Coconut.Edit.{Operation, Track, Workspace}

@@ -1,10 +1,10 @@
 defmodule Coconut.Pickle.FileTest do
   use ExUnit.Case, async: true
 
+  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Pickle.File, as: PickleFile
   alias Coconut.Pickle.Track, as: PickleTrack
   alias Coconut.Project
-  alias Coconut.Edit.{Operation, Workspace}
   alias Coconut.Util.ID
 
   @tag tmp_dir: "pickle_file"

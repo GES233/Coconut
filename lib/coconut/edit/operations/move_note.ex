@@ -1,4 +1,7 @@
 defmodule Coconut.Edit.Operations.MoveNote do
+  @moduledoc """
+  Lowers and validates a move-note gesture into a batch of operations.
+  """
   import Coconut.Edit.Operations.CoreComponents
 
   alias Coconut.Edit.{Operation, Track, Workspace}
@@ -19,9 +22,8 @@ defmodule Coconut.Edit.Operations.MoveNote do
     with {:ok, %Track{} = track} <- track_context(ws, track_id),
          :ok <- ensure_id_live(track, id),
          :ok <- ensure_id_in_space(track.space, id),
-         :ok <- check_valid(track.space, new_after),
-         :ok <- ensure_not_self(id, new_after) do
-      :ok
+         :ok <- check_valid(track.space, new_after) do
+      ensure_not_self(id, new_after)
     end
   end
 

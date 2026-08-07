@@ -35,10 +35,15 @@ defmodule Coconut.MixProject do
       # {:tamale, github: "SynapticStrings/Tamal"}
 
       # NDJSON wire format for engine workers (priv/python)
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
 
       # Compute Agent
       #  add orchid or blabla
+
+      # Lib Management
+      {:ex_doc, "~> 0.40.3", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end

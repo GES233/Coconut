@@ -1,8 +1,8 @@
 defmodule Coconut.TempoTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.Score
   alias Coconut.Edit.{Operation, Track, WarpProvider, Workspace}
+  alias Coconut.Score
   alias Coconut.Util.ID
 
   setup do

@@ -15,8 +15,8 @@ defmodule Coconut.Engines.Channels.Pitch do
 
   @behaviour Coconut.Render.Channel
 
-  alias Coconut.Engines.Channels.Lyric
   alias Coconut.Edit.Patch
+  alias Coconut.Engines.Channels.Lyric
 
   @impl true
   def projection(ws, patch), do: Lyric.projection(ws, patch)

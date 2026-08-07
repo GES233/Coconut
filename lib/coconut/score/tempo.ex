@@ -2,7 +2,7 @@ defmodule Coconut.Score.Tempo do
   @moduledoc """
   Entry point for duration utilities.
   """
-  alias Coconut.Score.{Tick, Tempo}
+  alias Coconut.Score.{Tempo, Tick}
 
   # For guard macros
   import Tick

@@ -28,8 +28,11 @@ defmodule Coconut.Scenario do
       }
   """
 
-  alias Coconut.Edit.{Operation, Track, Workspace}
+  alias Coconut.Edit.{Operation, Patch, Track, Workspace}
+  alias Coconut.Edit.Operations.InsertNote
+  alias Coconut.Engines.Channels.Lyric
   alias Coconut.Render.Resolve
+  alias Coconut.Score.Note
   alias Coconut.Util.ID
 
   @vocal_track "vocal"
@@ -104,7 +107,7 @@ defmodule Coconut.Scenario do
 
   @doc "Inserts a note into the vocal track through the full Edit.Operation path."
   def insert_note(ws, id, after_id, span, attrs) do
-    req = %Coconut.Edit.Operations.InsertNote{
+    req = %InsertNote{
       track_id: @vocal_track,
       note_id: id,
       after_id: after_id,
@@ -125,10 +128,10 @@ defmodule Coconut.Scenario do
   def mount_note_patch(ws, note_id, channel, payload) do
     track = Map.fetch!(ws.tracks, @vocal_track)
     element = Map.fetch!(track.elements_by_id, note_id)
-    {:ok, tp} = Tamale.Patch.new(Coconut.Score.Note.to_canonical(element), payload)
+    {:ok, tp} = Tamale.Patch.new(Note.to_canonical(element), payload)
 
     {:ok, cp} =
-      Coconut.Edit.Patch.new(%{
+      Patch.new(%{
         track_id: @vocal_track,
         channel: channel,
         anchor: %Tamale.Anchor.Ordinal{refs: [note_id], at_version: track.space.version},
@@ -140,5 +143,5 @@ defmodule Coconut.Scenario do
   end
 
   @doc "The default check channels: lyric on the vocal track."
-  def default_channels, do: %{lyric: Coconut.Engines.Channels.Lyric}
+  def default_channels, do: %{lyric: Lyric}
 end
