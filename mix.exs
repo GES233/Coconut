@@ -33,9 +33,6 @@ defmodule Coconut.MixProject do
       # Rebase support
       {:tamale, github: "SynapticStrings/Tamal"},
 
-      # NDJSON wire format for engine workers (priv/python)
-      {:jason, "~> 1.4"},
-
       # Lib Management
       {:ex_doc, "~> 0.40.3", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

@@ -224,9 +224,13 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
    （NDJSON stdio）接入；UTAU classic 备选。engine-agnostic 定位下引擎面
    边界由 Engine / Channel / Encoder 三契约定义，DiffSinger 是契约的首个
    参考实现而非引擎面本身。
+   > **注记（2026-08-09）**：DiffSinger 引擎全家已迁出至 sibling 包
+   > `coconut_diffsinger`（命名空间 `CoconutDiffsinger.*`，含
+   > worker.py / PortClient / Encoder / Encoders.Literal）；本仓
+   > Engines 命名空间只剩 reference/test 引擎 Mock。
 2. **坐标基准**：tick 权威 + 帧 + 微秒（§4）。
 3. **首发 channel**：音素 / 音素时长 / 音高三路
-   （`Engines.Channels.Lyric` / `Duration` / `Pitch`，对齐 DiffSinger 的
+   （`Render.Channels.Lyric` / `Duration` / `Pitch`，对齐 DiffSinger 的
    tokens/durations/f0 三路模型输入），每 channel 一个 adapter：
    warp_payload + digest 投影，是工作量乘数。
 4. **API 边界**：Elixir API + JSON-RPC/stdio + CLI 三件套，MCP 后加；
@@ -309,6 +313,10 @@ Request 时填入；裸构造路径（lib 内部与测试）留空、只钉
 GenServer 壳。
 
 ### 11.6 PortClient 无监督 + key 切换队列污染
+
+> **注记（2026-08-09）**：PortClient 已随 DiffSinger 全家迁出至
+> `coconut_diffsinger` 包（`CoconutDiffsinger.PortClient`）；本节问题
+> 随之移交该包，修复在冻结约束（只修 bug）下进行。
 
 **现象**：全局单例 GenServer 不在 supervision tree 下；worker key 变化时
 旧 key 的排队请求会落到新 worker（v1 注释妥协）。

@@ -174,6 +174,10 @@ worker/symbiont 路线选择同理，是引擎侧内部决策，coconut 无感�
   换成真 step；pitch/duration/lyric 干预改经 oi override 注入；stage
   输出对 extract 开放读取（§6.3）；stratum 缓存挂上（声库/模型输出
   按内容寻址复用）。
+  > **注记（2026-08-09）**：DiffSinger 引擎全家已迁出 coconut 本体至
+  > sibling 包 `coconut_diffsinger`（冻结包，只修 bug）；本 Phase 的
+  > worker.py / PortClient / Encoder 资产自该包迁移进 coconut_oi，
+  > 该包随后退役。
 - **Phase 3（远期）**：可视化。kino_orchid 补编辑回路；参照 equinox
   `GraphTranslator` 定义 coconut 的"UI 图 payload → Graph"契约。
   帧域 Metric 锚 channel（音量自动化）随 Audio 落地一并评（前文档
