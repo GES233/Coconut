@@ -27,7 +27,7 @@ defmodule Coconut.Pickle.Track do
 
   ## registry
 
-  `default_registry/0` 只注册椰子自带的两种轨型。宿主应用应自建
+  `default_registry/0` 只注册椰子自带的三种轨型。宿主应用应自建
   registry（可在 `default_registry/0` 基础上 `Registry.register/3` 扩展），
   并在存取档时显式传入——registry 是存档格式的一部分，不是全局状态。
   """
@@ -36,11 +36,15 @@ defmodule Coconut.Pickle.Track do
   alias Coconut.Pickle.{Patch, Registry, Space}
   import Coconut.Pickle
 
-  @doc ~s(自带轨型的默认 registry：`"vocal"` / `"tempo"`。)
+  @doc ~s(自带轨型的默认 registry：`"vocal"` / `"tempo"` / `"audio"`。)
   @spec default_registry() :: Registry.t()
   def default_registry do
     {:ok, registry} =
-      Registry.new(%{"vocal" => Coconut.Edit.Track.Vocal, "tempo" => Coconut.Edit.Track.Tempo})
+      Registry.new(%{
+        "vocal" => Coconut.Edit.Track.Vocal,
+        "tempo" => Coconut.Edit.Track.Tempo,
+        "audio" => Coconut.Edit.Track.Audio
+      })
 
     registry
   end

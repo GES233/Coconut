@@ -43,7 +43,7 @@ defmodule Coconut.Edit.Track.Tempo do
   end
 
   @impl Coconut.Edit.Track
-  def split_inherit(element, _new_id), do: element || %{}
+  def split_elements(element, _context), do: {element || %{}, element || %{}}
 
   # 可选能力 :element_codec（Coconut.Edit.Track.ElementCodec）：元素是
   # %{bpm: 整数 milli-bpm} 裸 map，dump 校验形状后原样透传，load 同。

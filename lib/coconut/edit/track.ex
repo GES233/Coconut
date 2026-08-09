@@ -20,7 +20,12 @@ defmodule Coconut.Edit.Track do
     the result back as the element upsert).
   - `validate_gesture/3` — track-type-specific legality beyond the generic
     geometry/sequence checks (e.g. tempo's first-element protection).
-  - `split_inherit/2` — the right half of a split's element payload.
+  - `split_elements/2` — a split's two element payloads (`{left, right}`),
+    derived from the parent and the cut geometry (audio re-addresses source
+    offsets; content carriers keep both halves equal to the parent).
+  - `retime_element/3` — element compensation for a span-edge change
+    (trim): audio shifts the clip's source offset; content carriers return
+    the element unchanged (the `use` default).
   - `view/1` — the flattened score view for `Coconut.Render.Engine.Snapshot`:
     `[{id, element, span}]` ordered by `{start, id}`.
 
@@ -37,7 +42,9 @@ defmodule Coconut.Edit.Track do
     `ElementCodec`), sniffed as a pair: per-element archive codec for
     `Coconut.Pickle.Track`.
 
-  `use Coconut.Edit.Track` supplies a permissive `validate_gesture/3` default.
+  `use Coconut.Edit.Track` supplies permissive defaults for
+  `validate_gesture/3` (accepts everything) and `retime_element/3`
+  (returns the element unchanged).
   """
 
   alias Coconut.Score.Tick
@@ -122,8 +129,31 @@ defmodule Coconut.Edit.Track do
   """
   @callback validate_gesture(gesture :: atom(), t(), info :: map()) :: :ok | {:error, term()}
 
-  @doc "Element payload for the right half of a split."
-  @callback split_inherit(parent_element :: term(), new_id :: Tamale.id()) :: term()
+  @doc """
+  Element payloads for both halves of a split, `{left, right}`.
+
+  `context` carries the cut geometry: `:span` (the parent's pre-split
+  span), `:at` (the cut coordinate), and `:new_id` (the right half's id).
+  Content carriers (vocal, tempo) keep both halves equal to the parent;
+  audio clips re-address source offsets — left half shrinks its duration
+  to `at - start`, right half shifts `source_offset` by the same amount
+  (design doc §11.8).
+  """
+  @callback split_elements(
+              parent_element :: term(),
+              context :: %{span: span(), at: Tick.numeric_tick(), new_id: Tamale.id()}
+            ) :: {term(), term()}
+
+  @doc """
+  Element compensation for a span-edge change (trim, design doc §11.8).
+
+  Content carriers ignore span geometry and return the element unchanged
+  (the `use` default). Audio clips shift `source_offset_frames` by the
+  start delta and re-derive `duration_frames` from the new span, rejecting
+  a negative source offset.
+  """
+  @callback retime_element(element :: term(), old_span :: span(), new_span :: span()) ::
+              {:ok, term()} | {:error, term()}
 
   @doc "Flattened score view for `Coconut.Render.Engine.Snapshot`."
   @callback view(t()) :: view()
@@ -135,7 +165,10 @@ defmodule Coconut.Edit.Track do
       @impl true
       def validate_gesture(_gesture, _track, _info), do: :ok
 
-      defoverridable validate_gesture: 3
+      @impl true
+      def retime_element(element, _old_span, _new_span), do: {:ok, element}
+
+      defoverridable validate_gesture: 3, retime_element: 3
     end
   end
 
@@ -166,10 +199,16 @@ defmodule Coconut.Edit.Track do
   def validate_gesture(%__MODULE__{module: module} = track, gesture, info),
     do: module.validate_gesture(gesture, track, info)
 
-  @doc "Element payload for the right half of a split."
-  @spec split_inherit(t(), parent_element :: term(), new_id :: Tamale.id()) :: term()
-  def split_inherit(%__MODULE__{module: module}, parent, new_id),
-    do: module.split_inherit(parent, new_id)
+  @doc "Element payloads for both halves of a split (`{left, right}`)."
+  @spec split_elements(t(), parent_element :: term(), context :: map()) :: {term(), term()}
+  def split_elements(%__MODULE__{module: module}, parent, context),
+    do: module.split_elements(parent, context)
+
+  @doc "Element compensation for a span-edge change (trim)."
+  @spec retime_element(t(), element :: term(), old_span :: span(), new_span :: span()) ::
+          {:ok, term()} | {:error, term()}
+  def retime_element(%__MODULE__{module: module}, element, old_span, new_span),
+    do: module.retime_element(element, old_span, new_span)
 
   @doc "The flattened score view (see `Coconut.Edit.Track.view/1` in the behaviour docs)."
   @spec view(t()) :: view()

@@ -25,7 +25,8 @@ defmodule Coconut.Edit.Operations.DragNote do
           track_id: track_id,
           note_id: id,
           after_id: new_after,
-          new_span: {new_s, new_e}
+          old_span: old_span,
+          new_span: {new_s, new_e} = new_span
         },
         ws
       ) do
@@ -33,8 +34,9 @@ defmodule Coconut.Edit.Operations.DragNote do
          :ok <- ensure_id_live(track, id),
          :ok <- ensure_id_in_space(track.space, id),
          :ok <- check_valid(track.space, new_after),
-         :ok <- ensure_not_self(id, new_after) do
-      validate_span(new_s, new_e)
+         :ok <- ensure_not_self(id, new_after),
+         :ok <- validate_span(new_s, new_e) do
+      Track.validate_gesture(track, :drag, %{id: id, old_span: old_span, new_span: new_span})
     end
   end
 

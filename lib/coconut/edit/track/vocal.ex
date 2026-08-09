@@ -34,7 +34,7 @@ defmodule Coconut.Edit.Track.Vocal do
   end
 
   @impl true
-  def split_inherit(%Note{} = parent, new_id), do: %{parent | id: new_id}
+  def split_elements(%Note{} = parent, %{new_id: new_id}), do: {parent, %{parent | id: new_id}}
 
   # 可选能力 :element_codec（Coconut.Edit.Track.ElementCodec）：元素编解码
   # 委托 Coconut.Pickle.Note。

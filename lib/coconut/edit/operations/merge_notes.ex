@@ -21,8 +21,9 @@ defmodule Coconut.Edit.Operations.MergeNotes do
     with {:ok, track} <- track_context(ws, track_id),
          :ok <- non_empty(ids),
          :ok <- ensure_all_live(track, ids),
-         :ok <- all_in_space?(track.space, ids) do
-      ensure_adjacent(track.space, ids)
+         :ok <- all_in_space?(track.space, ids),
+         :ok <- ensure_adjacent(track.space, ids) do
+      Track.validate_gesture(track, :merge, %{ids: ids})
     end
   end
 

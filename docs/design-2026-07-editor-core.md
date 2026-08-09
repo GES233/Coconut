@@ -165,7 +165,8 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
    恒等 transport，Metric 以 `:warp_provider_required` 判死而非
    clause 缺失崩溃）。帧 builder 的入参签名（需 tempo map，与本表
    (spans, patches) 形状不同质）随第 4 条落地时再定；锚 coord 与轨
-   domain 的一致性校验仍挂在 attach_patch 待办（Audio 落地项）。
+   domain 的一致性校验已随 Audio 落地（2026-08-09）：attach_patch 拒
+   Metric coord ≠ 轨 coord_domain（`{:anchor_coord_mismatch, _, _}`）。
 
 ## 6. Tempo Track = 一条独立 Space
 
@@ -326,8 +327,8 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    懒加载 + CSafeLoader）；dur override 已接入（`Engines.Channels.Duration` → 钉音素帧数，未钉
    按比例吸收；顺带修债：ph_dur 逐 word 归一到记谱帧数，渲染长度不再
    偏离乐谱）；
-6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——未开始（Workspace 目前
-   仍是纯模块）；
+6. GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——挪 v2（2026-08-09：
+   v1 以纯模块 + History 收官，壳待 v2 差不多时一口气收尾）；
 7. 帧空间锚 + tempo 对组合（v2）——未开始。
 
 工作量估计：约 3–4 周（单人），风险集中在 Caller 义务（warp 构造、
@@ -462,7 +463,15 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
 **已落地（2026-08-03）**：Track struct + behaviour + `Track.Vocal` /
 `Track.Tempo`；Side 删除；Operate 只剩通用几何/序列校验，元素政策全部
 走 track module 回调；`validate_gesture` 的 `:insert` 钩子是 v2 人声轨
-不重叠约束的挂载点。`Track.Audio`（帧域）与 `Track.Synth` 未实现。
+不重叠约束的挂载点。`Track.Synth` 未实现。
+**`Track.Audio` 已落地（2026-08-09）**：帧域 + `Clip` 元素（见下方 Audio
+条目与操作集）。配套回调调整——`split_inherit/2` 由 `split_elements/2`
+取代（context 带切分几何，左右两半元素都更新：Audio 左半 duration
+收缩、右半 `source_offset += at - start` 是刚需，原钩子只产右半且
+拿不到几何）；新增 `retime_element/3`（trim 的元素补偿钩子，`use`
+默认 identity）；`DragNote`/`MergeNotes` 补 `:drag`/`:merge` 的
+`validate_gesture` 会诊（Audio 借此拒变长 drag——变相 time-stretch——
+与 merge）。
 
 - `%Track{id, module, space, spans_by_version, elements_by_id, patches,
   dead_patches}`——Side 整个删除，Workspace = `id/edit_version/tracks`
@@ -475,11 +484,12 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
   rename 是 mutation，入史为 `{:rename_track, track_id, name}` 边
   （§12.4）。Pickle：`name` 作可选字段进 dump，旧档缺失 load 为
   `nil`——首个可选字段先例：格式兼容走"容忍缺失"档，而非版本号。
-- behaviour 回调（克制，不含 Audio 占位共 6 个）：`coord_domain/0`、
-  `cast_element/3`、`edit_element/2`、`validate_gesture/3`、
-  `split_inherit/2`、`view/1`。`edit_element/2`（2026-08-03 补）：
+- behaviour 回调（克制，7 个）：`coord_domain/0`、`cast_element/3`、
+  `edit_element/2`、`validate_gesture/3`、`split_elements/2`、
+  `retime_element/3`、`view/1`。`edit_element/2`（2026-08-03 补）：
   内容编辑的合并+重铸，`edit_note` lowering 经它一步写回（原 `:touch`
-  stub 退役，调用方不再各自扮演 cast 义务）。
+  stub 退役，调用方不再各自扮演 cast 义务）。`split_elements/2` 与
+  `retime_element/3` 是 2026-08-09 Audio 落地的配套（见上条）。
 - 可选能力（2026-08-06 收编）：`tempo_events/1`（`:tempo_derive`）与
   `dump_element/1`+`load_element/1`（`:element_codec`，成对探测——
   只导出一半视同不具备）统一由 `Track.supports?/2` 嗅探，回调名不再
@@ -496,6 +506,11 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
   无关"硬约定；v1 不做 time-stretch（DAW 的 musical/linear 之辩以
   "帧域固定"收尾）。导入时经 TempoMap 换算落帧，之后 tempo 编辑不影响。
   音量自动化等干预 = 将来的帧域 Metric 锚 channel（接 v2 帧空间锚）。
+  **帧单位（2026-08-09 钉）**：事实单位 = 渲染引擎的帧网格（DiffSinger
+  为声码器 hop 帧，`hop_size`/`sample_rate` 出 vocoder config），单位
+  声明归引擎/工程 metadata；内核只见整数帧号、永不解释单位——§4
+  "帧/采样点 = 引擎层坐标"的具体化。不以 sample 为单位：sample→hop
+  的 round 会把 ±1 hop 量化误差砸在 digest 零容差上。
 - tempo 编辑的 Operation 同步：跨轨拖动 = 两轨各一次 apply_batch，
   `edit_version` 全局每批 +1，客户端两批之间需重读版本；多轨原子入口
   `apply_batches` 待跨轨拖动真做时再加。
@@ -509,9 +524,15 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
 - 在接 Oi（主要是 orchid_stratum）前，不用考虑数据缓存，唯一要考虑的是
   乐句分割。
 
-**Track.Audio 操作集**（实现时展开）：insert/delete/drag/split（右半
-`source_offset += split - start`，纯整数帧算术）/trim（拖缘 = Retime +
-offset 反向补偿，Track 元素钩子，不进 Operate 通用层）；merge v1 拒绝。
+**Track.Audio 操作集**（2026-08-09 已落地）：insert/delete/drag/split 复用
+通用手势（split 经 `split_elements/2`：右半 `source_offset += split -
+start`、左半 duration 收缩，纯整数帧算术）；trim = 新增 `TrimNote`
+手势（Retime + `retime_element/3` offset 反向补偿，Track 元素钩子，
+不进 Operate 通用层）；merge v1 拒绝（`:merge` 会诊报
+`{:audio_merge_unsupported, _}`），变长 drag 拒绝（`:drag` 会诊报
+`{:audio_stretch_rejected, _}`——span 长度恒等于 `duration_frames`）。
+左缘越源头 trim 报 `{:audio_source_underflow, _}`（源长度是资产层
+知识，内核只守 offset 非负）。
 
 ## 12. Undo/Redo：Op 树 + 检查点（拍板 2026-08-09，已落地同日）
 

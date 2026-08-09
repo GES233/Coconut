@@ -361,11 +361,15 @@ defmodule Coconut.Edit.Workspace do
   (supported Metric `coord`) is enforced by `Coconut.Edit.Patch.new/1`; an
   unknown `track_id` is rejected here (`{:error, {:unknown_track, _}}`) —
   with patches stored per track there is nowhere for an orphan to land.
+  A Metric anchor whose `coord` differs from the track's `coord_domain`
+  is rejected as well (`{:error, {:anchor_coord_mismatch, _, _}}`, design
+  doc §5): it would otherwise mount fine and only die as
+  `:warp_provider_required` at transport time.
   """
-  @spec attach_patch(t(), Coconut.Edit.Patch.t()) ::
-          {:ok, t()} | {:error, {:unknown_track, term()}}
+  @spec attach_patch(t(), Coconut.Edit.Patch.t()) :: {:ok, t()} | {:error, term()}
   def attach_patch(ws, %Coconut.Edit.Patch{track_id: track_id} = patch) do
-    with {:ok, track} <- fetch_track(ws, track_id) do
+    with {:ok, track} <- fetch_track(ws, track_id),
+         :ok <- check_anchor_domain(patch, track) do
       patch = mint_patch_id(patch)
       track = %{track | patches: track.patches ++ [patch]}
       {:ok, put_track(ws, track)}
@@ -378,6 +382,22 @@ defmodule Coconut.Edit.Workspace do
     do: %{patch | id: ID.generate_id("Patch_")}
 
   defp mint_patch_id(patch), do: patch
+
+  # Anchor coord vs track domain consistency (design doc §5 todo, landed with
+  # `Track.Audio`): a Metric anchor's coord must equal the track's
+  # coord_domain. Ordinal/Relative anchors are coord-free and always pass.
+  defp check_anchor_domain(
+         %Coconut.Edit.Patch{anchor: %Tamale.Anchor.Metric{coord: coord}},
+         track
+       ) do
+    if coord == Track.coord_domain(track) do
+      :ok
+    else
+      {:error, {:anchor_coord_mismatch, coord, Track.coord_domain(track)}}
+    end
+  end
+
+  defp check_anchor_domain(_patch, _track), do: :ok
 
   @doc "Appends a list of patches. See `attach_patch/2`."
   @spec attach_patches(t(), [Coconut.Edit.Patch.t()]) ::

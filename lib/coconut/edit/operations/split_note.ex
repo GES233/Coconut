@@ -44,15 +44,19 @@ defmodule Coconut.Edit.Operations.SplitNote do
     with {:ok, track} <- track_context(ws, track_id) do
       case Track.latest_span(track, id) do
         {s, e} when s < at_tick and at_tick < e ->
-          # The right half's payload policy belongs to the track module
-          # (vocal inherits the parent's content; lyric/tuning after a
-          # split is the caller's business, see EditNote).
+          # Both halves' payload policy belongs to the track module (vocal
+          # keeps the parent's content on both; audio re-addresses source
+          # offsets — lyric/tuning after a split is the caller's business,
+          # see EditNote).
           parent = Map.get(track.elements_by_id, id)
+
+          {left, right} =
+            Track.split_elements(track, parent, %{span: {s, e}, at: at_tick, new_id: new_id})
 
           changes =
             empty_side_changes()
             |> Map.merge(%{
-              elements: %{new_id => Track.split_inherit(track, parent, new_id)},
+              elements: %{id => left, new_id => right},
               span_snapshot: %{id => {s, at_tick}, new_id => {at_tick, e}}
             })
 

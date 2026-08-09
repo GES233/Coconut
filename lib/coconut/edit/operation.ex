@@ -25,7 +25,8 @@ defmodule Coconut.Edit.Operation do
     InsertNote,
     MergeNotes,
     MoveNote,
-    SplitNote
+    SplitNote,
+    TrimNote
   }
 
   alias Coconut.Edit.Workspace
@@ -64,9 +65,12 @@ defmodule Coconut.Edit.Operation do
   | split_note  | `Edit.Operations.SplitNote`         | Split                 | parent→left, new→right|
   | merge_notes | `Edit.Operations.MergeNotes`        | Merge                 | into→merged, rest→del|
   | edit_note   | `Edit.Operations.EditNote`          | — (no op)             | id → re-cast element |
+  | trim_note   | `Edit.Operations.TrimNote`          | Retime                | id → new_span        |
 
-  `old_span` in `DragNote` is the span captured by the caller at drag-start;
-  Retime needs both ends to keep the op log self-contained for warp construction.
+  `old_span` in `DragNote`/`TrimNote` is the span captured by the caller at
+  gesture-start; Retime needs both ends to keep the op log self-contained
+  for warp construction. Trim additionally writes the track module's
+  compensated element (`Coconut.Edit.Track.retime_element/3`).
 
   For `:tempo` inserts, `attrs.bpm` is a plain bpm number (floats allowed),
   normalized to exact milli-bpm by the tempo track module's `cast_element/3`
@@ -81,6 +85,7 @@ defmodule Coconut.Edit.Operation do
           | SplitNote.t()
           | MergeNotes.t()
           | EditNote.t()
+          | TrimNote.t()
           | struct()
 
   # ---- Side changes ----
