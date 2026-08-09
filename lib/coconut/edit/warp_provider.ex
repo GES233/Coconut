@@ -44,9 +44,13 @@ defmodule Coconut.Edit.WarpProvider do
   - WarpProvider turns `ops + span snapshots` into warps; it is a pure
     function of its inputs. Ripple mode (v2) and frame-space warp add
     non-identity logic on top.
-  - The closure returns `Tamale.Warp.t()` directly (no error tuple), so the
-    coord must be guarded before invoking: `Coconut.Edit.Patch.new/1` rejects
-    Metric anchors outside `supported_coords/0` at construction time.
+  - The closure returns `{:ok, warp}` on success and
+    `{:error, {:warp_construction_failed, reason}}` when the folded pieces
+    cannot form a legal warp — tamale's transport aborts the fold and
+    surfaces it as a transport failure (dead patch), never a crash. The
+    coord must still be guarded before invoking: `Coconut.Edit.Patch.new/1`
+    rejects Metric anchors outside `supported_coords/0` at construction
+    time.
   """
 
   alias Tamale.Coord
@@ -120,7 +124,7 @@ defmodule Coconut.Edit.WarpProvider do
 
     case intents do
       [] ->
-        Warp.identity()
+        {:ok, Warp.identity()}
 
       _ ->
         {lower, upper} = domain(track_spans, patches, intents)
@@ -129,7 +133,7 @@ defmodule Coconut.Edit.WarpProvider do
         |> merge_overlaps()
         |> tile(lower, upper)
         |> enforce_monotone()
-        |> from_segments!()
+        |> from_segments()
     end
   end
 
@@ -195,12 +199,19 @@ defmodule Coconut.Edit.WarpProvider do
 
   # Overlapping affected old-domains cannot map one region two ways:
   # collapse the union into a hole. Touching intervals stay separate.
+  # Sort is a total, deterministic order (start, end, shape) — a non-strict
+  # comparator on starts alone would leave equal-start ties input-dependent.
   defp merge_overlaps(intents) do
     intents
-    |> Enum.sort(fn a, b -> Coord.lte?(elem(old_span(a), 0), elem(old_span(b), 0)) end)
+    |> Enum.sort_by(fn intent ->
+      {elem(old_span(intent), 0), elem(old_span(intent), 1), intent_rank(intent)}
+    end)
     |> Enum.reduce([], &add_intent/2)
     |> Enum.reverse()
   end
+
+  defp intent_rank({:hole, _}), do: 0
+  defp intent_rank({:segment, _, _}), do: 1
 
   defp add_intent(intent, []) do
     [intent]
@@ -262,16 +273,15 @@ defmodule Coconut.Edit.WarpProvider do
     Enum.concat(kept)
   end
 
-  defp from_segments!(pieces) do
+  defp from_segments(pieces) do
     segments = Enum.map(pieces, fn {o0, o1, n0, n1} -> {{o0, o1}, {n0, n1}} end)
 
     case Warp.from_segments(segments) do
       {:ok, warp} ->
-        warp
+        {:ok, warp}
 
       {:error, reason} ->
-        raise ArgumentError,
-              "warp construction failed: #{inspect(reason)} in #{inspect(pieces)}"
+        {:error, {:warp_construction_failed, reason}}
     end
   end
 end

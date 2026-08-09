@@ -948,6 +948,43 @@ defmodule Coconut.Edit.OperationTest do
       assert [{^cp, {:error, :warp_provider_required}}] = dead
     end
 
+    test "warp_provider error surfaces as a dead patch, not a crash", %{ws: ws} do
+      {:ok, ops, changes} =
+        Operation.lower(
+          %Coconut.Edit.Operations.InsertNote{
+            track_id: @track,
+            note_id: "n1",
+            after_id: :head,
+            span: {0, 480},
+            attrs: %{}
+          },
+          ws,
+          %Operation.Config{}
+        )
+
+      {:ok, ws} = Workspace.apply_batch(ws, @track, 0, ops, changes)
+
+      {:ok, cp} =
+        Coconut.Edit.Patch.new(%{
+          track_id: @track,
+          anchor: %Tamale.Anchor.Metric{
+            coord: :tick,
+            from: 100,
+            to: 200,
+            at_version: 0
+          },
+          patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
+        })
+
+      ws = put_in(ws.tracks[@track].patches, [cp])
+
+      wp = fn :tick, _entry -> {:error, {:warp_construction_failed, :boom}} end
+
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
+      assert survivors == []
+      assert [{^cp, {:error, {:warp_construction_failed, :boom}}}] = dead
+    end
+
     test "metric anchor follows its note's retime segment", %{ws: ws} do
       {:ok, ops, changes} =
         Operation.lower(

@@ -39,5 +39,33 @@ defmodule Coconut.Score.TimeSig do
 
   def ticks_per_bar(:san, _tpqn), do: nil
 
+  @doc """
+  Validates a time signature value's shape.
+
+  Numerator, denominator, and compound groupings must be positive integers,
+  and a compound meter needs at least one grouping. Invalid values fail here
+  instead of blowing up downstream in `TimeSigMap.compile/2` arithmetic.
+  """
+  @spec validate(term()) :: :ok | {:error, {:invalid_time_sig, term()}}
+  def validate(sig)
+
+  def validate({num, den}) when is_integer(num) and num > 0 and is_integer(den) and den > 0,
+    do: :ok
+
+  def validate({:standard, num, den})
+      when is_integer(num) and num > 0 and is_integer(den) and den > 0,
+      do: :ok
+
+  def validate({:compound, [_ | _] = groupings, den}) when is_integer(den) and den > 0 do
+    if Enum.all?(groupings, &(is_integer(&1) and &1 > 0)) do
+      :ok
+    else
+      {:error, {:invalid_time_sig, {:compound, groupings, den}}}
+    end
+  end
+
+  def validate(:san), do: :ok
+  def validate(other), do: {:error, {:invalid_time_sig, other}}
+
   defp total_notes(num, tpqn), do: tpqn * 4 * num
 end

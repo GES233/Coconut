@@ -18,7 +18,7 @@ defmodule Coconut.Edit.Workspace do
   """
 
   alias Coconut.Edit.{Track, WarpProvider}
-  alias Coconut.Score.{TempoMap, TimeSigMap}
+  alias Coconut.Score.{TempoMap, TimeSig, TimeSigMap}
   alias Coconut.Util.ID
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
@@ -82,7 +82,14 @@ defmodule Coconut.Edit.Workspace do
   This is the dedicated writer for meter changes — a score gesture that
   enters the undo history as a `{:set_time_sigs, events}` edge (§12.4);
   `update/2` no longer accepts `time_sigs`. Legality is the same rule as
-  `validate/1`: first event at bar 1, bar numbers strictly ascending.
+  `validate/1`: every signature must pass `Coconut.Score.TimeSig.validate/1`,
+  first event at bar 1, bar numbers strictly ascending.
+
+  `edit_version` is deliberately NOT bumped: the bar grid is display data —
+  `Coconut.Render.Engine.Snapshot` does not carry `time_sigs`, so no render
+  input can go stale (same rationale as `rename_track/3`, §12.4). If a
+  future consumer (bar-domain anchors, tempo derivation) reads the meter,
+  revisit this.
   """
   @spec set_time_sigs(t(), [Coconut.Score.TimeSig.time_sig_event()]) ::
           {:ok, t()} | {:error, {:invalid_time_sigs, term()}}
@@ -497,9 +504,11 @@ defmodule Coconut.Edit.Workspace do
   end
 
   # The bar is the authoritative coordinate: the first event must sit at
-  # bar 1, and bar numbers must be positive and strictly ascending.
+  # bar 1, and bar numbers must be positive and strictly ascending. Each
+  # signature's own shape is delegated to `TimeSig.validate/1`.
   defp valid_time_sigs?([{1, _sig} | _] = events) do
     Enum.all?(events, &match?({bar, _sig} when is_integer(bar) and bar >= 1, &1)) and
+      Enum.all?(events, fn {_bar, sig} -> TimeSig.validate(sig) == :ok end) and
       strictly_ascending?(Enum.map(events, &elem(&1, 0)))
   end
 

@@ -11,11 +11,14 @@ defmodule Coconut.WarpProviderTest do
     test "empty ops and structural-only ops return identity" do
       wp = provider(%{1 => %{"n1" => {0, 480}}})
 
-      assert Warp.identity() == wp.(:tick, {2, []})
-      assert Warp.identity() == wp.(:tick, {2, [%Op.Insert{id: "n2", after_id: "n1"}]})
-      assert Warp.identity() == wp.(:tick, {2, [%Op.Move{id: "n1", after_id: :head}]})
-      assert Warp.identity() == wp.(:tick, {2, [%Op.Split{id: "n1", children: ["n1", "n2"]}]})
-      assert Warp.identity() == wp.(:tick, {2, [%Op.Merge{ids: ["n1", "n2"], into: "n1"}]})
+      assert {:ok, Warp.identity()} == wp.(:tick, {2, []})
+      assert {:ok, Warp.identity()} == wp.(:tick, {2, [%Op.Insert{id: "n2", after_id: "n1"}]})
+      assert {:ok, Warp.identity()} == wp.(:tick, {2, [%Op.Move{id: "n1", after_id: :head}]})
+
+      assert {:ok, Warp.identity()} ==
+               wp.(:tick, {2, [%Op.Split{id: "n1", children: ["n1", "n2"]}]})
+
+      assert {:ok, Warp.identity()} == wp.(:tick, {2, [%Op.Merge{ids: ["n1", "n2"], into: "n1"}]})
     end
   end
 
@@ -24,7 +27,8 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {480, 960}}, 2 => %{"n1" => {480, 720}}}
       wp = provider(spans)
 
-      w = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {480, 960}, new_span: {480, 720}}]})
+      {:ok, w} =
+        wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {480, 960}, new_span: {480, 720}}]})
 
       assert Warp.at!(w, 100) == {:ok, {100, 1}}
       assert Warp.at!(w, 700) == {:ok, {590, 1}}
@@ -35,7 +39,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {0, 480}}, 2 => %{"n1" => {100, 580}}}
       wp = provider(spans)
 
-      w =
+      {:ok, w} =
         wp.(
           :tick,
           {2,
@@ -53,7 +57,7 @@ defmodule Coconut.WarpProviderTest do
     test "zero-length new span is a hole, not a degenerate segment" do
       wp = provider(%{1 => %{"n1" => {0, 480}}})
 
-      w = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {200, 200}}]})
+      {:ok, w} = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {200, 200}}]})
 
       assert Warp.at!(w, 100) == :undefined
     end
@@ -62,7 +66,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {0, 480}, "n2" => {240, 720}}}
       wp = provider(spans)
 
-      w =
+      {:ok, w} =
         wp.(
           :tick,
           {2,
@@ -81,7 +85,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {0, 480}, "n2" => {0, 480}}}
       wp = provider(spans)
 
-      w =
+      {:ok, w} =
         wp.(
           :tick,
           {2,
@@ -101,7 +105,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {480, 960}}}
       wp = provider(spans)
 
-      w = wp.(:tick, {2, [%Op.Delete{id: "n1"}]})
+      {:ok, w} = wp.(:tick, {2, [%Op.Delete{id: "n1"}]})
 
       assert Warp.at!(w, 700) == :undefined
       assert Warp.at!(w, 100) == {:ok, {100, 1}}
@@ -113,7 +117,7 @@ defmodule Coconut.WarpProviderTest do
     test "delete of an id missing from the span table is identity" do
       wp = provider(%{1 => %{"n1" => {0, 480}}})
 
-      assert Warp.identity() == wp.(:tick, {2, [%Op.Delete{id: "ghost"}]})
+      assert {:ok, Warp.identity()} == wp.(:tick, {2, [%Op.Delete{id: "ghost"}]})
     end
 
     test "delete reads the pre-batch snapshot, not the latest" do
@@ -121,7 +125,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {0, 480}}, 2 => %{"n1" => {100, 580}}}
       wp = provider(spans)
 
-      w = wp.(:tick, {3, [%Op.Delete{id: "n1"}]})
+      {:ok, w} = wp.(:tick, {3, [%Op.Delete{id: "n1"}]})
 
       assert Warp.at!(w, 300) == :undefined
       assert Warp.at!(w, 50) == {:ok, {50, 1}}
@@ -132,7 +136,7 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {0, 480}, "n2" => {480, 960}}}
       wp = provider(spans)
 
-      w = wp.(:tick, {3, [%Op.Delete{id: "n1"}]})
+      {:ok, w} = wp.(:tick, {3, [%Op.Delete{id: "n1"}]})
 
       assert Warp.at!(w, 100) == :undefined
       assert Warp.at!(w, 600) == {:ok, {600, 1}}
@@ -152,7 +156,7 @@ defmodule Coconut.WarpProviderTest do
 
       wp = provider(spans, [patch])
 
-      w = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
+      {:ok, w} = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
 
       assert Warp.map_interval!(w, 4800, 5000) == {:ok, {{4800, 1}, {5000, 1}}}
     end
@@ -167,7 +171,8 @@ defmodule Coconut.WarpProviderTest do
       spans = %{1 => %{"n1" => {480, 960}}, 2 => %{"n1" => {480, 720}}}
       wp = WarpProvider.for_coord(:tick, spans)
 
-      w = wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {480, 960}, new_span: {480, 720}}]})
+      {:ok, w} =
+        wp.(:tick, {2, [%Op.Retime{id: "n1", old_span: {480, 960}, new_span: {480, 720}}]})
 
       assert Warp.at!(w, 700) == {:ok, {590, 1}}
     end

@@ -12,8 +12,10 @@ defmodule Coconut.Edit.Track.Audio do
   "帧/采样点 = 引擎层坐标"). v1 does no time-stretch: a clip's span length
   always equals its `duration_frames`. The invariant is enforced at the gesture
   boundaries — insert casts reject a duration/span mismatch, drags that
-  would change the span length are rejected (`:drag` gesture), and edge
-  changes go through trim (`retime_element/3` compensation), never drag.
+  would change the span length are rejected (`:drag` gesture), edge
+  changes go through trim (`retime_element/3` compensation), never drag,
+  and content edits refuse `duration_frames` outright
+  (`:audio_duration_edit_rejected` — only trim/split may resize).
 
   The kernel treats `source` as opaque (a file path or an asset reference —
   the assets table is a v2 concern); source *length* is asset-layer
@@ -60,8 +62,11 @@ defmodule Coconut.Edit.Track.Audio do
   end
 
   # 内容编辑不携带 span 几何，duration ↔ span 等长不变式在手势边界
-  # （insert/trim/split）维护，这里只校验字段形状。
+  # （insert/trim/split）维护——duration_frames 只允许经那些手势改变，
+  # 内容编辑直接改它会让元素声明长度与 span 脱节，这里拒收。
   @impl Coconut.Edit.Track
+  def edit_element(%Clip{}, %{duration_frames: _}), do: {:error, :audio_duration_edit_rejected}
+
   def edit_element(%Clip{} = element, changes) do
     merged =
       %{
@@ -69,7 +74,7 @@ defmodule Coconut.Edit.Track.Audio do
         source_offset_frames: element.source_offset_frames,
         duration_frames: element.duration_frames
       }
-      |> Map.merge(Map.take(changes, [:source, :source_offset_frames, :duration_frames]))
+      |> Map.merge(Map.take(changes, [:source, :source_offset_frames]))
 
     with {:ok, source} <- cast_source(merged.source),
          {:ok, offset} <- cast_offset(merged.source_offset_frames),

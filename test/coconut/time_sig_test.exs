@@ -2,7 +2,7 @@ defmodule Coconut.TimeSigTest do
   use ExUnit.Case, async: true
 
   alias Coconut.Edit.Workspace
-  alias Coconut.Score.TimeSigMap
+  alias Coconut.Score.{TimeSig, TimeSigMap}
   alias Coconut.Util.ID
 
   setup do
@@ -43,6 +43,39 @@ defmodule Coconut.TimeSigTest do
 
       assert {:error, {:invalid_time_sigs, _}} =
                Workspace.set_time_sigs(ws, [{1, {4, 4}}, {3, {3, 4}}, {2, {6, 8}}])
+    end
+
+    test "rejects malformed signature values", %{ws: ws} do
+      assert {:error, {:invalid_time_sigs, _}} = Workspace.set_time_sigs(ws, [{1, {0, 4}}])
+      assert {:error, {:invalid_time_sigs, _}} = Workspace.set_time_sigs(ws, [{1, {4, 0}}])
+
+      assert {:error, {:invalid_time_sigs, _}} =
+               Workspace.set_time_sigs(ws, [{1, {:compound, [], 4}}])
+
+      assert {:error, {:invalid_time_sigs, _}} =
+               Workspace.set_time_sigs(ws, [{1, {:compound, [0, 3], 4}}])
+    end
+  end
+
+  describe "TimeSig.validate/1" do
+    test "accepts well-formed signatures" do
+      assert :ok = TimeSig.validate({4, 4})
+      assert :ok = TimeSig.validate({:standard, 6, 8})
+      assert :ok = TimeSig.validate({:compound, [2, 3], 8})
+      assert :ok = TimeSig.validate(:san)
+    end
+
+    test "rejects malformed signatures" do
+      assert {:error, {:invalid_time_sig, {0, 4}}} = TimeSig.validate({0, 4})
+      assert {:error, {:invalid_time_sig, {4, 0}}} = TimeSig.validate({4, 0})
+
+      assert {:error, {:invalid_time_sig, {:compound, [], 4}}} =
+               TimeSig.validate({:compound, [], 4})
+
+      assert {:error, {:invalid_time_sig, {:compound, [0, 3], 4}}} =
+               TimeSig.validate({:compound, [0, 3], 4})
+
+      assert {:error, {:invalid_time_sig, "4/4"}} = TimeSig.validate("4/4")
     end
   end
 

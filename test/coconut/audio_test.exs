@@ -341,6 +341,16 @@ defmodule Coconut.AudioTest do
 
       assert {:ok, ^clip} = Audio.edit_element(clip, %{unknown_field: "ignored"})
     end
+
+    test "rejects duration_frames changes — resize only via trim/split" do
+      clip = %Clip{source: "a.wav", source_offset_frames: 10, duration_frames: 100}
+
+      assert {:error, :audio_duration_edit_rejected} =
+               Audio.edit_element(clip, %{duration_frames: 50})
+
+      assert {:error, :audio_duration_edit_rejected} =
+               Audio.edit_element(clip, %{source: "b.wav", duration_frames: 100})
+    end
   end
 
   describe "element codec" do
