@@ -1,4 +1,4 @@
-defmodule Coconut.Engines.Channels.Duration do
+defmodule Coconut.Render.Channels.Duration do
   @moduledoc """
   Built-in channel for per-phoneme duration overrides within a note.
 
@@ -8,14 +8,14 @@ defmodule Coconut.Engines.Channels.Duration do
   engine worker renormalizes every word to its span-derived target).
 
   The base slice is the current element data (same as
-  `Coconut.Engines.Channels.Lyric`): the digest guards the note being retimed.
+  `Coconut.Render.Channels.Lyric`): the digest guards the note being retimed.
   Folds to `{:port, note_id, :duration}`.
   """
 
   @behaviour Coconut.Render.Channel
 
   alias Coconut.Edit.Patch
-  alias Coconut.Engines.Channels.Lyric
+  alias Coconut.Render.Channels.Lyric
 
   @impl true
   def projection(ws, patch), do: Lyric.projection(ws, patch)

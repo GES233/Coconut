@@ -30,7 +30,7 @@ defmodule Coconut.Scenario do
 
   alias Coconut.Edit.{Operation, Patch, Track, Workspace}
   alias Coconut.Edit.Operations.InsertNote
-  alias Coconut.Engines.Channels.Lyric
+  alias Coconut.Render.Channels.Lyric
   alias Coconut.Render.Resolve
   alias Coconut.Score.Note
   alias Coconut.Util.ID

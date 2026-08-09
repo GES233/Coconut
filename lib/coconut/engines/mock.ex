@@ -2,6 +2,9 @@ defmodule Coconut.Engines.Mock do
   @moduledoc """
   Minimal engine for exercising the edit pipeline end-to-end.
 
+  Reference/test 引擎定位：它是契约的参照实现与测试桩，留在 lib 是因为
+  `examples/` 下的脚本直接依赖它。
+
   info/1   — declares a few global knobs (`:gender`, `:depth`,
              `:phoneme_mode`) so the globals gate has something to judge.
   check/2  — always passes with no prepared state (`checked: nil`).

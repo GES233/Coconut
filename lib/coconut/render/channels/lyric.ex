@@ -1,4 +1,4 @@
-defmodule Coconut.Engines.Channels.Lyric do
+defmodule Coconut.Render.Channels.Lyric do
   @moduledoc """
   Built-in channel guarding element content (lyric and friends).
 

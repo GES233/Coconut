@@ -88,7 +88,7 @@ defmodule Coconut.ResolveTest do
     }
   end
 
-  defp channels, do: %{lyric: Coconut.Engines.Channels.Lyric}
+  defp channels, do: %{lyric: Coconut.Render.Channels.Lyric}
 
   # ---- Tests ----
 
@@ -196,7 +196,7 @@ defmodule Coconut.ResolveTest do
     {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
-             Resolve.run_check(ws, %{pitch: Coconut.Engines.Channels.Pitch})
+             Resolve.run_check(ws, %{pitch: Coconut.Render.Channels.Pitch})
 
     assert interventions == %{{:port, "n1", :pitch} => %{input: [[0, 60], [480, 62]]}}
   end
@@ -218,7 +218,7 @@ defmodule Coconut.ResolveTest do
     {:ok, ws} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
-             Resolve.run_check(ws, %{duration: Coconut.Engines.Channels.Duration})
+             Resolve.run_check(ws, %{duration: Coconut.Render.Channels.Duration})
 
     assert interventions == %{{:port, "n1", :duration} => %{input: [[0, 96], [1, 384]]}}
   end
