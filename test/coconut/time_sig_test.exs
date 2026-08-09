@@ -20,24 +20,29 @@ defmodule Coconut.TimeSigTest do
       assert ws.time_sigs == [{1, {4, 4}}]
     end
 
-    test "updated via Workspace.update/2 (display data, no edit_version bump)", %{ws: ws} do
-      {:ok, ws} = Workspace.update(ws, %{time_sigs: [{1, {6, 8}}]})
+    test "updated via Workspace.set_time_sigs/2 (display data, no edit_version bump)", %{ws: ws} do
+      {:ok, ws} = Workspace.set_time_sigs(ws, [{1, {6, 8}}])
 
       assert ws.time_sigs == [{1, {6, 8}}]
       assert ws.edit_version == 0
     end
 
+    test "update/2 no longer accepts time_sigs (carved out to set_time_sigs/2)", %{ws: ws} do
+      assert {:error, {:extra_attrs, [:time_sigs]}} =
+               Workspace.update(ws, %{time_sigs: [{1, {6, 8}}]})
+    end
+
     test "rejects malformed event lists", %{ws: ws} do
-      assert {:error, {:invalid_time_sigs, []}} = Workspace.update(ws, %{time_sigs: []})
+      assert {:error, {:invalid_time_sigs, []}} = Workspace.set_time_sigs(ws, [])
 
       assert {:error, {:invalid_time_sigs, _}} =
-               Workspace.update(ws, %{time_sigs: [{2, {4, 4}}]})
+               Workspace.set_time_sigs(ws, [{2, {4, 4}}])
 
       assert {:error, {:invalid_time_sigs, _}} =
-               Workspace.update(ws, %{time_sigs: [{1, {4, 4}}, {1, {3, 4}}]})
+               Workspace.set_time_sigs(ws, [{1, {4, 4}}, {1, {3, 4}}])
 
       assert {:error, {:invalid_time_sigs, _}} =
-               Workspace.update(ws, %{time_sigs: [{1, {4, 4}}, {3, {3, 4}}, {2, {6, 8}}]})
+               Workspace.set_time_sigs(ws, [{1, {4, 4}}, {3, {3, 4}}, {2, {6, 8}}])
     end
   end
 
@@ -52,7 +57,7 @@ defmodule Coconut.TimeSigTest do
     end
 
     test "mid-song meter change: 4/4 for two bars, then 3/4", %{ws: ws} do
-      {:ok, ws} = Workspace.update(ws, %{time_sigs: [{1, {4, 4}}, {3, {3, 4}}]})
+      {:ok, ws} = Workspace.set_time_sigs(ws, [{1, {4, 4}}, {3, {3, 4}}])
       {:ok, map} = Workspace.time_sig_map(ws)
 
       # Bars 1-2 at 4/4 (1920 ticks each), bar 3 onward at 3/4 (1440 ticks).

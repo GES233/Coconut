@@ -53,8 +53,11 @@ defmodule Coconut.Edit.Track do
 
   @type track_id :: ID.t(__MODULE__)
 
+  # `name` is a display annotation (design doc §11.8): mutable, non-unique,
+  # nilable — never an identity. Routing, anchors and version pins use `id`.
   @type t :: %__MODULE__{
           id: track_id(),
+          name: String.t() | nil,
           module: module(),
           space: Tamale.Space.t(),
           spans_by_version: %{Tamale.version() => %{Tamale.id() => span()}},
@@ -67,6 +70,7 @@ defmodule Coconut.Edit.Track do
   @keys [
     :id,
     :module,
+    name: nil,
     space: %Tamale.Space{},
     spans_by_version: %{},
     elements_by_id: %{},

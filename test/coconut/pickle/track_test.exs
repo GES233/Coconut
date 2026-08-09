@@ -47,6 +47,24 @@ defmodule Coconut.Pickle.TrackTest do
       assert loaded == track
     end
 
+    test "name is optional: dumped through, absent loads as nil" do
+      {:ok, named} = Track.new(%{id: "v2", module: Track.Vocal, name: "主唱"})
+      {:ok, plain} = Track.new(%{id: "v3", module: Track.Vocal})
+      registry = PickleTrack.default_registry()
+
+      assert {:ok, dumped} = PickleTrack.dump(named, registry)
+      assert dumped.name == "主唱"
+      assert_pickle_conform(dumped)
+      assert {:ok, loaded} = PickleTrack.load(dumped, registry)
+      assert loaded == named
+
+      # old archives without a name key load as nil
+      assert {:ok, plain_dumped} = PickleTrack.dump(plain, registry)
+      assert {:ok, loaded_plain} = PickleTrack.load(Map.delete(plain_dumped, :name), registry)
+      assert loaded_plain.name == nil
+      assert loaded_plain == plain
+    end
+
     test "tempo track with bpm events round-trips" do
       {:ok, track} =
         Track.new(%{

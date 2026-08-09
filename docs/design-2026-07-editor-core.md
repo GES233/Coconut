@@ -192,7 +192,13 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   `Workspace.validate/1` 把关）。它是 tick 之上的显示/网格叠层（小节
   标尺、吸附），不移动 tick、无锚、无 transport，进 Space 是纯开销；
   `TimeSigMap` 读时编译（`Workspace.time_sig_map/1`，按 `ws.tpqn`）。
-  散拍子 `:san` 暂不考虑。
+  散拍子 `:san` 暂不考虑。补记（2026-08-09）：`time_sigs` 的变更
+  从 `Workspace.update/2` 切出为 `set_time_sigs/2` 纯函数（复用
+  `validate/1` 的合法性把关），入史为 `{:set_time_sigs, events}`
+  轻量边（§12.4）——不开 track 的裁决不动（无 Space、无锚），但
+  中途变拍是乐谱手势，走 `update/2` 会被 §12.4 划出历史、不可
+  撤销，故单开一条边；边存全量新列表（极小），replay = 调
+  `set_time_sigs/2`。`tpqn` 仍随 `update/2` 出局。
 
 ## 7. Op 覆盖评估
 
@@ -221,7 +227,8 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
 2. `diff(old, new)` 回退适配器（编辑来源是状态而非 op 时需要，如文件导入）
    ——启发式集中在这一个函数；
 3. chunked digest helper；
-4. undo 的 inverse batch 生成；
+4. undo → 已拍板（2026-08-07）：改采快照栈，见 §12；inverse batch
+   方案（含 tamale seen 放宽）评审后否决，存档于分支；
 5. 跨 Space 重挂策略（跨轨拖动）。
 
 **缺口展开（补记 2026-08-05）**：
@@ -249,6 +256,8 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
   推）。连带：`side_changes` 同逆；跨轨批次需两轨同撤（与 5 纠缠）。
   红利：撤销只是又一批 op，patch 锚沿新 log 自然 transport。undo
   历史存哪（Workspace 字段 vs GenServer 壳状态）与接口层一起排。
+  （补记 2026-08-07：已拍板并改采快照栈——本段的 inverse batch 设计
+  （含 tamale seen 放宽）评审后否决，存档于分支；落地方案见 §12。）
 - **5. 跨 Space 重挂**：跨轨拖动 = A 轨 Delete + B 轨 Insert，但 id 是
   Space 级身份——沿用同 id 则 A 轨钉着它的 patch 全 terminal；换新
   id 则用户感知身份断裂、曲线类 patch 照样全灭。选项：a) 新 id +
@@ -414,6 +423,10 @@ port 多次写入是合法覆盖还是冲突要在 Resolve 有说法；端口认
 `Request.for_workspace/2` 构造即钉；`Artifact.edit_version` 记录渲染来源版本）。
 强制校验仍随 GenServer 壳。
 
+**补记（2026-08-09）**：钉的形状随 §12.2 定为 History 签发的 cursor
+node id（`Snapshot` 加可选 `pin` 字段，裸构造路径留空、行为同今）；
+强制校验随壳施工不变。
+
 ### 11.6 PortClient 无监督 + key 切换队列污染
 
 **现象**：全局单例 GenServer 不在 supervision tree 下；worker key 变化时
@@ -453,6 +466,14 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
 - `%Track{id, module, space, spans_by_version, elements_by_id, patches,
   dead_patches}`——Side 整个删除，Workspace = `id/edit_version/tracks`
   + 独立 `tempo` 轨字段 + 工程级 `tpqn/time_sigs`（§6）。
+- **Track 加 `name` 字段（2026-08-09 定）**：实例显示名，纯
+  annotation——可变、可重复（不做唯一性校验）、可空（`nil`）；
+  id 不可变维持不变，路由/锚/patch/版本钉永远只用 id。与
+  `Pickle.Registry` 的轨型逻辑名是两个命名空间（实例显示名 vs
+  轨型名；后者是存档格式契约），判型永远按能力、绝不按 name。
+  rename 是 mutation，入史为 `{:rename_track, track_id, name}` 边
+  （§12.4）。Pickle：`name` 作可选字段进 dump，旧档缺失 load 为
+  `nil`——首个可选字段先例：格式兼容走"容忍缺失"档，而非版本号。
 - behaviour 回调（克制，不含 Audio 占位共 6 个）：`coord_domain/0`、
   `cast_element/3`、`edit_element/2`、`validate_gesture/3`、
   `split_inherit/2`、`view/1`。`edit_element/2`（2026-08-03 补）：
@@ -490,3 +511,177 @@ Operate 臃肿的根源（`:tempo` 特判 4 个 clause）正是 Track 该吸收�
 **Track.Audio 操作集**（实现时展开）：insert/delete/drag/split（右半
 `source_offset += split - start`，纯整数帧算术）/trim（拖缘 = Retime +
 offset 反向补偿，Track 元素钩子，不进 Operate 通用层）；merge v1 拒绝。
+
+## 12. Undo/Redo：Op 树 + 检查点（拍板 2026-08-09，已落地同日）
+
+承接 §8 缺口 4。方案演进：inverse batch（追加逆批次）曾完整设计
+（含 tamale seen 放宽），评审后否决、存档于分支；快照栈（双栈
+past/future + 全量 Workspace 快照 + epoch 版本钉）拍板于
+2026-08-07、未施工，经 2026-08-09 评审由本方案取代。快照栈存档
+要点：机制最少、逐比特恢复靠构造保证。被取代的原因——`future`
+清空丢分支（分支试错是创作场景的真实需求）、放弃审计叙事、
+`epoch` 污染 Workspace 纯度（update 拒改 / Pickle 排除 / 测试断言
+例外三处税）。其快照机制被本方案吸收为检查点（§12.3）。
+
+### 12.1 模型与语义
+
+- History = 一棵 Op 树 + cursor：节点 = 状态（惰性物化），边 = 一条
+  **已解析的写记录**（§12.4）。`present` 增量维护——写只发生在
+  cursor，present = 旧 present + apply 一条边，O(1)、无 refold。
+- 检查点：节点按需挂 Workspace 快照——**每 K 条边一个 + 每个分支
+  节点一个**（只挂分支点不够：长链无分支时 fold 无界）。cursor 跳跃
+  = 从目标后方最近检查点 fold 边序列，fold 长度 ≤ K。BEAM 结构共享
+  使检查点近似免费。
+- 逐比特等价的来源改变：快照栈靠构造保证，本方案靠**重放等价**
+  证明——核心不变量：任意 cursor 位置 `replay(最近检查点, 边路径)`
+  == 实况 `present`。执法者为 §12.6 的核心 property。
+- 新手势、新写路径自动获得 undo：replay 只有正向 apply，无
+  per-gesture 逆逻辑税（diff 适配器、Tempo.Ramp 均免费）；跨轨同撤
+  （§8 缺口 5）= 一条边记录多轨批次（将来的 `apply_batches`）。
+- **审计叙事回归**：树即完整手势史（含分支），快照栈放弃的叙事
+  拿回；op log 语义不变（undo 事件不进 log，叙事在 History 边而非
+  log）。每条边生成确定性 gesture label（`Operations.*` struct 的
+  纯函数），供历史面板/分支 UI；LLM 语义 rollup 留壳层可选装饰
+  （输入 = 分支的 label 序列），不进 lib、不进写路径。
+
+### 12.2 遍历语义与版本钉
+
+- 每个节点发 History 内单调递增 `seq`（创建序 = 时间序）；
+  timestamp 仅 UI 展示、不参与排序（免疫时钟回拨与同毫秒撞号）。
+- 默认 undo/redo = **全局 seq 序遍历**（Vim `g-`/`g+` 语义）：undo
+  = seq 前一节点，redo = 后一节点；**树结构不参与导航**，仅用于
+  物化时定位检查点路径，导航只需一个 seq 索引。
+- 行为拍板（反直觉点，将来的 UI 提示要写明）：undo 扫到分支边界
+  会跨分支"瞬移"——主干 1–5、undo 到 3、写 6'7' 后，从 7' 连续
+  undo = 7'→6'→5→4→3；全量 undo 把每个已创建状态恰好访问一次，
+  任何状态永不丢失。否决项：访问日志序（浏览器后退式）——重复
+  访问同一状态，旧分支在深 undo 中反而难达。
+- 红利：v1 不需要任何分支选择 UI——树存储、线性交互。
+- 版本钉：兄弟分支路径等长即撞 `edit_version`，撞号面比
+  "undo 重写"更宽，epoch 方案（旧 §12.2，见上存档）取消。A2 下
+  History 是所有写的唯一入口（内在纪律，非可选惯例），钉 =
+  History 签发的 **cursor node id**；§11.5 的强制校验 = 壳比对
+  client 钉 == cursor node id。`Snapshot` 加可选 `pin` 字段：壳经
+  `History.current/1` 构造 Request 时填入 node id；裸
+  `Snapshot.from_workspace/1`（lib 内部与测试用）留空、只钉
+  `edit_version`，行为同今。`apply_batch` 的 `check_version` 不动
+  （聚合内版本锁仍在），跨分支防误写由 History 写入口完成。
+  Workspace 保持纯值、零例外字段；Pickle 字段列表不动。
+
+### 12.3 放置、形状与生命周期
+
+- 落点：独立包装 `Coconut.Edit.History`——树与检查点嵌进
+  Workspace 需每层剥壳、语义混；包装层干净，且是壳（§10.6）的
+  天然持有物。形状：`%{nodes, cursor, seq, present}`；node =
+  `{id, seq, parent, children, checkpoint?, record, label,
+  timestamp}`（root 无 record、自带检查点；边记录挂在它产生的
+  子节点上）。
+- History 同时补上 lib 缺失的写组合层：写入口 = validate → lower
+  → 记边 → apply_batch → 更新 present。
+- 生命周期：session-scoped，工程重载历史为空（编辑器惯例）；
+  `Pickle.Workspace` 按字段显式 dump，天然不触及 History。
+- 内存与修剪：总量 = O(边数) + O(检查点)。上限按边数（v1 常量，
+  如 5000），超限**压扁 trunk**：最旧前缀路径合成一个检查点节点
+  （squash），中间边丢弃，seq 索引变稀疏但保持递增（优于按节点
+  LRU：单一规则、对分支无偏心）。
+- K（检查点间距）v1 常量（如 100 边），knob 化留壳层。
+- truncate（§11.3）交互：语义安全——检查点是物化状态，不读旧
+  log/旧 spans，truncate 自身不入史（维护操作）。注意内存：旧检查
+  点会**钉住被 truncate 前的 log/spans 不被 GC**，truncate 的收益
+  要等相关检查点被 squash 掉才兑现。
+
+### 12.4 边纪律（入史写路径）
+
+边上挂 Op 把 undo 从数据保留技巧变成复制协议，三条硬纪律：
+
+1. **边上存解析后的记录，不是原始请求**：apply_batch 系 = lowered
+   `ops + side_changes`；`attach_patch` 系 = **mint 后的 patch**
+   （id 落定）；`add_track` 系 = **构造完成的 Track**（id 落定）；
+   轻量字段边 = **全量新值**（rename / set_time_sigs）。replay 只跑
+   确定性 apply，不再 lower/mint/构造——`attach_patch` 的随机 id
+   minting 因此对重放无害。
+2. **任何改状态的函数，要么是一条边，要么明确出局**：
+   - 入史：`apply_batch`（六手势及未来一切批次，含跨轨）；
+     `attach_patch` / `attach_patches`（现状不 bump `edit_version`，
+     不变）。
+   - **轨道结构写**入史为两种边：`{:add_track, track}`（存完整
+     Track；新建轨 = `{id, module}` + 空侧表，极小）与
+     `{:remove_track, track_id}`。前向 replay = tracks map 的
+     put/delete；**边里不存尸体**——被删轨道的全部内容由该边
+     之前的边重建（undo 过删除点 = cursor 回到删除前，轨道自然
+     在）；squash 后早期状态本就不可达，一致。tempo 轨是独立
+     字段（§6），不参与增删；`Workspace.new` 带入的初始轨道属
+     root 状态，无需边。删非空轨 v1 允许——undo 经 replay 整体
+     恢复其 elements / patches / 坟场（DAW 惯例，无重挂语义）。
+     增删轨 bump `edit_version`（渲染产物随之变；规则表述：乐谱
+     结构变化 bump，干预挂载不 bump）。
+   - **轻量字段边**（2026-08-09 定）：`{:rename_track, track_id,
+     name}` 与 `{:set_time_sigs, events}`——无 Space 机器，边存
+     全量新值，replay = 调对应纯函数。轨道名是 annotation
+     （§11.8，rename 可撤销是 DAW 惯例），中途变拍是乐谱手势
+     （§6，不可撤销是真实的洞）：二者入史。
+   - `take_dead_patches` 清坟场是 mutation（现状名为读取性操作）
+     → 记 `consume_dead` 边（带取走的 patch id 列表）。配套：策略
+     层消费坟场按 `{patch.id, anchor.at_version}` 幂等去重——同一
+     patch 重挂后再死 at_version 不同，单按 id 去重会吞掉第二次
+     死亡。
+   - `Workspace.update/2`（收缩后只剩 `tpqn` 等工程级字段——
+     `time_sigs` 已切出，见上）与 Project 层元数据：v1 声明出局——
+     不受逐比特保证、不单独可撤（效果落在后续检查点里）；元数据
+     撤销待 Project 层 before/after，另议。
+   - 连带：`tracks` 是 Map、无序（`all_tracks` 明言 fold 序非语义）。
+     将来 UI 需要轨道排序时，reorder 是新 mutation，同样必须是一条
+     边——先记在这里，免得再漏。
+3. **重放与实况共用同一 apply**：replay 直接调
+   `Workspace.apply_batch` / `attach_patch` / `add_track` /
+   `remove_track` / `rename_track` / `set_time_sigs`，禁止 replay
+   专用分支（第二种实现 = 发散源）。
+
+### 12.5 API 形状
+
+- `Coconut.Edit.History`：`new/2`（包装现有 ws；opts 为
+  `checkpoint_interval` / `max_edges` knob）、`apply/4`（写组合层，
+  见 §12.3）、`apply_patch/3` / `apply_patches/3`、`add_track/3` /
+  `remove_track/3`（记结构边）、`rename_track/4` / `set_time_sigs/3`
+  （记轻量字段边）、`take_dead_patches/1`（记 `consume_dead` 边）、
+  `undo/1` / `redo/1` → `{:ok, hist}` | `{:error, :nothing_to_undo |
+  :nothing_to_redo}`、`current/1`（present + cursor node id，供壳
+  构造 Request 时钉版本）、`state_at/2`（任意存活节点的物化状态，
+  树 UI/分支枚举的地基）。写入口 opts 收 `:pin`（不等于当前 cursor
+  即 `{:stale_pin, _}`，§12.2 的壳校验）；`apply/4` 另收 `:config`。
+- 分支结构 API（子分支枚举等）v1 不暴露——树 UI 是壳层议题，
+  届时再加。
+- `Workspace` 需新增公开纯函数 `add_track/2` / `remove_track/2` /
+  `rename_track/3`，并将 `set_time_sigs/2` 从 `update/2` 切出
+  （`update/2` 收缩后不再接受 `time_sigs`）：现状无任何公开增删
+  轨 API（`put_track` 私有，轨道仅经 `new/1` 与 Pickle 进出）——
+  本方案顺带补齐，replay 与实况共用（纪律 3）。除此之外
+  Workspace 零改动（无 epoch）；纯函数 API（`validate` / `lower` /
+  `apply_batch` / `attach_patch`）不动——History 是组合层，测试
+  与将来的壳直接用；lib 内无连锁。
+- 边数上限、K 为模块常量；knob 化留壳层。
+
+### 12.6 测试点
+
+- 核心 property：**重放等价**——随机手势序列 + 随机 undo/redo
+  游走，任意时刻 `replay(最近检查点, 路径)` 与 `present` 逐比特
+  等价（§12.4 纪律 1、2 的执法者；手势池含轨道增删、rename、
+  set_time_sigs）。
+- 轨道结构边：删非空轨 → undo，其 elements / patches / 坟场随
+  replay 整体恢复；增删轨 bump `edit_version`；同分支内向已删
+  轨道的写在写入时被拒（`fetch_track` 失败），replay 路径不存在
+  该序列。
+- 遍历语义：构造分支（写 → undo n → 写），断言全局 seq 序遍历
+  顺序（含跨分支"瞬移"用例：7'→6'→5→4→3）；全量 undo 访问每个
+  状态恰好一次；新写后 redo 到最新 seq 即止。
+- 边纪律：`attach_patch` 序列两次重放逐比特等价（mint 已落定）；
+  `consume_dead` round-trip（坟场随 cursor 复活/再消费，幂等去重
+  生效）。
+- 版本钉：分支/undo 后 cursor node id 全局唯一；client 持旧钉写
+  被 History 写入口拒绝。
+- 检查点/squash：fold 长度 ≤ K；超限 squash 后最旧状态不可达、
+  present 不受影响、seq 保持单调。
+- Pickle：dump/load 回归（Workspace 无新字段；重载历史为空；
+  Track `name` 为可选字段，旧档缺失 load 为 `nil`）。
+- 跨手势混合序列随机 round-trip（旧 §12.6 保留项，断言改为重放
+  等价）。

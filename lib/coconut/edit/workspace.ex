@@ -56,13 +56,96 @@ defmodule Coconut.Edit.Workspace do
     end
   end
 
-  @doc "Modify the properties of an existing workspace (modifying the id is not allowed)."
+  # `update/2` rejects `time_sigs`: meter changes are a score gesture with
+  # their own writer (`set_time_sigs/2`) so they can enter the undo history
+  # (design doc §6 addendum, §12.4).
+  @update_keys [:id, :edit_version, :tracks, :tempo, :tpqn]
+
+  @doc """
+  Modify the properties of an existing workspace.
+
+  The `id` is immutable, and `time_sigs` is rejected here — use
+  `set_time_sigs/2` for meter changes (design doc §6 addendum).
+  """
   @spec update(t(), map() | keyword()) :: {:ok, t()} | {:error, term()}
   def update(ws, attrs) do
-    with {:ok, normalized} <- strictly_normalize_attrs(attrs, @keys),
+    with {:ok, normalized} <- strictly_normalize_attrs(attrs, @update_keys),
          :ok <- if(Map.has_key?(normalized, :id), do: {:error, :id_immutable}, else: :ok) do
       new_ws = struct(ws, normalized)
       validate(new_ws)
+    end
+  end
+
+  @doc """
+  Replace the bar-grid time signature events (design doc §6).
+
+  This is the dedicated writer for meter changes — a score gesture that
+  enters the undo history as a `{:set_time_sigs, events}` edge (§12.4);
+  `update/2` no longer accepts `time_sigs`. Legality is the same rule as
+  `validate/1`: first event at bar 1, bar numbers strictly ascending.
+  """
+  @spec set_time_sigs(t(), [Coconut.Score.TimeSig.time_sig_event()]) ::
+          {:ok, t()} | {:error, {:invalid_time_sigs, term()}}
+  def set_time_sigs(ws, events) do
+    if valid_time_sigs?(events) do
+      {:ok, %{ws | time_sigs: events}}
+    else
+      {:error, {:invalid_time_sigs, events}}
+    end
+  end
+
+  # ---- Track structure ----
+
+  @doc """
+  Add a track to the workspace.
+
+  The id must be fresh (colliding with the tempo track's id or an existing
+  track is `{:track_id_taken, _}`), and the track module must not carry the
+  `:tempo_derive` capability — the tempo field is unique (§6). Adding a
+  track bumps `edit_version` (score-structure change, §12.4).
+  """
+  @spec add_track(t(), Track.t()) :: {:ok, t()} | {:error, term()}
+  def add_track(ws, %Track{id: track_id} = track) do
+    if track_id == ws.tempo.id or Map.has_key?(ws.tracks, track_id) do
+      {:error, {:track_id_taken, track_id}}
+    else
+      validate(%{
+        ws
+        | tracks: Map.put(ws.tracks, track_id, track),
+          edit_version: ws.edit_version + 1
+      })
+    end
+  end
+
+  @doc """
+  Remove a track by id. The dedicated tempo track cannot be removed
+  (`{:tempo_track_immutable, _}`). Removing a track bumps `edit_version`
+  (score-structure change, §12.4).
+  """
+  @spec remove_track(t(), Track.track_id()) :: {:ok, t()} | {:error, term()}
+  def remove_track(ws, track_id) do
+    cond do
+      track_id == ws.tempo.id ->
+        {:error, {:tempo_track_immutable, track_id}}
+
+      not Map.has_key?(ws.tracks, track_id) ->
+        {:error, {:unknown_track, track_id}}
+
+      true ->
+        {:ok, %{ws | tracks: Map.delete(ws.tracks, track_id), edit_version: ws.edit_version + 1}}
+    end
+  end
+
+  @doc """
+  Rename a track. The name is a display annotation (§11.8): mutable,
+  non-unique, nilable — nothing semantic keys off it. Renaming does not
+  bump `edit_version` (render output is unaffected).
+  """
+  @spec rename_track(t(), Track.track_id(), String.t() | nil) ::
+          {:ok, t()} | {:error, {:unknown_track, term()}}
+  def rename_track(ws, track_id, name) do
+    with {:ok, track} <- fetch_track(ws, track_id) do
+      {:ok, put_track(ws, %{track | name: name})}
     end
   end
 

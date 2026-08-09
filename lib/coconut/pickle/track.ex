@@ -8,6 +8,7 @@ defmodule Coconut.Pickle.Track do
   dump 为摊平的 map：
 
   - `id` 原样直出；
+  - `name` 原样直出（可选字段：load 时缺失默认 `nil`，旧档天然兼容）；
   - `module` 经 `Coconut.Pickle.Registry` 换成逻辑名（load 反向还原）；
   - `space` 走 `Coconut.Pickle.Space` codec；
   - `spans_by_version` 的 version 整数键直出（约定允许的 map 键类型），
@@ -55,6 +56,7 @@ defmodule Coconut.Pickle.Track do
       {:ok,
        %{
          id: track.id,
+         name: track.name,
          module: name,
          space: space,
          spans_by_version: dump_spans(track.spans_by_version),
@@ -78,6 +80,7 @@ defmodule Coconut.Pickle.Track do
          {:ok, dead} <- load_dead(Map.get(data, :dead_patches)) do
       Track.new(%{
         id: Map.get(data, :id),
+        name: Map.get(data, :name),
         module: module,
         space: space,
         spans_by_version: spans,
