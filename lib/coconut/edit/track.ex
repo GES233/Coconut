@@ -349,15 +349,12 @@ defmodule Coconut.Edit.Track do
   defp sync_elements(track, elements) when map_size(elements) == 0, do: track
 
   defp sync_elements(track, elements) do
-    # `:delete` tombstones remove the element; `:touch` / `:pending` are
-    # markers only (no data change) — same convention as apply_span_deltas/2.
+    # `:delete` tombstones remove the element; everything else is an
+    # upsert — same convention as apply_span_deltas/2.
     by_id =
       Enum.reduce(elements, track.elements_by_id, fn
         {id, :delete}, acc ->
           Map.delete(acc, id)
-
-        {_id, marker}, acc when marker in [:touch, :pending] ->
-          acc
 
         {id, data}, acc ->
           Map.put(acc, id, data)
@@ -376,17 +373,11 @@ defmodule Coconut.Edit.Track do
   end
 
   defp apply_span_deltas(prev, deltas) do
-    {upserts, tombstones} =
-      Enum.split_with(deltas, fn {_id, v} ->
-        v != :delete and v != :pending and v != :touch
-      end)
+    {upserts, tombstones} = Enum.split_with(deltas, fn {_id, v} -> v != :delete end)
 
     result = Map.merge(prev, Map.new(upserts))
 
-    Enum.reduce(tombstones, result, fn
-      {id, :delete}, acc -> Map.delete(acc, id)
-      {_id, _other}, acc -> acc
-    end)
+    Enum.reduce(tombstones, result, fn {id, :delete}, acc -> Map.delete(acc, id) end)
   end
 
   # Removes land before write-time transport; additions land after it (see

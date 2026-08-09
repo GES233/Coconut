@@ -50,7 +50,7 @@ defmodule Coconut.Edit.Operation do
   @typedoc "Track identity within a workspace."
   @type track_id :: ID.t(Coconut.Edit.Track.t())
 
-  @typedoc "A tick span `{start, end}`. Both are non-negative integers, `end > start`."
+  @typedoc "A span `{start, end}` in the track's coordinate domain (ticks for score tracks, frames for audio). Both are non-negative integers, `end > start`."
   @type span :: {non_neg_integer(), non_neg_integer()}
 
   @typedoc """

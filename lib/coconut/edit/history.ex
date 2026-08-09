@@ -278,7 +278,7 @@ defmodule Coconut.Edit.History do
       {:ok, old_track} = Workspace.fetch_track(old_ws, track_id)
       {:ok, new_track} = Workspace.fetch_track(new_ws, track_id)
 
-      Enum.drop(new_track.patches, length(old_track.patches) + 0)
+      Enum.drop(new_track.patches, length(old_track.patches))
       |> Enum.take(length(track_patches))
     end)
   end

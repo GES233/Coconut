@@ -1309,7 +1309,7 @@ defmodule Coconut.Edit.OperationTest do
 
       # A content-edit-style batch: no ops, removes the old patch, mints one.
       changes = %{
-        elements: %{"n1" => :touch},
+        elements: %{},
         span_snapshot: %{},
         patches_add: [fresh],
         patches_remove: [old]

@@ -2,8 +2,7 @@ defmodule Coconut.Edit.Operations.CoreComponents do
   @moduledoc """
   Shared geometry/sequence checks for edit gestures.
 
-  Generic legality predicates shared by the legacy tuple-dispatch
-  `Coconut.Edit.Operation` clauses and the per-gesture structs under
+  Generic legality predicates for the per-gesture structs under
   `Coconut.Edit.Operations.*`: shape/order/span checks live here, while
   element casting and track-type policy stay on the track modules
   (`Coconut.Edit.Track` behaviour).

@@ -151,12 +151,6 @@ defmodule Coconut.Score.Tempo do
       do: (be - bs) / (et - st)
   end
 
-  # defmodule Curve, do: nil
-  # Stub — downstream apps should implement their own
-  # (e.g. via NIF to integrate as small step/linear segments).
-  # Do not use Coconut's built-in Curve module here —
-  # it depends on it's own timeline mechanism.
-
   # ---- Utility functions ----
 
   @spec build_segment_from_event(module(), Tick.t(), Tick.t(), any()) ::
