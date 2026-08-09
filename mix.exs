@@ -1,7 +1,7 @@
 defmodule Coconut.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1"
   @description "An engine-agnostic editor core that treats user intervention as first-class"
 
   def project do
@@ -31,8 +31,7 @@ defmodule Coconut.MixProject do
   defp deps do
     [
       # Rebase support
-      {:tamale, path: "../tamale"},
-      # {:tamale, github: "SynapticStrings/Tamal"}
+      {:tamale, github: "SynapticStrings/Tamal"},
 
       # NDJSON wire format for engine workers (priv/python)
       {:jason, "~> 1.4"},
