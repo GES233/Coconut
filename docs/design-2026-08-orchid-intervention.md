@@ -8,6 +8,11 @@
 > 渲染管线的上游配角；orchid/oi 是渲染后端的选项之一（本文 §5 Phase 0–2
 > 尚未开始）。§1"缺的半层"叙事以 equinox Runner 为参照系、写于旧定位下，
 > 存档保留；§4 边界原则（Resolve 及以下不感知 oi）与新定位一致，不变。
+>
+> 2026-08-09 归属注记：Orchid 接入（Adapter/Assemble + oi 三件套依赖）
+> 独立成包，不进 coconut 树——coconut 只保留 `Coconut.Render.Engine`
+> 契约面，与 application-less、OTP 归下游同一条宪法；树内占位文件
+> `engines/orchid_adapter.ex` 已删。§3.3/§4/§5 Phase 0 已按此改写。
 
 ## 1. 背景与现状
 
@@ -23,8 +28,8 @@ coconut 的干预链路已落地到 equinox 集成路径的中段：
 
 1. 渲染管线的 DAG 声明与编译（`Oi.compile`，按图结构缓存）
 2. interventions → oi 嵌套 `data:` 的翻译（`{:override, value}` 沿出边 fan-out）
-3. `lib/coconut/engines/orchid_adapter.ex` 从占位注释变成真的
-   `Coconut.Render.Engine` 实现
+3. `OrchidAdapter` 从占位变成真的 `Coconut.Render.Engine` 实现
+   （2026-08-09：树内占位文件已删，实现归独立 adapter 包，见 §3.3/§4）
 
 ## 2. 生态侧的既定事实（2026-08-04 核实）
 
@@ -79,18 +84,25 @@ coconut 的 port_ref 是 per-note 的（`{:port, note_id, :pitch}`），而 DAG
 - 此规则与 DiffSinger 现有 `collect_overrides/3` 的聚合形状
   （`note_index` keyed points）天然对齐，v1 可直接复用其转换逻辑
 
-### 3.3 依赖
+### 3.3 依赖与归属（2026-08-09 改写）
+
+Orchid 接入**独立成包**（工作名 `coconut_oi`，建包时定；sibling mix 项目 +
+path dep 起步，不急发 hex），三件套挂在该包：
 
 ```elixir
+{:coconut, path: "../coconut"},
 {:oi, "~> 0.7"},
 {:orchid_intervention, "~> 0.2"},
 {:orchid_stratum, "~> 0.2"}
 ```
 
-（orchid 本体随 oi 传递；`mix.exs:41` 的 `# add orchid or blabla` 占位注释
-届时移除。）
+（orchid 本体随 oi 传递。）coconut 本体**不新增任何 oi/orchid 依赖与
+模块**，只保留 `Coconut.Render.Engine` behaviour + `Request`/`Snapshot`/
+`Resolve` 契约面——engine-agnostic 定位与 application-less 决议的直接
+推论；树内占位文件与 `mix.exs` 的 `# add orchid` 注释已删。契约漂移
+纪律：Engine 契约面 breaking 时 adapter 包同步跟进，path dep 阶段无感。
 
-## 4. 模块设计（coconut 侧新增）
+## 4. 模块设计（adapter 包新增）
 
 > 2026-08-06 更新：按 2026-08-05 决议落实为 **thin wrap**——不建 Graph DSL /
 > Compiler：渲染管线 DAG 直接用 `Oi.Graph` 声明（节点/端口/边是 oi 的纯数据，
@@ -98,6 +110,11 @@ coconut 的 port_ref 是 per-note 的（`{:port, note_id, :pitch}`），而 DAG
 > 聚合翻译（§3.2 规则），无需 DSL 层。原拟 `Coconut.Engine.Graph` /
 > `Compiler` 废弃；`GraphTranslator` 的 UI 图翻译参照（equinox）属可视化
 > Phase 3 的事。
+>
+> 2026-08-09 归属更新：本节两个模块归独立 adapter 包（§3.3），coconut
+> 树内不再新增任何 oi 相关模块；模块命名空间建包时定（下文沿用
+> `OrchidAdapter` 工作名）。边界原则随之升级为包缝——"oi 形状只出现在
+> Adapter/Assemble" 由依赖图强制，不再仅靠约定。
 
 ```
 Coconut.Engines.OrchidAdapter      # 实现 Coconut.Render.Engine behaviour：
@@ -128,8 +145,10 @@ Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间�
 
 ## 5. 阶段计划
 
-- **Phase 0**：挂 hex 依赖；`OrchidAdapter` 变 `Coconut.Render.Engine` 骨架
-  （Mock 兜底，无 orchid 时行为不变）。
+- **Phase 0**：立 adapter 包骨架（sibling mix 项目 + path dep），挂 hex
+  依赖；`OrchidAdapter` 变 `Coconut.Render.Engine` 骨架。Mock step 归该包
+  测试设施——coconut 无"无 orchid 时"运行时分支，没装 adapter 包即无
+  orchid 引擎。
 - **Phase 1**：最小端到端——toy 四节点管线（G2P/时长/Pitch/声学 均为
   mock step）走通 声明 → compile → 干预注入（验证 §3.2 聚合规则与
   producer 短路）→ execute。ExUnit 覆盖。

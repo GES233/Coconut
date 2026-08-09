@@ -318,7 +318,8 @@ tamale scaffold 阶段缺三件辅助 + 适配层函数：
    （`Request.globals` + `info` 声明校验）已落地；首个真实引擎
    `Coconut.Engines.DiffSinger` 已落地（Python worker 经 NDJSON stdio，
    globals 已接入）；orchid/oi 真实接入
-   未开始（`Coconut.Engines.OrchidAdapter` 仅占位）；pitch override 已全链路
+   未开始（2026-08-09 起 adapter 独立成包、树内占位已删，见
+   design-2026-08-orchid-intervention.md §3.3/§4）；pitch override 已全链路
    打通（`Engines.Channels.Pitch` → `{:port, note_id, :pitch}` → adapter 秒域曲线 →
    worker 帧域 pitch_in/retake）；Encoder 契约 + Literal + worker dsdict
    编码器已落地（汉字歌词 → pypinyin → 声库 dsdict 查表，字典按语言
