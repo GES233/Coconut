@@ -126,7 +126,10 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
    推动后续）。要 ripple 时在段表后追加平移段即可，内核与 op 不变。
 4. 帧空间 warp（v2）：`W_frame = T_new ∘ W_tick ∘ T_old⁻¹`，用
    `Warp.compose/invert` 组合。验收用 tamale 一致性向量 metric 族
-   （G-INT-03/05 场景）。
+   （G-INT-03/05 场景）。**自动化拆两级**（2026-08-09 拍板）：clip 级
+   （automation 跟 clip 走）用 Ordinal 锚 + clip 相对帧偏移 payload，
+   恒等 transport、零 warp，先行落地；轨级（跨 clip、钉时间线）才需要
+   帧域 Metric 锚与本条 warp，排晚期。
 5. provider 分派：构造点（写时 `Workspace` / 检查时 `Resolve`）经
    `WarpProvider.for_coord/3` 按轨的 `coord_domain/0` 查分派表构造
    closure，`supported_coords/0` 从同一张表推导（`Patch.new` 挂载守卫
@@ -185,7 +188,8 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 
 ## 8. 已知缺口（coconut 侧待补）
 
-已补齐：warp provider（§5）、undo（§12）。仍开放的三件：
+已补齐：warp provider（§5）、undo（§12）。待施工的三件（跨 Space 重挂
+方案已拍板，见末条）：
 
 - **diff(old, new) 回退适配器**（文件导入用）：正常路径是手势 → op 批次；
   文件导入（MIDI/UST）、外部整轨改写、整块粘贴只给"改完的状态"，需从
@@ -203,14 +207,15 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   init/update/final。用途排序：channel digest 投影 > voicebank digest
   实算（v1 只存不算）> 工程级 digest。落点 tamale 侧为主。等投影规模
   真的疼了再做。
-- **跨 Space 重挂策略（跨轨拖动）**：跨轨拖动 = A 轨 Delete + B 轨
-  Insert，但 id 是 Space 级身份——沿用同 id 则 A 轨钉着它的 patch 全
-  terminal；换新 id 则用户感知身份断裂、曲线类 patch 照样全灭。选项：
-  a) 新 id + patch 不迁移（简单狠）；b) 同 id + patch 跨轨打捞重挂；
-  c) 复合手势 lowering 成两轨批次 + patch 迁移表。结构牵连：
-  `apply_batch/5` 目前单轨，跨轨需两轨原子提交（单 version 检查 +
-  两条 log），并反过来决定 undo 边粒度。tamale 不动，操作层加复合
-  手势入口。
+- **跨 Space 重挂（跨轨拖动）**：方案已拍板（2026-08-09），v2 取选项
+  a——新 id + patch 不迁移（id 是 Space 级身份：沿用同 id 则 A 轨钉着
+  它的 patch 全 terminal；换新 id 则原锚全判死）。手势 = A 轨 Delete +
+  B 轨 Insert 的双轨批次，经多轨原子入口 `apply_batches` 提交（单
+  version 检查 + 两条 log），**记一条 History 边**（§12.4——否则一次
+  拖动两步 undo）。判死 patch 的恢复：坟场为主（payload 完整，策略层
+  重挂/手动恢复），History 漫游兜底（`state_at` 复制粘贴；squash 后
+  远古状态不可达，兜底有边界）。选项 b（同 id 打捞）/ c（patch 迁移
+  表）留作后期 refinement。tamale 不动。
 
 ## 9. 首发形态（前置条件，已定）
 
@@ -361,7 +366,8 @@ GenServer 壳。
   若用 tick 定位，span 随 tempo 编辑漂移，破坏 §4 "tick warp 与 tempo
   无关"硬约定；v1 不做 time-stretch（DAW 的 musical/linear 之辩以
   "帧域固定"收尾）。导入时经 TempoMap 换算落帧，之后 tempo 编辑不影响。
-  音量自动化等干预 = 将来的帧域 Metric 锚 channel（接 v2 帧空间锚）。
+  音量自动化等干预拆两级：clip 级（Ordinal 锚 + clip 相对帧偏移）先行，
+  轨级（帧域 Metric 锚 channel）接 v2 帧空间锚（§5 第 4 条）。
   **帧单位**：事实单位 = 渲染引擎的帧网格（DiffSinger 为声码器 hop 帧，
   `hop_size`/`sample_rate` 出 vocoder config），单位声明归引擎/工程
   metadata；内核只见整数帧号、永不解释单位——§4 "帧/采样点 = 引擎层

@@ -143,6 +143,22 @@ Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间�
 - DiffSinger worker 的 stage 拆分（G2P/时长/Pitch/声学 暴露为独立 step）
   是引擎侧工程，v1 可先用进程内 mock step 走通边界。
 
+### 4.1 职责二分（2026-08-09 拍板）
+
+coconut 拥有**裁决**，引擎拥有**物化**——adapter 包是两者之间最薄的
+翻译层：
+
+| coconut 侧 | 引擎侧（adapter / 引擎插件） |
+|---|---|
+| 锚、transport、digest 否决、版本钉——干预的生命周期 | 图声明（节点/端口/边——只有引擎知道自己的 stage 形状） |
+| Resolve 中间形状 `%{port_ref => %{input}}` | step 实现（worker 或 symbiont 调用） |
+| channel 契约 + §6.4 精确化 spec | 每 channel 的端口映射 + Operate 合并模块（含对齐感知 merge） |
+| §3.2 聚合规则（per-note → per-stage，引擎无关） | tensor 物化、cache 声明、非确定 step 排除 |
+
+推论：合并语义模块全在引擎侧（对齐感知 pitch merge 是 DiffSinger 的
+事，不是 coconut 的事，也不是 adapter 通用层的事）；Phase 2 的
+worker/symbiont 路线选择同理，是引擎侧内部决策，coconut 无感。
+
 ## 5. 阶段计划
 
 - **Phase 0**：立 adapter 包骨架（sibling mix 项目 + path dep），挂 hex
@@ -151,7 +167,9 @@ Workspace ──Resolve.run_check──> %{port_ref => %{input}}  (内核中间�
   orchid 引擎。
 - **Phase 1**：最小端到端——toy 四节点管线（G2P/时长/Pitch/声学 均为
   mock step）走通 声明 → compile → 干预注入（验证 §3.2 聚合规则与
-  producer 短路）→ execute。ExUnit 覆盖。
+  producer 短路）→ execute。**考题必须含 merge-需要对齐用例**（§6.5：
+  mock 时长由"模型"预测、pitch 钉按帧合并）——只走短路 happy path
+  证明不了难点。ExUnit 覆盖。
 - **Phase 2**：DiffSinger 真实接入——worker 协议暴露 stage 边界，四节点
   换成真 step；pitch/duration/lyric 干预改经 oi override 注入；stage
   输出对 extract 开放读取（§6.3）；stratum 缓存挂上（声库/模型输出
@@ -266,13 +284,23 @@ oi 有两条干预通道，需要选型（或明确分工）：
 
 开放问题：
 
-- 全短路（现在的语义，producer 整步不执行）vs 部分合并（例如 pitch
-  只盖住若干音符，其余仍由模型产出）——后者需要 Operate 自定义合并，
-  还是由 §3.2 的聚合规则在内核侧先合成完整值再 `:override`？
+- 全短路 vs 部分合并（2026-08-09 锐化）：例如 pitch 只盖住若干音符、
+  其余仍由模型产出——**部分合并需要第三个输入**：note→帧对齐表，
+  由时长决定。时长若由模型预测，帧数要等 duration stage 跑完才知道，
+  于是无法在内核侧先合成完整值再 `:override`（assemble 时帧数不存在）；
+  `OrchidIntervention.Operate.merge/2` 只给两个输入（inner +
+  intervention），对齐表没地方进。破局二选一：干预载荷在 assemble
+  时携带对齐（仅当时长本身被钉死时可算），或合并移入 coconut 感知
+  的自定义 pitch step 内部（现 Python worker 的 pitch_in/retake 即此
+  形态；按 §4.1 归引擎侧）。注意 PoC 的 PitchOffset（+12 半音整体
+  平移）是不需要对齐的退化情形，不能拿它当"data: 通道够用"的证据。
 - 干预值的 `Orchid.Param` 类型包装在何处补全（tuple/结构化 payload
   必须显式包 Param 才保类型，equinox 在 assemble 时包）。
 - stratum 缓存键与干预的关系：被 override 短路的步其缓存自然失效，
   下游步的缓存键是否能把干预值哈希进去（`cache_keys:` 声明范围）。
+  配套纪律：**非确定 step 必须排除在 cacheable 外**——模型推理步内
+  含噪声采样（PoC 以 `System.system_time()` 播种）的步要么排除、
+  要么把 noise 改为注入的种子参数，否则缓存命中即撒谎。
 
 ## 7. 暂不做的
 
