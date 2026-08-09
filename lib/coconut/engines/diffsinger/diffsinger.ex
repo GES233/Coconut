@@ -1,5 +1,12 @@
 defmodule Coconut.Engines.DiffSinger do
   @moduledoc """
+  > **Legacy（2026-08-09 冻结）**：本引擎被 `coconut_oi`（orchid adapter
+  > 包）路线取代，冻结新功能、只修 bug。退役条件：coconut_oi 真图端到端
+  > 出声 + 同 workspace 双通路对拍通过（见
+  > `docs/design-2026-08-orchid-intervention.md` §5 Phase 2）。届时
+  > `worker.py` / `PortClient` / `DiffSinger.Encoder` **迁移**进 coconut_oi
+  > （引擎侧资产，不删），本模块与其测试移除。
+
   DiffSinger engine adapter over the `lib/coconut/engines/diffsinger/worker.py` stdio worker.
 
   The heavy lifting (ONNX inference) lives in the Python worker; this module
