@@ -19,95 +19,24 @@ defmodule Coconut.Pickle.Workspace do
   """
 
   alias Coconut.Edit.Workspace
-  alias Coconut.Pickle.{Registry, Track, TupleCodec}
+  alias Coconut.Pickle.{Registry, Struct, Track}
 
   @time_sig {:time_sig, [:bar, {:sig, [:num, :den]}]}
 
+  @fields [
+    :id,
+    :edit_version,
+    {:tracks, {:map_values, {:codec, Track, :with_ctx}}},
+    {:globals, {:map_values, {:codec, Track, :with_ctx}}},
+    :tpqn,
+    {:time_sigs, {:list, {:tuple, @time_sig}}}
+  ]
+
   @doc "把 `Coconut.Edit.Workspace` 摊平为仅含允许类型的 plain map。"
   @spec dump(Workspace.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
-  def dump(%Workspace{} = ws, %Registry{} = registry) do
-    with {:ok, tracks} <- dump_tracks(ws.tracks, registry),
-         {:ok, globals} <- dump_tracks(ws.globals, registry) do
-      {:ok,
-       %{
-         id: ws.id,
-         edit_version: ws.edit_version,
-         tracks: tracks,
-         globals: globals,
-         tpqn: ws.tpqn,
-         time_sigs: dump_time_sigs(ws.time_sigs)
-       }}
-    end
-  end
-
-  def dump(other, %Registry{}), do: {:error, {:invalid_workspace, other}}
+  def dump(ws, %Registry{} = registry), do: Struct.dump(Workspace, ws, @fields, registry)
 
   @doc "从 plain map 重建 `Coconut.Edit.Workspace`（经 `Workspace.new/1`，校验生效）。"
   @spec load(map(), Registry.t()) :: {:ok, Workspace.t()} | {:error, term()}
-  def load(%{} = data, %Registry{} = registry) do
-    with {:ok, tracks} <- load_tracks(Map.get(data, :tracks), registry),
-         {:ok, globals} <- load_globals(Map.get(data, :globals), registry),
-         {:ok, time_sigs} <- load_time_sigs(Map.get(data, :time_sigs)) do
-      %{
-        id: Map.get(data, :id),
-        edit_version: Map.get(data, :edit_version),
-        tracks: tracks,
-        globals: globals,
-        tpqn: Map.get(data, :tpqn),
-        time_sigs: time_sigs
-      }
-      |> Workspace.new()
-    end
-  end
-
-  def load(other, %Registry{}), do: {:error, {:invalid_workspace_dump, other}}
-
-  # ---- tracks ----
-
-  defp dump_tracks(tracks, registry) when is_map(tracks) do
-    Enum.reduce_while(tracks, {:ok, %{}}, fn {id, track}, {:ok, acc} ->
-      case Track.dump(track, registry) do
-        {:ok, dumped} -> {:cont, {:ok, Map.put(acc, id, dumped)}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
-  end
-
-  defp load_tracks(tracks, registry) when is_map(tracks) do
-    Enum.reduce_while(tracks, {:ok, %{}}, fn {id, dumped}, {:ok, acc} ->
-      case Track.load(dumped, registry) do
-        {:ok, track} -> {:cont, {:ok, Map.put(acc, id, track)}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
-  end
-
-  defp load_tracks(other, _registry), do: {:error, {:invalid_tracks_dump, other}}
-
-  defp load_globals(globals, registry) when is_map(globals),
-    do: load_tracks(globals, registry)
-
-  defp load_globals(other, _registry), do: {:error, {:invalid_globals_dump, other}}
-
-  # ---- time_sigs：[{bar, {num, den}}] ↔ [%{bar: _, sig: %{num: _, den: _}}, ...] ----
-
-  defp dump_time_sigs(time_sigs) do
-    Enum.map(time_sigs, &TupleCodec.dump(&1, @time_sig))
-  end
-
-  defp load_time_sigs(time_sigs) when is_list(time_sigs) do
-    time_sigs
-    |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
-      case TupleCodec.load(entry, @time_sig) do
-        {:ok, parsed} -> {:cont, {:ok, [parsed | acc]}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
-    |> then(fn
-      {:ok, acc} -> {:ok, Enum.reverse(acc)}
-      err -> err
-    end)
-  end
-
-  defp load_time_sigs(other), do: {:error, {:invalid_time_sigs_dump, other}}
+  def load(data, %Registry{} = registry), do: Struct.load(Workspace, data, @fields, registry)
 end

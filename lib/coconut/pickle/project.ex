@@ -18,61 +18,28 @@ defmodule Coconut.Pickle.Project do
     `Coconut.Pickle` 允许类型约定（对照 `Note.metadata` 契约），否则
     `{:error, {:non_conform_metadata, _}}`。
 
-  load 还原后经 `Coconut.Project.new/1` 重建（保留字段、voicebank 形状
-  校验生效）。
+  字段规格驱动（`Coconut.Pickle.Struct`）；load 还原后经
+  `Coconut.Project.new/1` 重建（保留字段、voicebank 形状校验生效）。
   """
 
-  alias Coconut.Pickle.{Registry, Workspace}
+  alias Coconut.Pickle.{Registry, Struct, Workspace}
   alias Coconut.Project
-  import Coconut.Pickle
+
+  @fields [
+    :id,
+    {:workspace, {:codec, Workspace, :with_ctx}},
+    :engine,
+    :settings,
+    :assets,
+    :voicebank,
+    {:metadata, {:conform, :non_conform_metadata}}
+  ]
 
   @doc "把 `Coconut.Project` 摊平为仅含允许类型的 plain map。"
   @spec dump(Project.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
-  def dump(%Project{} = project, %Registry{} = registry) do
-    with {:ok, workspace} <- Workspace.dump(project.workspace, registry),
-         :ok <- check_conform_metadata(project.metadata) do
-      {:ok,
-       %{
-         id: project.id,
-         workspace: workspace,
-         engine: project.engine,
-         settings: project.settings,
-         assets: project.assets,
-         voicebank: project.voicebank,
-         metadata: project.metadata
-       }}
-    end
-  end
-
-  def dump(other, %Registry{}), do: {:error, {:invalid_project, other}}
+  def dump(project, %Registry{} = registry), do: Struct.dump(Project, project, @fields, registry)
 
   @doc "从 plain map 重建 `Coconut.Project`（经 `Project.new/1`，校验生效）。"
   @spec load(map(), Registry.t()) :: {:ok, Project.t()} | {:error, term()}
-  def load(%{} = data, %Registry{} = registry) do
-    with {:ok, workspace} <- load_workspace(Map.get(data, :workspace), registry),
-         :ok <- check_conform_metadata(Map.get(data, :metadata)) do
-      %{
-        id: Map.get(data, :id),
-        workspace: workspace,
-        engine: Map.get(data, :engine),
-        settings: Map.get(data, :settings),
-        assets: Map.get(data, :assets),
-        voicebank: Map.get(data, :voicebank),
-        metadata: Map.get(data, :metadata)
-      }
-      |> Project.new()
-    end
-  end
-
-  def load(other, %Registry{}), do: {:error, {:invalid_project_dump, other}}
-
-  defp load_workspace(%{} = dumped, registry), do: Workspace.load(dumped, registry)
-
-  defp load_workspace(other, _registry), do: {:error, {:invalid_workspace_dump, other}}
-
-  # metadata 原样透传，但须满足 Coconut.Pickle 的允许类型约定
-  # （与 Track codec 对 dead reason 的处理同一做法）
-  defp check_conform_metadata(metadata) do
-    if pickle_conform?(metadata), do: :ok, else: {:error, {:non_conform_metadata, metadata}}
-  end
+  def load(data, %Registry{} = registry), do: Struct.load(Project, data, @fields, registry)
 end
