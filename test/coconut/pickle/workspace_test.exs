@@ -73,7 +73,12 @@ defmodule Coconut.Pickle.WorkspaceTest do
       assert dumped.id == ws.id
       assert dumped.edit_version == ws.edit_version
       assert dumped.tpqn == 480
-      assert dumped.time_sigs == [[1, [4, 4]], [5, [3, 4]]]
+
+      assert dumped.time_sigs == [
+               %{bar: 1, sig: %{num: 4, den: 4}},
+               %{bar: 5, sig: %{num: 3, den: 4}}
+             ]
+
       assert Map.keys(dumped.tracks) == ["vocal"]
       assert dumped.globals["global:tempo"].module == "tempo"
       assert dumped.tracks["vocal"].module == "vocal"
@@ -122,7 +127,7 @@ defmodule Coconut.Pickle.WorkspaceTest do
       ws = build_workspace()
       registry = Track.default_registry()
       {:ok, dumped} = PickleWorkspace.dump(ws, registry)
-      bad = %{dumped | time_sigs: [[1, [4, 4]], ["x", [3, 4]]]}
+      bad = %{dumped | time_sigs: [%{bar: 1, sig: %{num: 4, den: 4}}, ["x", [3, 4]]]}
 
       assert {:error, {:invalid_time_sig_dump, ["x", [3, 4]]}} =
                PickleWorkspace.load(bad, registry)
@@ -132,7 +137,7 @@ defmodule Coconut.Pickle.WorkspaceTest do
       ws = build_workspace()
       registry = Track.default_registry()
       {:ok, dumped} = PickleWorkspace.dump(ws, registry)
-      bad = %{dumped | time_sigs: [[2, [4, 4]]]}
+      bad = %{dumped | time_sigs: [%{bar: 2, sig: %{num: 4, den: 4}}]}
 
       assert {:error, {:invalid_time_sigs, [{2, {4, 4}}]}} = PickleWorkspace.load(bad, registry)
     end

@@ -12,8 +12,9 @@ defmodule Coconut.Pickle.Track do
   - `module` 经 `Coconut.Pickle.Registry` 换成逻辑名（load 反向还原）；
   - `space` 走 `Coconut.Pickle.Space` codec；
   - `spans_by_version` 的 version 整数键直出（约定允许的 map 键类型），
-    span `{start, end}` → 二元 list `[start, end]`，端点按
-    `Coconut.Edit.Track.span()` 约定为整数直出；
+    span `{start, stop}` 经 `Coconut.Pickle.TupleCodec` 转为
+    `%{start: _, stop: _}`，端点按 `Coconut.Edit.Track.span()` 约定为
+    整数直出；
   - `elements_by_id` 按能力委托：track module 具备 `:element_codec`
     能力（`dump_element/1` + `load_element/1` 成对导出，统一经
     `Coconut.Edit.Track.supports?/2` 探测）则逐元素委托；不具备且元素表
@@ -33,8 +34,10 @@ defmodule Coconut.Pickle.Track do
   """
 
   alias Coconut.Edit.Track
-  alias Coconut.Pickle.{Patch, Registry, Space}
+  alias Coconut.Pickle.{Patch, Registry, Space, TupleCodec}
   import Coconut.Pickle
+
+  @span {:span, [:start, :stop]}
 
   @doc ~s(自带轨型的默认 registry：`"vocal"` / `"tempo"` / `"audio"`。)
   @spec default_registry() :: Registry.t()
@@ -112,7 +115,7 @@ defmodule Coconut.Pickle.Track do
 
   defp dump_spans(spans_by_version) do
     Map.new(spans_by_version, fn {version, spans} ->
-      {version, Map.new(spans, fn {id, {start, stop}} -> {id, [start, stop]} end)}
+      {version, Map.new(spans, fn {id, span} -> {id, TupleCodec.dump(span, @span)} end)}
     end)
   end
 
@@ -128,10 +131,10 @@ defmodule Coconut.Pickle.Track do
   defp load_spans(other), do: {:error, {:invalid_spans_dump, other}}
 
   defp load_span_table(version, spans) when is_integer(version) and is_map(spans) do
-    Enum.reduce_while(spans, {:ok, %{}}, fn {id, span}, {:ok, acc} ->
-      case span do
-        [start, stop] -> {:cont, {:ok, Map.put(acc, id, {start, stop})}}
-        other -> {:halt, {:error, {:invalid_span_dump, other}}}
+    Enum.reduce_while(spans, {:ok, %{}}, fn {id, dumped}, {:ok, acc} ->
+      case TupleCodec.load(dumped, @span) do
+        {:ok, span} -> {:cont, {:ok, Map.put(acc, id, span)}}
+        {:error, _} = err -> {:halt, err}
       end
     end)
   end

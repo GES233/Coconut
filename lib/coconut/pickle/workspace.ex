@@ -10,15 +10,18 @@ defmodule Coconut.Pickle.Workspace do
   - `id` / `edit_version` / `tpqn` 原样直出；
   - `tracks` / `globals` 两个 map 的键（track id）直出，每个 value 走
     `Coconut.Pickle.Track` codec；
-  - `time_sigs` 是 `[{bar, {num, den}}]`，dump 为
-    `[[bar, [num, den]], ...]`，load 反向还原为 tuple。
+  - `time_sigs` 是 `[{bar, {num, den}}]`，经 `Coconut.Pickle.TupleCodec`
+    转为语义 map 列表 `[%{bar: _, sig: %{num: _, den: _}}, ...]`，
+    load 反向解析回 tuple。
 
   load 还原后经 `Coconut.Edit.Workspace.new/1` 重建——`validate/1` 自然生效：
   全局轨命名空间、tempo 槽位能力、time_sigs 合法性都会被复检。
   """
 
   alias Coconut.Edit.Workspace
-  alias Coconut.Pickle.{Registry, Track}
+  alias Coconut.Pickle.{Registry, Track, TupleCodec}
+
+  @time_sig {:time_sig, [:bar, {:sig, [:num, :den]}]}
 
   @doc "把 `Coconut.Edit.Workspace` 摊平为仅含允许类型的 plain map。"
   @spec dump(Workspace.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
@@ -86,21 +89,18 @@ defmodule Coconut.Pickle.Workspace do
 
   defp load_globals(other, _registry), do: {:error, {:invalid_globals_dump, other}}
 
-  # ---- time_sigs：[{bar, {num, den}}] ↔ [[bar, [num, den]], ...] ----
+  # ---- time_sigs：[{bar, {num, den}}] ↔ [%{bar: _, sig: %{num: _, den: _}}, ...] ----
 
   defp dump_time_sigs(time_sigs) do
-    Enum.map(time_sigs, fn {bar, {num, den}} -> [bar, [num, den]] end)
+    Enum.map(time_sigs, &TupleCodec.dump(&1, @time_sig))
   end
 
   defp load_time_sigs(time_sigs) when is_list(time_sigs) do
-    Enum.reduce_while(time_sigs, {:ok, []}, fn entry, {:ok, acc} ->
-      case entry do
-        [bar, [num, den]]
-        when is_integer(bar) and is_integer(num) and is_integer(den) ->
-          {:cont, {:ok, [{bar, {num, den}} | acc]}}
-
-        other ->
-          {:halt, {:error, {:invalid_time_sig_dump, other}}}
+    time_sigs
+    |> Enum.reduce_while({:ok, []}, fn entry, {:ok, acc} ->
+      case TupleCodec.load(entry, @time_sig) do
+        {:ok, parsed} -> {:cont, {:ok, [parsed | acc]}}
+        {:error, _} = err -> {:halt, err}
       end
     end)
     |> then(fn
