@@ -21,6 +21,7 @@ defmodule Coconut.Edit.Operation do
   alias Coconut.Edit.Operations.{
     DeleteNote,
     DragNote,
+    DragNoteAcrossTracks,
     EditNote,
     InsertNote,
     MergeNotes,
@@ -66,6 +67,13 @@ defmodule Coconut.Edit.Operation do
   | merge_notes | `Edit.Operations.MergeNotes`        | Merge                 | into→merged, rest→del|
   | edit_note   | `Edit.Operations.EditNote`          | — (no op)             | id → re-cast element |
   | trim_note   | `Edit.Operations.TrimNote`          | Retime                | id → new_span        |
+  | drag_note_across_tracks | `Edit.Operations.DragNoteAcrossTracks` | 源轨 Delete + 目标轨 Insert（双轨同批） | 源 id → :delete,新 id → span |
+
+  多数手势是单轨的：`lower/3` 产出一组 ops + side_changes，经
+  `lower_batches/3` 包装为单元素批次列表。跨轨手势（目前仅
+  `DragNoteAcrossTracks`）不实现 `lower/3`，改为实现可选回调
+  `lower_batches/3`，直接产出多条按轨批次（design doc §8 跨 Space
+  重挂：新 id + patch 不迁移）。
 
   `old_span` in `DragNote`/`TrimNote` is the span captured by the caller at
   gesture-start; Retime needs both ends to keep the op log self-contained
@@ -86,6 +94,7 @@ defmodule Coconut.Edit.Operation do
           | MergeNotes.t()
           | EditNote.t()
           | TrimNote.t()
+          | DragNoteAcrossTracks.t()
           | struct()
 
   # ---- Side changes ----
@@ -114,6 +123,12 @@ defmodule Coconut.Edit.Operation do
   @callback lower(request(), Workspace.t(), Config.t()) ::
               {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
 
+  @callback lower_batches(request(), Workspace.t(), Config.t()) ::
+              {:ok, [{track_id(), [Tamale.Op.t()], side_changes()}]} | {:error, term()}
+
+  # 单轨手势实现 lower/3；跨轨手势实现 lower_batches/3（二者必居其一）
+  @optional_callbacks lower: 3, lower_batches: 3
+
   # ---- Public API ----
 
   @doc """
@@ -133,8 +148,38 @@ defmodule Coconut.Edit.Operation do
   for Split/Merge geometry — both are identity-shaped ops with no warp, so
   this never feeds warp construction. `Retime` stays self-contained: all
   its span data comes from the request itself.
+
+  Multi-track requests do not implement `lower/3`; calling this on one
+  returns `{:error, {:multi_track_request, _}}` — use `lower_batches/3`.
   """
   @spec lower(request(), Workspace.t(), Config.t()) ::
           {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}
-  def lower(%mod{} = req, ws, cfg), do: mod.lower(req, ws, cfg)
+  def lower(%mod{} = req, ws, cfg) do
+    if function_exported?(mod, :lower, 3) do
+      mod.lower(req, ws, cfg)
+    else
+      {:error, {:multi_track_request, mod}}
+    end
+  end
+
+  @doc """
+  Lower a *validated* request into per-track batches.
+
+  Single-track gestures wrap `lower/3` into a one-element
+  `[{track_id, ops, side_changes}]`; multi-track gestures implement the
+  optional `lower_batches/3` callback and produce one batch per touched
+  track, in application order. This is the lowering entry the write path
+  (`Coconut.Edit.History.apply/4`) uses.
+  """
+  @spec lower_batches(request(), Workspace.t(), Config.t()) ::
+          {:ok, [{track_id(), [Tamale.Op.t()], side_changes()}]} | {:error, term()}
+  def lower_batches(%mod{} = req, ws, cfg) do
+    if function_exported?(mod, :lower_batches, 3) do
+      mod.lower_batches(req, ws, cfg)
+    else
+      with {:ok, ops, changes} <- lower(req, ws, cfg) do
+        {:ok, [{req.track_id, ops, changes}]}
+      end
+    end
+  end
 end

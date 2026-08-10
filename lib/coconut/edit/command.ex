@@ -11,9 +11,9 @@ defmodule Coconut.Edit.Command do
 
   `payload` shape per `op`:
 
-  - `:batch` — `{track_id, ops, side_changes}` (the output of
-    `Coconut.Edit.Operation.lower/3`; normally produced via
-    `Coconut.Edit.History.apply/4`, not built by hand);
+  - `:batch` — `[{track_id, ops, side_changes}]` per-track batches (the
+    output of `Coconut.Edit.Operation.lower_batches/3`; normally produced
+    via `Coconut.Edit.History.apply/4`, not built by hand);
   - `:attach_patches` — `[Patch.t()]`; execution mints patch ids, so the
     resolved command can differ from the input one;
   - `:add_track` — a fully constructed `Coconut.Edit.Track.t()`;
@@ -52,10 +52,14 @@ defmodule Coconut.Edit.Command do
 
   # ---- Constructors ----
 
-  @doc "An op batch lowered from an edit gesture (`Operation.lower/3` output)."
-  @spec batch(Track.track_id(), [Tamale.Op.t()], Operation.side_changes(), String.t()) :: t()
-  def batch(track_id, ops, side_changes, label),
-    do: %__MODULE__{op: :batch, payload: {track_id, ops, side_changes}, label: label}
+  @doc """
+  Per-track op batches lowered from an edit gesture
+  (`Coconut.Edit.Operation.lower_batches/3` output) — a one-element list
+  for single-track gestures.
+  """
+  @spec batch([{Track.track_id(), [Tamale.Op.t()], Operation.side_changes()}], String.t()) :: t()
+  def batch(batches, label) when is_list(batches),
+    do: %__MODULE__{op: :batch, payload: batches, label: label}
 
   @doc "Mount a list of patches; ids are minted at execution (see `execute/3`)."
   @spec attach_patches([Patch.t()]) :: t()
@@ -114,9 +118,9 @@ defmodule Coconut.Edit.Command do
           {:ok, Workspace.t(), t()} | {:error, term()}
   def execute(ws, command, opts \\ [])
 
-  def execute(ws, %__MODULE__{op: :batch, payload: {track_id, ops, changes}} = command, opts) do
+  def execute(ws, %__MODULE__{op: :batch, payload: batches} = command, opts) do
     expected = Keyword.get(opts, :expected_version, ws.edit_version)
-    run(command, fn -> Workspace.apply_batch(ws, track_id, expected, ops, changes) end)
+    run(command, fn -> Workspace.apply_batches(ws, expected, batches) end)
   end
 
   def execute(ws, %__MODULE__{op: :attach_patches, payload: patches} = command, _opts) do

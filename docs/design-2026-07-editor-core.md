@@ -209,12 +209,16 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   init/update/final。用途排序：channel digest 投影 > voicebank digest
   实算（v1 只存不算）> 工程级 digest。落点 tamale 侧为主。等投影规模
   真的疼了再做。
-- **跨 Space 重挂（跨轨拖动）**：方案已拍板（2026-08-09），v2 取选项
-  a——新 id + patch 不迁移（id 是 Space 级身份：沿用同 id 则 A 轨钉着
-  它的 patch 全 terminal；换新 id 则原锚全判死）。手势 = A 轨 Delete +
-  B 轨 Insert 的双轨批次，经多轨原子入口 `apply_batches` 提交（单
-  version 检查 + 两条 log），**记一条 History 边**（§12.4——否则一次
-  拖动两步 undo）。判死 patch 的恢复：坟场为主（payload 完整，策略层
+- **跨 Space 重挂（跨轨拖动）**：已落地（2026-08-10，选项 a）——
+  新 id + patch 不迁移（id 是 Space 级身份：沿用同 id 则 A 轨钉着
+  它的 patch 全 terminal；换新 id 则原锚全判死）。手势 =
+  `Operations.DragNoteAcrossTracks`：A 轨 Delete + B 轨 Insert 的
+  双轨批次（可选回调 `Operation.lower_batches/3` 产出），经多轨
+  原子入口 `Workspace.apply_batches/3` 提交（单 version 检查 +
+  两条 log + 单次 `edit_version` bump），**记一条 History 边**
+  （§12.4——否则一次拖动两步 undo）。目标轨元素载荷由请求的
+  `attrs` 显式给出（目标 module 的 `cast_element/3` 把关，允许跨
+  轨型拖动）。判死 patch 的恢复：坟场为主（payload 完整，策略层
   重挂/手动恢复），History 漫游兜底（`state_at` 复制粘贴；squash 后
   远古状态不可达，兜底有边界）。选项 b（同 id 打捞）/ c（patch 迁移
   表）留作后期 refinement。tamale 不动。
@@ -262,7 +266,7 @@ v2 遗留：
 - 帧空间锚 + tempo 对组合（§5 第 4 条）；
 - orchid/oi 接入——adapter 独立成包，见 design-2026-08-orchid-intervention.md
   §3.3/§4 与 Phase 计划；
-- 跨轨拖动（§8 跨 Space 重挂）；diff 适配器（§8，随文件导入排期）。
+- diff 适配器（§8，随文件导入排期；跨轨拖动已于 2026-08-10 落地，§8）。
 
 ## 11. 已知架构问题与演进方向
 
@@ -498,7 +502,8 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
    跑确定性 apply，不再 lower/mint/构造——`attach_patches` 的随机
    id minting 因此对重放无害。
 2. **任何改状态的函数，要么是一条边，要么明确出局**：
-   - 入史：`:batch`（六手势及未来一切批次，含跨轨，经
+   - 入史：`:batch`（九手势及未来一切批次——单轨与跨轨同构，载荷
+     为按轨批次列表 `[{track_id, ops, side_changes}]`，经
      `History.apply/4` lower）与 `:attach_patches`（不 bump
      `edit_version`）。
    - **轨道结构写**入史为两种边：`:add_track`（载荷存完整
@@ -549,7 +554,7 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
   即 `{:stale_pin, _}`，§12.2 的壳校验）；`apply/4` 另收 `:config`，
   `run/3` 另收 `:expected_version`。
 - `Coconut.Edit.Command`：边记录结构体（`op / payload / label`）+
-  各 op 构造器（`batch/4`、`attach_patches/1`、`add_track/1`（mint
+  各 op 构造器（`batch/2`、`attach_patches/1`、`add_track/1`（mint
   id + 构造 Track）、`remove_track/1`、`rename_track/2`、
   `set_time_sigs/1`、`consume_dead/0`）+ 唯一执行入口 `execute/3`
   （返回解析后 command；live 与 replay 共用，纪律 3）。新增写操作

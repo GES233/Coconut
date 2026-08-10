@@ -26,8 +26,8 @@ defmodule Coconut.Edit.Operations.CoreComponents do
   # ---- Track / element lookup ----
 
   @doc """
-  Fetches a track by id (`Coconut.Edit.Workspace.fetch_track/2`; the tempo
-  track's id routes to its dedicated field).
+  Fetches a track by id (`Coconut.Edit.Workspace.fetch_track/2`;
+  `"global:"`-prefixed ids route to the workspace's `globals`).
   """
   @spec track_context(Workspace.t(), Track.track_id()) ::
           {:ok, Track.t()} | {:error, {:unknown_track, Track.track_id()}}

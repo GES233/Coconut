@@ -204,20 +204,41 @@ defmodule Coconut.Edit.Workspace do
   # ---- Apply ----
 
   @doc """
-  Apply an op batch to a track, syncing side tables.
+  Apply op batches to one or more tracks atomically, syncing side tables.
 
-  `expected_version` is the optimistic-lock check: the caller must pass
-  the workspace version it read before lowering. If the workspace has
-  moved on, `{:error, :version_conflict}` is returned.
+  `batches` is a list of `{track_id, ops, side_changes}` — the output of
+  `Coconut.Edit.Operation.lower_batches/3` (single-track gestures yield a
+  one-element list). `expected_version` is the optimistic-lock check: the
+  caller must pass the workspace version it read before lowering. If the
+  workspace has moved on, `{:error, :version_conflict}` is returned.
 
-  `ops` and `side_changes` are the output of `Coconut.Edit.Operation.lower/3`.
+  The whole list commits as one gesture: a single version check, one
+  `edit_version` bump, and either every batch applies or none does (a
+  failing batch discards the accumulator — these are pure values). Each
+  touched track's patches are then transported along its fresh log entry
+  and persisted (write-time transport; design doc §2 step 4): survivors
+  keep marching with up-to-date `at_version`, the dead (`{:undefined, _}`
+  / `{:clip, _, _}` results) move to the track's `dead_patches`.
+  `patches_add` from a batch are minted at the new head and join
+  afterwards, untransported.
+  """
+  @spec apply_batches(
+          t(),
+          expected_version :: Tamale.version(),
+          [{Track.track_id(), [Tamale.Op.t()], Coconut.Edit.Operation.side_changes()}]
+        ) :: {:ok, t()} | {:error, term()}
+  def apply_batches(_ws, _expected_version, []), do: {:error, :empty_batches}
 
-  After the batch commits, the track's patches are transported along the
-  fresh log entry and persisted (write-time transport; design doc §2 step
-  4): survivors keep marching with up-to-date `at_version`, the dead
-  (`{:undefined, _}` / `{:clip, _, _}` results) move to the track's
-  `dead_patches`. `patches_add` from the same batch are minted at the
-  new head and join afterwards, untransported.
+  def apply_batches(ws, expected_version, batches) do
+    with :ok <- check_version(ws, expected_version),
+         {:ok, ws} <- apply_track_batches(ws, batches) do
+      {:ok, transport_touched_tracks(%{ws | edit_version: ws.edit_version + 1}, batches)}
+    end
+  end
+
+  @doc """
+  Apply an op batch to a single track. Convenience delegate of
+  `apply_batches/3`; see its documentation.
   """
   @spec apply_batch(
           t(),
@@ -226,17 +247,33 @@ defmodule Coconut.Edit.Workspace do
           [Tamale.Op.t()],
           Coconut.Edit.Operation.side_changes()
         ) :: {:ok, t()} | {:error, term()}
-  def apply_batch(ws, track_id, expected_version, ops, side_changes) do
-    with :ok <- check_version(ws, expected_version),
-         {:ok, track} <- fetch_track(ws, track_id),
-         {:ok, space} <- Tamale.Space.apply_batch(track.space, ops) do
-      track = Track.sync(%{track | space: space}, space.version, side_changes)
+  def apply_batch(ws, track_id, expected_version, ops, side_changes),
+    do: apply_batches(ws, expected_version, [{track_id, ops, side_changes}])
 
-      ws = %{ws | edit_version: ws.edit_version + 1}
-      ws = put_track(ws, track)
+  # Each batch applies to its own track's Space and syncs that track's
+  # side tables; batches on the same track apply sequentially in order.
+  defp apply_track_batches(ws, batches) do
+    Enum.reduce_while(batches, {:ok, ws}, fn {track_id, ops, side_changes}, {:ok, ws} ->
+      with {:ok, track} <- fetch_track(ws, track_id),
+           {:ok, space} <- Tamale.Space.apply_batch(track.space, ops) do
+        {:cont,
+         {:ok, put_track(ws, Track.sync(%{track | space: space}, space.version, side_changes))}}
+      else
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+  end
 
-      {:ok, transport_track_patches(ws, track_id, side_changes.patches_add)}
-    end
+  # Write-time transport for every touched track, in first-touch order;
+  # a track hit by several batches gets the concatenated patches_add.
+  defp transport_touched_tracks(ws, batches) do
+    batches
+    |> Enum.reduce(%{}, fn {track_id, _ops, changes}, acc ->
+      Map.update(acc, track_id, changes.patches_add, &(&1 ++ changes.patches_add))
+    end)
+    |> Enum.reduce(ws, fn {track_id, patches_add}, ws ->
+      transport_track_patches(ws, track_id, patches_add)
+    end)
   end
 
   # ---- Transport ----

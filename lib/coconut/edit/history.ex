@@ -117,11 +117,12 @@ defmodule Coconut.Edit.History do
   # ---- Write entries (each records one edge; §12.4) ----
 
   @doc """
-  The composed gesture write path (§12.3): validate → lower → execute the
-  batch command → record the edge → update present.
+  The composed gesture write path (§12.3): validate → lower to per-track
+  batches → execute the batch command → record the edge → update present.
+  Multi-track gestures (e.g. `DragNoteAcrossTracks`) commit as one edge.
 
   `expected_version` is the aggregate optimistic lock (`:current` or an
-  integer; see `Workspace.apply_batch/5`). Options: `:pin`, `:config`
+  integer; see `Workspace.apply_batches/3`). Options: `:pin`, `:config`
   (`Coconut.Edit.Operation.Config`).
   """
   @spec apply(t(), Operation.request(), :current | Tamale.version(), keyword()) ::
@@ -129,12 +130,16 @@ defmodule Coconut.Edit.History do
   def apply(hist, %_mod{} = req, expected_version \\ :current, opts \\ []) do
     with :ok <- check_pin(hist, opts),
          :ok <- Operation.validate(req, hist.present),
-         {:ok, ops, changes} <-
-           Operation.lower(req, hist.present, Keyword.get(opts, :config, %Operation.Config{})),
+         {:ok, batches} <-
+           Operation.lower_batches(
+             req,
+             hist.present,
+             Keyword.get(opts, :config, %Operation.Config{})
+           ),
          {:ok, new_ws, command} <-
            Command.execute(
              hist.present,
-             Command.batch(req.track_id, ops, changes, label_of(req)),
+             Command.batch(batches, label_of(req)),
              expected_version: resolve_expected(expected_version, hist)
            ) do
       {:ok, commit(hist, command, new_ws)}
