@@ -73,6 +73,13 @@ defmodule Coconut.Score.Note do
     end
   end
 
+  # Key-system note (settled 2026-08): the numeric cast is hardwired to
+  # TwelveET, and the struct clause passes ANY struct through unchecked —
+  # both deliberate placeholders until a second `Coconut.Score.Key`
+  # implementation lands. Revisit then rather than building on the current
+  # shape (the Key protocol itself may change with the new arrival):
+  # tighten the passthrough to Key.Inner-implementing structs, and take
+  # the tuning module from the track/project context.
   defp cast_key(nil), do: {:ok, nil}
   defp cast_key(%_{} = key), do: {:ok, key}
   defp cast_key(n) when is_number(n), do: Key.TwelveET.from_midi(n, nil)
