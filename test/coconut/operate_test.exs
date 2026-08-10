@@ -721,11 +721,11 @@ defmodule Coconut.Edit.OperationTest do
           patch: %Tamale.Patch{base_digest: "b", payload: %{}}
         })
 
-      {:ok, ws} = Workspace.attach_patch(ws, cp1)
+      {:ok, ws, _minted} = Workspace.attach_patch(ws, cp1)
       assert [%{patch: %Tamale.Patch{base_digest: "a"}, id: id1}] = ws.tracks[@track].patches
       assert is_binary(id1)
 
-      {:ok, ws} = Workspace.attach_patches(ws, [cp2])
+      {:ok, ws, _minted} = Workspace.attach_patches(ws, [cp2])
 
       assert [
                %{patch: %Tamale.Patch{base_digest: "a"}},
@@ -1372,7 +1372,7 @@ defmodule Coconut.Edit.OperationTest do
           patch: tp
         })
 
-      {:ok, ws} = Workspace.attach_patches(ws, [p1, p2])
+      {:ok, ws, _minted} = Workspace.attach_patches(ws, [p1, p2])
 
       assert [%{id: minted}, %{id: "Patch_explicit"}] = ws.tracks[@track].patches
       assert is_binary(minted)

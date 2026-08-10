@@ -61,7 +61,7 @@ defmodule Coconut.ResolveTest do
         patch: tp
       })
 
-    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
     ws
   end
 
@@ -172,7 +172,7 @@ defmodule Coconut.ResolveTest do
         patch: %Tamale.Patch{base_digest: "whatever", payload: %{}}
       })
 
-    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: false, entries: [entry]}} = Resolve.run_check(ws, channels())
     assert entry.kind == :unknown_channel
@@ -193,7 +193,7 @@ defmodule Coconut.ResolveTest do
         patch: tp
       })
 
-    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
              Resolve.run_check(ws, %{pitch: Coconut.Render.Channels.Pitch})
@@ -215,7 +215,7 @@ defmodule Coconut.ResolveTest do
         patch: tp
       })
 
-    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
 
     assert {:ok, %{passed: true, interventions: interventions}} =
              Resolve.run_check(ws, %{duration: Coconut.Render.Channels.Duration})

@@ -168,7 +168,7 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   （`Workspace.time_sig_map/1`，按 `ws.tpqn`）。散拍子 `:san` 暂不考虑。
   但变拍是乐谱手势、须可撤销：`time_sigs` 的写入口是
   `Workspace.set_time_sigs/2`（`update/2` 拒收），入史为
-  `{:set_time_sigs, events}` 轻量边（§12.4），边存全量新值。`tpqn`
+  `set_time_sigs` 命令边（§12.4），边存全量新值。`tpqn`
   仍随 `update/2`，不入史。
 
 ## 7. Op 覆盖评估
@@ -352,7 +352,7 @@ GenServer 壳。
   （`nil`）；id 不可变，路由/锚/patch/版本钉永远只用 id。与
   `Pickle.Registry` 的轨型逻辑名是两个命名空间（实例显示名 vs 存档
   格式契约），判型永远按能力、绝不按 name。rename 是 mutation，入史为
-  `{:rename_track, track_id, name}` 边（§12.4）。Pickle：`name` 作可选
+  `rename_track` 命令边（§12.4）。Pickle：`name` 作可选
   字段进 dump，旧档缺失 load 为 `nil`——首个可选字段先例：格式兼容走
   "容忍缺失"档，而非版本号。
 - behaviour 回调（7 个）：`coord_domain/0`、`cast_element/3`、
@@ -488,18 +488,22 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
 
 边上挂 Op 把 undo 从数据保留技巧变成复制协议，三条硬纪律：
 
-1. **边上存解析后的记录，不是原始请求**：apply_batch 系 = lowered
-   `ops + side_changes`；`attach_patch` 系 = **mint 后的 patch**
-   （id 落定）；`add_track` 系 = **构造完成的 Track**（id 落定）；
-   轻量字段边 = **全量新值**（rename / set_time_sigs）。replay 只跑
-   确定性 apply，不再 lower/mint/构造——`attach_patch` 的随机 id
-   minting 因此对重放无害。
+1. **边上存解析后的记录，不是原始请求**：每条边是一个
+   `Coconut.Edit.Command` 结构体（`op + payload + label`），载荷按
+   op 解析落定——apply_batch 系 = lowered `ops + side_changes`；
+   `attach_patches` = **mint 后的 patch**（id 落定）；`add_track` =
+   **构造完成的 Track**（id 落定）；轻量字段边 = **全量新值**
+   （rename / set_time_sigs）。解析在 `Command.execute/3` 内完成并
+   以 resolved command 返回，History 挂树的是解析后形态；replay 只
+   跑确定性 apply，不再 lower/mint/构造——`attach_patches` 的随机
+   id minting 因此对重放无害。
 2. **任何改状态的函数，要么是一条边，要么明确出局**：
-   - 入史：`apply_batch`（六手势及未来一切批次，含跨轨）；
-     `attach_patch` / `attach_patches`（不 bump `edit_version`）。
-   - **轨道结构写**入史为两种边：`{:add_track, track}`（存完整
+   - 入史：`:batch`（六手势及未来一切批次，含跨轨，经
+     `History.apply/4` lower）与 `:attach_patches`（不 bump
+     `edit_version`）。
+   - **轨道结构写**入史为两种边：`:add_track`（载荷存完整
      Track；新建轨 = `{id, module}` + 空侧表，极小）与
-     `{:remove_track, track_id}`。前向 replay = tracks map 的
+     `:remove_track`（载荷为 track_id）。前向 replay = tracks map 的
      put/delete；**边里不存尸体**——被删轨道的全部内容由该边
      之前的边重建（undo 过删除点 = cursor 回到删除前，轨道自然
      在）；squash 后早期状态本就不可达，一致。tempo 轨是 `globals`
@@ -508,16 +512,16 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
      恢复其 elements / patches / 坟场（DAW 惯例，无重挂语义）。
      增删轨 bump `edit_version`（渲染产物随之变；规则表述：乐谱
      结构变化 bump，干预挂载不 bump）。
-   - **轻量字段边**：`{:rename_track, track_id, name}` 与
-     `{:set_time_sigs, events}`——无 Space 机器，边存全量新值，
-     replay = 调对应纯函数。轨道名是 annotation（§11.8，rename
-     可撤销是 DAW 惯例），中途变拍是乐谱手势（§6，不可撤销是真实
-     的洞）：二者入史。
+   - **轻量字段边**：`:rename_track` 与 `:set_time_sigs`——无
+     Space 机器，边存全量新值，replay = 调对应纯函数。轨道名是
+     annotation（§11.8，rename 可撤销是 DAW 惯例），中途变拍是
+     乐谱手势（§6，不可撤销是真实的洞）：二者入史。
    - `take_dead_patches` 清坟场是 mutation（现状名为读取性操作）
-     → 记 `consume_dead` 边（带取走的 patch id 列表）。配套：策略
-     层消费坟场按 `{patch.id, anchor.at_version}` 幂等去重——同一
-     patch 重挂后再死 at_version 不同，单按 id 去重会吞掉第二次
-     死亡。
+     → 记 `:consume_dead` 边（解析后载荷 = 取走的
+     `{patch, reason}` 元组；replay 不读载荷，重放实况 drain）。
+     配套：策略层消费坟场按 `{patch.id, anchor.at_version}` 幂等
+     去重——同一 patch 重挂后再死 at_version 不同，单按 id 去重
+     会吞掉第二次死亡。
    - `Workspace.update/2`（收缩后只剩 `tpqn` 等工程级字段——
      `time_sigs` 已切出，见上）与 Project 层元数据：v1 声明出局——
      不受逐比特保证、不单独可撤（效果落在后续检查点里）；元数据
@@ -525,30 +529,39 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
    - 连带：`tracks` 是 Map、无序（`all_tracks` 明言 fold 序非语义）。
      将来 UI 需要轨道排序时，reorder 是新 mutation，同样必须是一条
      边——先记在这里，免得再漏。
-3. **重放与实况共用同一 apply**：replay 直接调
-   `Workspace.apply_batch` / `attach_patch` / `add_track` /
-   `remove_track` / `rename_track` / `set_time_sigs`，禁止 replay
-   专用分支（第二种实现 = 发散源）。
+3. **重放与实况共用同一 apply**：replay 与实况写都调
+   `Command.execute/3` 这唯一分发表（内部分派到
+   `Workspace.apply_batch` / `attach_patches` / `add_track` /
+   `remove_track` / `rename_track` / `set_time_sigs` 等纯函数），
+   禁止 replay 专用分支（第二种实现 = 发散源）。
 
 ### 12.5 API 形状
 
 - `Coconut.Edit.History`：`new/2`（包装现有 ws；opts 为
-  `checkpoint_interval` / `max_edges` knob）、`apply/4`（写组合层，
-  见 §12.3）、`apply_patch/3` / `apply_patches/3`、`add_track/3` /
-  `remove_track/3`（记结构边）、`rename_track/4` / `set_time_sigs/3`
-  （记轻量字段边）、`take_dead_patches/1`（记 `consume_dead` 边）、
+  `checkpoint_interval` / `max_edges` knob）、`apply/4`（手势写
+  组合层：validate → lower → 执行 batch 命令，见 §12.3）、`run/3`
+  （命令写路径：执行任意 `Coconut.Edit.Command`，记解析后形态）、
+  `take_dead_patches/1`（记 `:consume_dead` 边，空 drain 不记边）、
   `undo/1` / `redo/1` → `{:ok, hist}` | `{:error, :nothing_to_undo |
   :nothing_to_redo}`、`current/1`（present + cursor node id，供壳
   构造 Request 时钉版本）、`state_at/2`（任意存活节点的物化状态，
   树 UI/分支枚举的地基）。写入口 opts 收 `:pin`（不等于当前 cursor
-  即 `{:stale_pin, _}`，§12.2 的壳校验）；`apply/4` 另收 `:config`。
+  即 `{:stale_pin, _}`，§12.2 的壳校验）；`apply/4` 另收 `:config`，
+  `run/3` 另收 `:expected_version`。
+- `Coconut.Edit.Command`：边记录结构体（`op / payload / label`）+
+  各 op 构造器（`batch/4`、`attach_patches/1`、`add_track/1`（mint
+  id + 构造 Track）、`remove_track/1`、`rename_track/2`、
+  `set_time_sigs/1`、`consume_dead/0`）+ 唯一执行入口 `execute/3`
+  （返回解析后 command；live 与 replay 共用，纪律 3）。新增写操作
+  = 新 op 子句 + 构造器，History 零改动。
 - 分支结构 API（子分支枚举等）v1 不暴露——树 UI 是壳层议题，
   届时再加。
-- `Workspace` 的 `add_track/2` / `remove_track/2` / `rename_track/3` /
-  `set_time_sigs/2` 是与 replay 共用的纯函数写入口（纪律 3）；其余
-  纯函数 API（`validate` / `lower` / `apply_batch` / `attach_patch`）
-  不动——History 是组合层，测试与将来的壳直接用；Workspace 保持
-  纯值、零例外字段，Pickle 字段列表不动。
+- `Workspace` 的 `apply_batch/5` / `attach_patch/2`（返回 mint 后
+  patch）/ `add_track/2` / `remove_track/2` / `rename_track/3` /
+  `set_time_sigs/2` 是纯函数写原语，`Command.execute/3` 分派其上；
+  其余纯函数 API（`validate` / `lower`）不动——History 是组合层，
+  测试与将来的壳直接用；Workspace 保持纯值、零例外字段，Pickle
+  字段列表不动。
 - 边数上限、K 为模块常量；knob 化留壳层。
 
 ### 12.6 测试点

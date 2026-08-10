@@ -377,7 +377,7 @@ defmodule Coconut.Edit.Workspace do
   end
 
   @doc """
-  Appends a patch to its track.
+  Appends a patch to its track, returning the post-mint patch.
 
   Mount anchors at the track's current head version; every later
   `apply_batch/5` transports them forward. Construction-time legality
@@ -388,14 +388,18 @@ defmodule Coconut.Edit.Workspace do
   is rejected as well (`{:error, {:anchor_coord_mismatch, _, _}}`, design
   doc §5): it would otherwise mount fine and only die as
   `:warp_provider_required` at transport time.
+
+  Returns `{:ok, workspace, patch}` where `patch` is the mounted patch
+  after id minting — the recordable form (design doc §12.4).
   """
-  @spec attach_patch(t(), Coconut.Edit.Patch.t()) :: {:ok, t()} | {:error, term()}
+  @spec attach_patch(t(), Coconut.Edit.Patch.t()) ::
+          {:ok, t(), Coconut.Edit.Patch.t()} | {:error, term()}
   def attach_patch(ws, %Coconut.Edit.Patch{track_id: track_id} = patch) do
     with {:ok, track} <- fetch_track(ws, track_id),
          :ok <- check_anchor_domain(patch, track) do
       patch = mint_patch_id(patch)
       track = %{track | patches: track.patches ++ [patch]}
-      {:ok, put_track(ws, track)}
+      {:ok, put_track(ws, track), patch}
     end
   end
 
@@ -422,15 +426,25 @@ defmodule Coconut.Edit.Workspace do
 
   defp check_anchor_domain(_patch, _track), do: :ok
 
-  @doc "Appends a list of patches. See `attach_patch/2`."
+  @doc """
+  Appends a list of patches. See `attach_patch/2`.
+
+  Returns `{:ok, workspace, minted}` with the mounted patches in input
+  order, post-mint.
+  """
   @spec attach_patches(t(), [Coconut.Edit.Patch.t()]) ::
-          {:ok, t()} | {:error, {:unknown_track, term()}}
+          {:ok, t(), [Coconut.Edit.Patch.t()]} | {:error, term()}
   def attach_patches(ws, patches) when is_list(patches) do
-    Enum.reduce_while(patches, {:ok, ws}, fn patch, {:ok, ws} ->
+    patches
+    |> Enum.reduce_while({:ok, ws, []}, fn patch, {:ok, ws, minted} ->
       case attach_patch(ws, patch) do
-        {:ok, ws} -> {:cont, {:ok, ws}}
+        {:ok, ws, patch} -> {:cont, {:ok, ws, [patch | minted]}}
         {:error, _} = err -> {:halt, err}
       end
+    end)
+    |> then(fn
+      {:ok, ws, minted} -> {:ok, ws, Enum.reverse(minted)}
+      err -> err
     end)
   end
 

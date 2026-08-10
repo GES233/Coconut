@@ -126,7 +126,7 @@ cp1 = mount.(%Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ver}, :lyric, %{ly
 cp2 = mount.(%Tamale.Anchor.Metric{coord: :tick, from: 600, to: 800, at_version: ver}, :energy, %{energy: 80})
 cp3 = mount.(%Tamale.Anchor.Relative{ref: "n3", from_offset: 50, to_offset: 100, at_version: ver}, :breath, %{breathiness: 30})
 
-{:ok, ws} = Workspace.attach_patches(ws, [cp1, cp2, cp3])
+{:ok, ws, _minted} = Workspace.attach_patches(ws, [cp1, cp2, cp3])
 
 # ---- 5. Edit: drag n1 (Move + Retime) ----
 {:ok, ops, ch} =

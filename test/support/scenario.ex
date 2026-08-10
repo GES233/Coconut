@@ -138,7 +138,7 @@ defmodule Coconut.Scenario do
         patch: tp
       })
 
-    {:ok, ws} = Workspace.attach_patch(ws, cp)
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
     ws
   end
 

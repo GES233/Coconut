@@ -2,13 +2,16 @@ defmodule Coconut.Edit.History do
   @moduledoc """
   Undo/redo history: an Op tree with sparse checkpoints (design doc §12).
 
-  The tree nodes are states; each node carries the **resolved write record**
-  that produced it (§12.4 discipline 1 — records are post-resolution:
-  lowered ops, post-mint patches, constructed tracks, full new values), so
-  replaying a path is deterministic by construction. `present` is maintained
-  incrementally on writes (O(1), no refold); cursor jumps (undo/redo,
-  `state_at/2`) re-materialize from the nearest checkpoint behind the
-  target, folding at most `checkpoint_interval` edges.
+  The tree nodes are states; each node carries the **resolved write
+  command** that produced it (§12.4 discipline 1 — records are
+  post-resolution: lowered ops, post-mint patches, constructed tracks,
+  full new values), so replaying a path is deterministic by construction.
+  Execution lives in `Coconut.Edit.Command.execute/3`: live writes and
+  replay share that single dispatch table (§12.4 discipline 3 — no
+  replay-only implementation). `present` is maintained incrementally on
+  writes (O(1), no refold); cursor jumps (undo/redo, `state_at/2`)
+  re-materialize from the nearest checkpoint behind the target, folding
+  at most `checkpoint_interval` edges.
 
   Traversal is by **global seq order** (Vim `g-`/`g+` semantics, §12.2):
   `undo/1` moves to the next-lower live seq, `redo/1` to the next-higher —
@@ -37,8 +40,7 @@ defmodule Coconut.Edit.History do
   `Workspace` itself stays a pure value with zero history-specific fields.
   """
 
-  alias Coconut.Edit.{Operation, Patch, Track, Workspace}
-  alias Coconut.Util.ID
+  alias Coconut.Edit.{Command, Operation, Patch, Workspace}
 
   @default_checkpoint_interval 100
   @default_max_edges 5000
@@ -46,24 +48,10 @@ defmodule Coconut.Edit.History do
   @typedoc "Node identity: the node's creation seq (monotonically increasing)."
   @type node_id :: non_neg_integer()
 
-  @typedoc """
-  A resolved write record (§12.4). Everything replay needs is inside:
-  lowered ops and side changes, post-mint patches, the constructed track,
-  full new field values.
-  """
-  @type edge_record ::
-          {:batch, Track.track_id(), [Tamale.Op.t()], Operation.side_changes()}
-          | {:attach_patches, [Patch.t()]}
-          | {:add_track, Track.t()}
-          | {:remove_track, Track.track_id()}
-          | {:rename_track, Track.track_id(), String.t() | nil}
-          | {:set_time_sigs, [Coconut.Score.TimeSig.time_sig_event()]}
-          | {:consume_dead, [{Patch.t(), term()}]}
-
   @typedoc "A tree node. `record`/`label` are nil on roots (initial and squashed)."
   @type tree_node :: %{
           parent: node_id | nil,
-          record: edge_record() | nil,
+          record: Command.t() | nil,
           checkpoint: Workspace.t() | nil,
           label: String.t() | nil,
           timestamp: integer()
@@ -129,8 +117,8 @@ defmodule Coconut.Edit.History do
   # ---- Write entries (each records one edge; §12.4) ----
 
   @doc """
-  The composed gesture write path (§12.3): validate → lower → record the
-  edge → `Workspace.apply_batch/5` → update present.
+  The composed gesture write path (§12.3): validate → lower → execute the
+  batch command → record the edge → update present.
 
   `expected_version` is the aggregate optimistic lock (`:current` or an
   integer; see `Workspace.apply_batch/5`). Options: `:pin`, `:config`
@@ -143,75 +131,29 @@ defmodule Coconut.Edit.History do
          :ok <- Operation.validate(req, hist.present),
          {:ok, ops, changes} <-
            Operation.lower(req, hist.present, Keyword.get(opts, :config, %Operation.Config{})),
-         {:ok, new_ws} <-
-           Workspace.apply_batch(
+         {:ok, new_ws, command} <-
+           Command.execute(
              hist.present,
-             req.track_id,
-             resolve_expected(expected_version, hist),
-             ops,
-             changes
+             Command.batch(req.track_id, ops, changes, label_of(req)),
+             expected_version: resolve_expected(expected_version, hist)
            ) do
-      {:ok, commit(hist, {:batch, req.track_id, ops, changes}, label_of(req), new_ws)}
-    end
-  end
-
-  @doc "Mount a patch (recorded post-mint). Options: `:pin`."
-  @spec apply_patch(t(), Patch.t(), keyword()) :: {:ok, t()} | {:error, term()}
-  def apply_patch(hist, %Patch{} = patch, opts \\ []) do
-    apply_patches(hist, [patch], opts)
-  end
-
-  @doc "Mount a list of patches (recorded post-mint). Options: `:pin`."
-  @spec apply_patches(t(), [Patch.t()], keyword()) :: {:ok, t()} | {:error, term()}
-  def apply_patches(hist, patches, opts \\ []) when is_list(patches) do
-    with :ok <- check_pin(hist, opts),
-         {:ok, new_ws} <- Workspace.attach_patches(hist.present, patches) do
-      minted = fresh_patches(hist.present, new_ws, patches)
-      {:ok, commit(hist, {:attach_patches, minted}, "AttachPatches", new_ws)}
+      {:ok, commit(hist, command, new_ws)}
     end
   end
 
   @doc """
-  Add a track (a structural edge). `attrs` goes through `Track.new/1`;
-  `:id` is minted here when absent. Options: `:pin`.
+  The command write path: execute a `Coconut.Edit.Command` and record the
+  **resolved** command as one edge (§12.4). Patch mounts and structural /
+  light field writes all go through here; `Command.execute/3` returning
+  the resolved form is what keeps replay deterministic (post-mint patch
+  ids, the constructed track). Options: `:pin`, `:expected_version`.
   """
-  @spec add_track(t(), map() | keyword(), keyword()) :: {:ok, t()} | {:error, term()}
-  def add_track(hist, attrs, opts \\ []) do
-    attrs = attrs |> Map.new() |> Map.put_new_lazy(:id, fn -> ID.generate_id("Track_") end)
-
+  @spec run(t(), Command.t(), keyword()) :: {:ok, t()} | {:error, term()}
+  def run(hist, %Command{} = command, opts \\ []) do
     with :ok <- check_pin(hist, opts),
-         {:ok, track} <- Track.new(attrs),
-         {:ok, new_ws} <- Workspace.add_track(hist.present, track) do
-      {:ok, commit(hist, {:add_track, track}, "AddTrack", new_ws)}
-    end
-  end
-
-  @doc "Remove a track by id (a structural edge). Options: `:pin`."
-  @spec remove_track(t(), Track.track_id(), keyword()) :: {:ok, t()} | {:error, term()}
-  def remove_track(hist, track_id, opts \\ []) do
-    with :ok <- check_pin(hist, opts),
-         {:ok, new_ws} <- Workspace.remove_track(hist.present, track_id) do
-      {:ok, commit(hist, {:remove_track, track_id}, "RemoveTrack", new_ws)}
-    end
-  end
-
-  @doc "Rename a track (a light field edge; `name` is an annotation, §11.8). Options: `:pin`."
-  @spec rename_track(t(), Track.track_id(), String.t() | nil, keyword()) ::
-          {:ok, t()} | {:error, term()}
-  def rename_track(hist, track_id, name, opts \\ []) do
-    with :ok <- check_pin(hist, opts),
-         {:ok, new_ws} <- Workspace.rename_track(hist.present, track_id, name) do
-      {:ok, commit(hist, {:rename_track, track_id, name}, "RenameTrack", new_ws)}
-    end
-  end
-
-  @doc "Replace the time signature events (a light field edge, §6). Options: `:pin`."
-  @spec set_time_sigs(t(), [Coconut.Score.TimeSig.time_sig_event()], keyword()) ::
-          {:ok, t()} | {:error, term()}
-  def set_time_sigs(hist, events, opts \\ []) do
-    with :ok <- check_pin(hist, opts),
-         {:ok, new_ws} <- Workspace.set_time_sigs(hist.present, events) do
-      {:ok, commit(hist, {:set_time_sigs, events}, "SetTimeSigs", new_ws)}
+         {:ok, new_ws, resolved} <-
+           Command.execute(hist.present, command, Keyword.drop(opts, [:pin])) do
+      {:ok, commit(hist, resolved, new_ws)}
     end
   end
 
@@ -222,12 +164,11 @@ defmodule Coconut.Edit.History do
   """
   @spec take_dead_patches(t()) :: {[{Patch.t(), term()}], t()}
   def take_dead_patches(hist) do
-    {dead, new_ws} = Workspace.take_dead_patches(hist.present)
+    {:ok, new_ws, resolved} = Command.execute(hist.present, Command.consume_dead())
 
-    if dead == [] do
-      {[], hist}
-    else
-      {dead, commit(hist, {:consume_dead, dead}, "ConsumeDead", new_ws)}
+    case resolved.payload do
+      [] -> {[], hist}
+      dead -> {dead, commit(hist, resolved, new_ws)}
     end
   end
 
@@ -270,24 +211,11 @@ defmodule Coconut.Edit.History do
 
   defp label_of(%mod{}), do: mod |> Module.split() |> List.last()
 
-  # The patches this call appended, post-mint (the recordable form).
-  defp fresh_patches(old_ws, new_ws, patches) do
-    patches
-    |> Enum.group_by(& &1.track_id)
-    |> Enum.flat_map(fn {track_id, track_patches} ->
-      {:ok, old_track} = Workspace.fetch_track(old_ws, track_id)
-      {:ok, new_track} = Workspace.fetch_track(new_ws, track_id)
-
-      Enum.drop(new_track.patches, length(old_track.patches))
-      |> Enum.take(length(track_patches))
-    end)
-  end
-
   # Append one edge at the cursor and advance present. A write made while
   # the cursor is not at the tip forks the tree; the fork point receives a
   # checkpoint (§12.3) — free here, since the pre-write present *is* the
   # workspace at the fork.
-  defp commit(hist, record, label, new_present) do
+  defp commit(hist, %Command{} = command, new_present) do
     new_seq = hist.seq + 1
 
     nodes =
@@ -301,9 +229,9 @@ defmodule Coconut.Edit.History do
 
     node = %{
       parent: hist.cursor,
-      record: record,
+      record: command,
       checkpoint: checkpoint,
-      label: label,
+      label: command.label,
       timestamp: now()
     }
 
@@ -349,8 +277,9 @@ defmodule Coconut.Edit.History do
     end
   end
 
-  # The workspace at `target`: fold records from the nearest checkpoint at
-  # or behind it along the parent chain.
+  # The workspace at `target`: fold commands from the nearest checkpoint at
+  # or behind it along the parent chain — the same `Command.execute/3` as
+  # live writes, so replay needs no implementation of its own (§12.4).
   defp materialize(hist, target) do
     path = path_to_root(hist.nodes, target, [])
 
@@ -366,7 +295,7 @@ defmodule Coconut.Edit.History do
     path
     |> Enum.drop(checkpoint_index + 1)
     |> Enum.reduce(checkpoint_node.checkpoint, fn {_seq, node}, ws ->
-      {:ok, new_ws} = replay_edge(ws, node.record)
+      {:ok, new_ws, _resolved} = Command.execute(ws, node.record)
       new_ws
     end)
   end
@@ -375,32 +304,6 @@ defmodule Coconut.Edit.History do
     node = Map.fetch!(nodes, seq)
     acc = [{seq, node} | acc]
     if is_nil(node.parent), do: acc, else: path_to_root(nodes, node.parent, acc)
-  end
-
-  # Replay shares the live apply functions (§12.4 discipline 3 — no
-  # replay-only implementation). Replay is sequential, so the optimistic
-  # lock always sees the current version.
-  defp replay_edge(ws, {:batch, track_id, ops, changes}),
-    do: Workspace.apply_batch(ws, track_id, ws.edit_version, ops, changes)
-
-  defp replay_edge(ws, {:attach_patches, patches}),
-    do: Workspace.attach_patches(ws, patches)
-
-  defp replay_edge(ws, {:add_track, track}),
-    do: Workspace.add_track(ws, track)
-
-  defp replay_edge(ws, {:remove_track, track_id}),
-    do: Workspace.remove_track(ws, track_id)
-
-  defp replay_edge(ws, {:rename_track, track_id, name}),
-    do: Workspace.rename_track(ws, track_id, name)
-
-  defp replay_edge(ws, {:set_time_sigs, events}),
-    do: Workspace.set_time_sigs(ws, events)
-
-  defp replay_edge(ws, {:consume_dead, _dead}) do
-    {_dead, new_ws} = Workspace.take_dead_patches(ws)
-    {:ok, new_ws}
   end
 
   defp now, do: System.system_time(:second)

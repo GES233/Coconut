@@ -139,7 +139,7 @@ patches = [
   mount.(2100, 2200, :space, %{mark: true})
 ]
 
-{:ok, ws} = Workspace.attach_patches(ws, patches)
+{:ok, ws, _minted} = Workspace.attach_patches(ws, patches)
 
 IO.puts("\n=== Mounted at v#{ver} ===")
 IO.puts("  energy  [120, 360]    on n1")

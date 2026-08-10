@@ -1,7 +1,7 @@
 defmodule Coconut.Edit.HistoryTest do
   use ExUnit.Case, async: true
 
-  alias Coconut.Edit.{History, Patch, Track}
+  alias Coconut.Edit.{Command, History, Patch, Track}
   alias Coconut.Edit.Operations.{DeleteNote, InsertNote}
   alias Coconut.Scenario
   alias Coconut.Score.Note
@@ -53,8 +53,13 @@ defmodule Coconut.Edit.HistoryTest do
         patch: tp
       })
 
-    {:ok, hist} = History.apply_patch(hist, patch)
+    {:ok, hist} = History.run(hist, Command.attach_patches([patch]))
     hist
+  end
+
+  defp add_track(hist, attrs) do
+    {:ok, cmd} = Command.add_track(attrs)
+    History.run(hist, cmd)
   end
 
   defp undo!(hist), do: elem(History.undo(hist), 1)
@@ -132,12 +137,12 @@ defmodule Coconut.Edit.HistoryTest do
       h = base_history()
       assert h.present.edit_version == 0
 
-      {:ok, h} = History.add_track(h, %{id: "harmony", module: Track.Vocal, name: "和声"})
+      {:ok, h} = add_track(h, %{id: "harmony", module: Track.Vocal, name: "和声"})
       assert h.present.edit_version == 1
       assert track(h, "harmony").name == "和声"
 
       h = insert(h, "x1", "harmony")
-      {:ok, h} = History.remove_track(h, "harmony")
+      {:ok, h} = History.run(h, Command.remove_track("harmony"))
       refute Map.has_key?(h.present.tracks, "harmony")
 
       # undo past the removal: the track returns with its note — no corpse on
@@ -162,18 +167,18 @@ defmodule Coconut.Edit.HistoryTest do
       h = base_history()
 
       assert {:error, {:track_id_taken, @track}} =
-               History.add_track(h, %{id: @track, module: Track.Vocal})
+               add_track(h, %{id: @track, module: Track.Vocal})
 
       assert {:error, :tempo_track_in_tracks} =
-               History.add_track(h, %{id: "t2", module: Track.Tempo})
+               add_track(h, %{id: "t2", module: Track.Tempo})
 
       assert {:error, {:global_id_reserved, "global:tempo"}} =
-               History.add_track(h, %{id: "global:tempo", module: Track.Vocal})
+               add_track(h, %{id: "global:tempo", module: Track.Vocal})
 
-      assert {:error, {:unknown_track, "nope"}} = History.remove_track(h, "nope")
+      assert {:error, {:unknown_track, "nope"}} = History.run(h, Command.remove_track("nope"))
 
       assert {:error, {:global_track_immutable, "global:tempo"}} =
-               History.remove_track(h, "global:tempo")
+               History.run(h, Command.remove_track("global:tempo"))
     end
   end
 
@@ -182,11 +187,12 @@ defmodule Coconut.Edit.HistoryTest do
       h = base_history() |> insert("n1")
       v = h.present.edit_version
 
-      {:ok, h} = History.rename_track(h, @track, "主唱")
+      {:ok, h} = History.run(h, Command.rename_track(@track, "主唱"))
       assert track(h).name == "主唱"
       assert h.present.edit_version == v
 
-      assert {:error, {:unknown_track, "nope"}} = History.rename_track(h, "nope", "x")
+      assert {:error, {:unknown_track, "nope"}} =
+               History.run(h, Command.rename_track("nope", "x"))
 
       h = undo!(h)
       assert track(h).name == nil
@@ -197,10 +203,10 @@ defmodule Coconut.Edit.HistoryTest do
     test "set_time_sigs round-trips, malformed rejected" do
       h = base_history()
 
-      {:ok, h} = History.set_time_sigs(h, [{1, {4, 4}}, {3, {3, 4}}])
+      {:ok, h} = History.run(h, Command.set_time_sigs([{1, {4, 4}}, {3, {3, 4}}]))
       assert h.present.time_sigs == [{1, {4, 4}}, {3, {3, 4}}]
 
-      assert {:error, {:invalid_time_sigs, _}} = History.set_time_sigs(h, [])
+      assert {:error, {:invalid_time_sigs, _}} = History.run(h, Command.set_time_sigs([]))
 
       h = undo!(h)
       assert h.present.time_sigs == [{1, {4, 4}}]
@@ -263,7 +269,8 @@ defmodule Coconut.Edit.HistoryTest do
       pin = History.current(h).node_id
       h = undo!(h)
 
-      assert {:error, {:stale_pin, _}} = History.rename_track(h, @track, "x", pin: pin)
+      assert {:error, {:stale_pin, _}} =
+               History.run(h, Command.rename_track(@track, "x"), pin: pin)
     end
   end
 

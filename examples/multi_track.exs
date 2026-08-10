@@ -97,7 +97,7 @@ IO.inspect(art.payload.notes, label: "render (flat)")
   anchor: %Tamale.Anchor.Ordinal{refs: ["a1"], at_version: ws.tracks[track_a].space.version},
   patch: %Tamale.Patch{base_digest: "aaa", payload: %{}}
 })
-{:ok, ws} = Workspace.attach_patch(ws, cp_a)
+{:ok, ws, _minted} = Workspace.attach_patch(ws, cp_a)
 
 # ---- Drag a1 (overlaps b1) ----
 {:ok, ops, ch} =

@@ -277,7 +277,7 @@ defmodule Coconut.AudioTest do
           patch: %Tamale.Patch{base_digest: "d", payload: %{}}
         })
 
-      {:ok, ws} = Workspace.attach_patch(ws, patch)
+      {:ok, ws, _minted} = Workspace.attach_patch(ws, patch)
       ws = apply_request(ws, %DeleteNote{track_id: @track, note_id: "c1"})
 
       track = audio_track(ws)
