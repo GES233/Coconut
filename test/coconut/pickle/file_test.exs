@@ -74,7 +74,7 @@ defmodule Coconut.Pickle.FileTest do
 
   # 与 project_test 同形的 workspace 构造（vocal 音符 + tempo 事件）
   defp build_project do
-    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "tempo", module: Coconut.Edit.Track.Tempo})
+    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "global:tempo", module: Coconut.Edit.Track.Tempo})
     {:ok, vocal} = Coconut.Edit.Track.new(%{id: "vocal", module: Coconut.Edit.Track.Vocal})
 
     {:ok, ws} =
@@ -82,13 +82,13 @@ defmodule Coconut.Pickle.FileTest do
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
         tracks: %{"vocal" => vocal},
-        tempo: tempo
+        globals: %{"global:tempo" => tempo}
       })
 
     ws =
       [
         %Coconut.Edit.Operations.InsertNote{
-          track_id: "tempo",
+          track_id: "global:tempo",
           note_id: "t0",
           after_id: :head,
           span: {0, 1920},

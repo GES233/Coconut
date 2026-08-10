@@ -8,13 +8,13 @@ defmodule Coconut.Pickle.Workspace do
   dump 为摊平的 map：
 
   - `id` / `edit_version` / `tpqn` 原样直出；
-  - `tracks` map 的键（track id）直出，每个 value 走
-    `Coconut.Pickle.Track` codec；`tempo` 轨同走 Track codec；
+  - `tracks` / `globals` 两个 map 的键（track id）直出，每个 value 走
+    `Coconut.Pickle.Track` codec；
   - `time_sigs` 是 `[{bar, {num, den}}]`，dump 为
     `[[bar, [num, den]], ...]`，load 反向还原为 tuple。
 
   load 还原后经 `Coconut.Edit.Workspace.new/1` 重建——`validate/1` 自然生效：
-  tempo 轨能力、tempo id 冲突、time_sigs 合法性都会被复检。
+  全局轨命名空间、tempo 槽位能力、time_sigs 合法性都会被复检。
   """
 
   alias Coconut.Edit.Workspace
@@ -24,13 +24,13 @@ defmodule Coconut.Pickle.Workspace do
   @spec dump(Workspace.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
   def dump(%Workspace{} = ws, %Registry{} = registry) do
     with {:ok, tracks} <- dump_tracks(ws.tracks, registry),
-         {:ok, tempo} <- Track.dump(ws.tempo, registry) do
+         {:ok, globals} <- dump_tracks(ws.globals, registry) do
       {:ok,
        %{
          id: ws.id,
          edit_version: ws.edit_version,
          tracks: tracks,
-         tempo: tempo,
+         globals: globals,
          tpqn: ws.tpqn,
          time_sigs: dump_time_sigs(ws.time_sigs)
        }}
@@ -43,13 +43,13 @@ defmodule Coconut.Pickle.Workspace do
   @spec load(map(), Registry.t()) :: {:ok, Workspace.t()} | {:error, term()}
   def load(%{} = data, %Registry{} = registry) do
     with {:ok, tracks} <- load_tracks(Map.get(data, :tracks), registry),
-         {:ok, tempo} <- load_tempo(Map.get(data, :tempo), registry),
+         {:ok, globals} <- load_globals(Map.get(data, :globals), registry),
          {:ok, time_sigs} <- load_time_sigs(Map.get(data, :time_sigs)) do
       %{
         id: Map.get(data, :id),
         edit_version: Map.get(data, :edit_version),
         tracks: tracks,
-        tempo: tempo,
+        globals: globals,
         tpqn: Map.get(data, :tpqn),
         time_sigs: time_sigs
       }
@@ -81,8 +81,10 @@ defmodule Coconut.Pickle.Workspace do
 
   defp load_tracks(other, _registry), do: {:error, {:invalid_tracks_dump, other}}
 
-  defp load_tempo(%{} = dumped, registry), do: Track.load(dumped, registry)
-  defp load_tempo(other, _registry), do: {:error, {:invalid_tempo_dump, other}}
+  defp load_globals(globals, registry) when is_map(globals),
+    do: load_tracks(globals, registry)
+
+  defp load_globals(other, _registry), do: {:error, {:invalid_globals_dump, other}}
 
   # ---- time_sigs：[{bar, {num, den}}] ↔ [[bar, [num, den]], ...] ----
 

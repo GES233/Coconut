@@ -8,13 +8,14 @@ defmodule Coconut.Edit.Workspace do
   track's patches (write-time transport: survivors are persisted with
   up-to-date anchors, the dead move to the track's `dead_patches`).
 
-  A workspace is `id / edit_version / tracks / tempo` plus the project-level
+  A workspace is `id / edit_version / tracks / globals` plus the project-level
   `tpqn` / `time_sigs` (tick resolution and the bar-grid time signature
   events — neither participates in the op/transport machinery).
-  Everything else lives on `Coconut.Edit.Track` (design doc §11.3). The tempo
-  track is a dedicated field — exactly one per workspace, structurally —
-  not an entry of `tracks` (design doc §6); track-id-keyed functions
-  (`fetch_track/2`, `apply_batch/5`, …) route to it transparently.
+  Everything else lives on `Coconut.Edit.Track` (design doc §11.3). Global
+  tracks (the tempo track is the built-in one) live in the `globals` map,
+  not in `tracks` (design doc §6); their ids carry the `"global:"` prefix
+  (the tempo track is `"global:tempo"`), so track-id-keyed functions
+  (`fetch_track/2`, `apply_batch/5`, …) route to the right map purely by id.
   """
 
   alias Coconut.Edit.{Track, WarpProvider}
@@ -23,11 +24,17 @@ defmodule Coconut.Edit.Workspace do
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
+  # Global tracks are addressed purely by id: the `"global:"` prefix is the
+  # routing rule, so the `globals` / `tracks` namespaces are disjoint by
+  # construction. The tempo track is the one built-in global.
+  @global_prefix "global:"
+  @tempo_global_id @global_prefix <> "tempo"
+
   @type t :: %__MODULE__{
           id: ID.t(t()),
           edit_version: Tamale.version(),
           tracks: %{Track.track_id() => Track.t()},
-          tempo: Track.t(),
+          globals: %{Track.track_id() => Track.t()},
           tpqn: pos_integer(),
           time_sigs: [Coconut.Score.TimeSig.time_sig_event(), ...]
         }
@@ -35,7 +42,7 @@ defmodule Coconut.Edit.Workspace do
     :id,
     :edit_version,
     tracks: %{},
-    tempo: %Track{id: "tempo", module: Coconut.Edit.Track.Tempo},
+    globals: %{@tempo_global_id => %Track{id: @tempo_global_id, module: Coconut.Edit.Track.Tempo}},
     tpqn: 480,
     time_sigs: [{1, {4, 4}}]
   ]
@@ -59,7 +66,7 @@ defmodule Coconut.Edit.Workspace do
   # `update/2` rejects `time_sigs`: meter changes are a score gesture with
   # their own writer (`set_time_sigs/2`) so they can enter the undo history
   # (design doc §6 addendum, §12.4).
-  @update_keys [:id, :edit_version, :tracks, :tempo, :tpqn]
+  @update_keys [:id, :edit_version, :tracks, :globals, :tpqn]
 
   @doc """
   Modify the properties of an existing workspace.
@@ -106,34 +113,40 @@ defmodule Coconut.Edit.Workspace do
   @doc """
   Add a track to the workspace.
 
-  The id must be fresh (colliding with the tempo track's id or an existing
-  track is `{:track_id_taken, _}`), and the track module must not carry the
-  `:tempo_derive` capability — the tempo field is unique (§6). Adding a
-  track bumps `edit_version` (score-structure change, §12.4).
+  The id must be fresh and outside the reserved `"global:"` namespace
+  (`{:global_id_reserved, _}` / `{:track_id_taken, _}`), and the track
+  module must not carry the `:tempo_derive` capability — global tracks
+  live in `globals` (§6). Adding a track bumps `edit_version`
+  (score-structure change, §12.4).
   """
   @spec add_track(t(), Track.t()) :: {:ok, t()} | {:error, term()}
   def add_track(ws, %Track{id: track_id} = track) do
-    if track_id == ws.tempo.id or Map.has_key?(ws.tracks, track_id) do
-      {:error, {:track_id_taken, track_id}}
-    else
-      validate(%{
-        ws
-        | tracks: Map.put(ws.tracks, track_id, track),
-          edit_version: ws.edit_version + 1
-      })
+    cond do
+      global_id?(track_id) ->
+        {:error, {:global_id_reserved, track_id}}
+
+      Map.has_key?(ws.tracks, track_id) ->
+        {:error, {:track_id_taken, track_id}}
+
+      true ->
+        validate(%{
+          ws
+          | tracks: Map.put(ws.tracks, track_id, track),
+            edit_version: ws.edit_version + 1
+        })
     end
   end
 
   @doc """
-  Remove a track by id. The dedicated tempo track cannot be removed
-  (`{:tempo_track_immutable, _}`). Removing a track bumps `edit_version`
+  Remove a track by id. Global tracks cannot be removed
+  (`{:global_track_immutable, _}`). Removing a track bumps `edit_version`
   (score-structure change, §12.4).
   """
   @spec remove_track(t(), Track.track_id()) :: {:ok, t()} | {:error, term()}
   def remove_track(ws, track_id) do
     cond do
-      track_id == ws.tempo.id ->
-        {:error, {:tempo_track_immutable, track_id}}
+      global_id?(track_id) and Map.has_key?(ws.globals, track_id) ->
+        {:error, {:global_track_immutable, track_id}}
 
       not Map.has_key?(ws.tracks, track_id) ->
         {:error, {:unknown_track, track_id}}
@@ -158,29 +171,32 @@ defmodule Coconut.Edit.Workspace do
 
   # ---- Tracks ----
 
-  defguardp in_tempo_track(ws, track_id)
-            when is_struct(ws, __MODULE__) and is_struct(ws.tempo, Track) and
-                   track_id == ws.tempo.id
+  defp global_id?(track_id),
+    do: is_binary(track_id) and String.starts_with?(track_id, @global_prefix)
 
-  @doc "Fetches a track by id; the tempo track's id routes to the dedicated field."
+  @doc "Fetches a track by id; `\"global:\"`-prefixed ids route to `globals`."
   @spec fetch_track(t(), Track.track_id()) ::
           {:ok, Track.t()} | {:error, {:unknown_track, term()}}
-  def fetch_track(ws, track_id) when in_tempo_track(ws, track_id), do: {:ok, ws.tempo}
+  def fetch_track(%__MODULE__{globals: globals}, "global:" <> _ = track_id),
+    do: fetch_from(globals, track_id)
 
-  def fetch_track(%__MODULE__{tracks: tracks}, track_id) do
-    case Map.fetch(tracks, track_id) do
+  def fetch_track(%__MODULE__{tracks: tracks}, track_id),
+    do: fetch_from(tracks, track_id)
+
+  defp fetch_from(map, track_id) do
+    case Map.fetch(map, track_id) do
       {:ok, track} -> {:ok, track}
       :error -> {:error, {:unknown_track, track_id}}
     end
   end
 
-  @doc "All tracks as `{id, track}` pairs, tempo track first (fold order is not semantic)."
+  @doc "All tracks as `{id, track}` pairs, globals first (fold order is not semantic)."
   @spec all_tracks(t()) :: [{Track.track_id(), Track.t()}]
-  def all_tracks(ws), do: [{ws.tempo.id, ws.tempo} | Map.to_list(ws.tracks)]
+  def all_tracks(ws), do: Map.to_list(ws.globals) ++ Map.to_list(ws.tracks)
 
   # Write-back counterpart of fetch_track/2's routing.
-  defp put_track(ws, %{id: track_id} = track) when in_tempo_track(ws, track_id),
-    do: %{ws | tempo: track}
+  defp put_track(ws, %{id: "global:" <> _} = track),
+    do: %{ws | globals: Map.put(ws.globals, track.id, track)}
 
   defp put_track(ws, %{id: track_id} = track),
     do: %{ws | tracks: Map.put(ws.tracks, track_id, track)}
@@ -436,17 +452,19 @@ defmodule Coconut.Edit.Workspace do
   end
 
   @doc """
-  Builds a compiled `TempoMap` from the tempo track (the dedicated `tempo`
-  field), at the workspace's `tpqn`.
+  Builds a compiled `TempoMap` from the tempo global track
+  (`"global:tempo"` in `globals`), at the workspace's `tpqn`.
 
-  A tempo track with no events yields `{:error, :no_tempo_track}` — engines
-  apply their own fallback (see `Coconut.Render.Engine.Snapshot`).
+  A missing or empty tempo track yields `{:error, :no_tempo_track}` —
+  engines apply their own fallback (see `Coconut.Render.Engine.Snapshot`).
   """
   @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
   def tempo_map(ws) do
-    case ws.tempo.module.tempo_events(ws.tempo) do
-      [] -> {:error, :no_tempo_track}
-      events -> TempoMap.compile(events, tpqn: ws.tpqn)
+    with %Track{} = tempo <- Map.get(ws.globals, @tempo_global_id),
+         [_ | _] = events <- tempo.module.tempo_events(tempo) do
+      TempoMap.compile(events, tpqn: ws.tpqn)
+    else
+      _ -> {:error, :no_tempo_track}
     end
   end
 
@@ -479,28 +497,61 @@ defmodule Coconut.Edit.Workspace do
     TimeSigMap.compile(ws.time_sigs, tpqn: ws.tpqn)
   end
 
-  # The tempo field is bound by capability, not module identity: any track
-  # module with the `:tempo_derive` capability may type the tempo track.
-  # The concrete choice lives here (composition root); the projection
-  # lives on the module.
+  # The tempo slot (`"global:tempo"`) is bound by capability, not module
+  # identity: any track module with the `:tempo_derive` capability may
+  # occupy it. The concrete choice lives here (composition root); the
+  # projection lives on the module.
   @spec validate(t()) :: {:ok, t()} | {:error, term()}
-  def validate(%{tempo: tempo, time_sigs: time_sigs} = ws) do
-    cond do
-      not Track.supports?(tempo.module, :tempo_derive) ->
-        {:error, {:invalid_tempo_track, tempo.module}}
-
-      Map.has_key?(ws.tracks, tempo.id) ->
-        {:error, {:tempo_id_collision, tempo.id}}
-
-      Enum.any?(ws.tracks, fn {_id, track} -> Track.supports?(track.module, :tempo_derive) end) ->
-        {:error, :tempo_track_in_tracks}
-
-      not valid_time_sigs?(time_sigs) ->
-        {:error, {:invalid_time_sigs, time_sigs}}
-
-      true ->
-        {:ok, ws}
+  def validate(%__MODULE__{} = ws) do
+    with :ok <- check_globals(ws.globals),
+         :ok <- check_tracks(ws.tracks),
+         :ok <- check_tempo_global(ws.globals),
+         :ok <- check_time_sigs(ws.time_sigs) do
+      {:ok, ws}
     end
+  end
+
+  # Every `globals` key must carry the prefix and equal its track's id.
+  defp check_globals(globals) do
+    case Enum.find(globals, fn {id, track} -> not global_id?(id) or id != track.id end) do
+      nil -> :ok
+      {id, track} -> {:error, {:invalid_global_track, id, track.id}}
+    end
+  end
+
+  # The `"global:"` namespace is reserved for `globals`; a tempo-capable
+  # module among the regular tracks would compete with the tempo global (§6).
+  defp check_tracks(tracks) do
+    case Enum.find(tracks, fn {id, _track} -> global_id?(id) end) do
+      {id, _track} -> {:error, {:global_id_reserved, id}}
+      nil -> check_track_modules(tracks)
+    end
+  end
+
+  defp check_track_modules(tracks) do
+    if Enum.any?(tracks, fn {_id, track} -> Track.supports?(track.module, :tempo_derive) end),
+      do: {:error, :tempo_track_in_tracks},
+      else: :ok
+  end
+
+  # The tempo slot may be absent (`tempo_map/1` then reports
+  # `:no_tempo_track`); when present its module must derive tempo.
+  defp check_tempo_global(globals) do
+    case Map.get(globals, @tempo_global_id) do
+      nil ->
+        :ok
+
+      %Track{module: module} ->
+        if Track.supports?(module, :tempo_derive),
+          do: :ok,
+          else: {:error, {:invalid_tempo_track, module}}
+    end
+  end
+
+  defp check_time_sigs(time_sigs) do
+    if valid_time_sigs?(time_sigs),
+      do: :ok,
+      else: {:error, {:invalid_time_sigs, time_sigs}}
   end
 
   # The bar is the authoritative coordinate: the first event must sit at

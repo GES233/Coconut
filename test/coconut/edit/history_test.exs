@@ -167,10 +167,13 @@ defmodule Coconut.Edit.HistoryTest do
       assert {:error, :tempo_track_in_tracks} =
                History.add_track(h, %{id: "t2", module: Track.Tempo})
 
+      assert {:error, {:global_id_reserved, "global:tempo"}} =
+               History.add_track(h, %{id: "global:tempo", module: Track.Vocal})
+
       assert {:error, {:unknown_track, "nope"}} = History.remove_track(h, "nope")
 
-      assert {:error, {:tempo_track_immutable, _}} =
-               History.remove_track(h, h.present.tempo.id)
+      assert {:error, {:global_track_immutable, "global:tempo"}} =
+               History.remove_track(h, "global:tempo")
     end
   end
 

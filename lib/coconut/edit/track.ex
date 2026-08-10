@@ -36,8 +36,8 @@ defmodule Coconut.Edit.Track do
   are opt-in, so required-callback enforcement cannot apply):
 
   - `:tempo_derive` — `tempo_events/1` (see `TempoDerive`): the tempo-map
-    projection; `Coconut.Edit.Workspace` binds (and reserves) its `tempo`
-    field by it.
+    projection; `Coconut.Edit.Workspace` binds (and reserves) the
+    `"global:tempo"` globals slot by it.
   - `:element_codec` — `dump_element/1` + `load_element/1` (see
     `ElementCodec`), sniffed as a pair: per-element archive codec for
     `Coconut.Pickle.Track`.
@@ -228,7 +228,7 @@ defmodule Coconut.Edit.Track do
 
   - `:tempo_derive` — `tempo_events/1` (`TempoDerive`): the tempo-map
     projection; `Coconut.Edit.Workspace.validate/1` binds (and reserves) the
-    `tempo` field by it.
+    `"global:tempo"` globals slot by it.
   - `:element_codec` — `dump_element/1` + `load_element/1`
     (`ElementCodec`), sniffed as a pair: per-element archive codec for
     `Coconut.Pickle.Track`.

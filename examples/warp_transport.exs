@@ -82,7 +82,7 @@ projection = fn ws, %Patch{} = cp ->
 end
 
 # ---- 1. Bootstrap: one track, three adjacent notes ----
-{:ok, tempo_track} = Track.new(%{id: "tempo", module: Track.Tempo})
+{:ok, tempo_track} = Track.new(%{id: "global:tempo", module: Track.Tempo})
 {:ok, vocal_track} = Track.new(%{id: track, module: Track.Vocal})
 
 {:ok, ws} =
@@ -90,7 +90,7 @@ end
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
     tracks: %{track => vocal_track},
-    tempo: tempo_track
+    globals: %{"global:tempo" => tempo_track}
   })
 
 notes = [

@@ -11,7 +11,7 @@ defmodule Coconut.Pickle.WorkspaceTest do
 
   # 照 tempo_test 的方式：Edit.Operation.lower + apply_batch 造 vocal 音符 + tempo 事件
   defp build_workspace do
-    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "tempo", module: Coconut.Edit.Track.Tempo})
+    {:ok, tempo} = Coconut.Edit.Track.new(%{id: "global:tempo", module: Coconut.Edit.Track.Tempo})
     {:ok, vocal} = Coconut.Edit.Track.new(%{id: "vocal", module: Coconut.Edit.Track.Vocal})
 
     {:ok, ws} =
@@ -19,21 +19,21 @@ defmodule Coconut.Pickle.WorkspaceTest do
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
         tracks: %{"vocal" => vocal},
-        tempo: tempo,
+        globals: %{"global:tempo" => tempo},
         time_sigs: [{1, {4, 4}}, {5, {3, 4}}]
       })
 
     ws =
       [
         %Coconut.Edit.Operations.InsertNote{
-          track_id: "tempo",
+          track_id: "global:tempo",
           note_id: "t0",
           after_id: :head,
           span: {0, 1920},
           attrs: %{bpm: 120}
         },
         %Coconut.Edit.Operations.InsertNote{
-          track_id: "tempo",
+          track_id: "global:tempo",
           note_id: "t1",
           after_id: "t0",
           span: {1920, 3840},
@@ -75,7 +75,7 @@ defmodule Coconut.Pickle.WorkspaceTest do
       assert dumped.tpqn == 480
       assert dumped.time_sigs == [[1, [4, 4]], [5, [3, 4]]]
       assert Map.keys(dumped.tracks) == ["vocal"]
-      assert dumped.tempo.module == "tempo"
+      assert dumped.globals["global:tempo"].module == "tempo"
       assert dumped.tracks["vocal"].module == "vocal"
 
       assert_pickle_conform(dumped)

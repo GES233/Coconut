@@ -11,7 +11,7 @@ cfg = %Operation.Config{}
 track_a = "vocal_a"
 track_b = "vocal_b"
 
-{:ok, tempo_track} = Track.new(%{id: "tempo", module: Track.Tempo})
+{:ok, tempo_track} = Track.new(%{id: "global:tempo", module: Track.Tempo})
 {:ok, vocal_a} = Track.new(%{id: track_a, module: Track.Vocal})
 {:ok, vocal_b} = Track.new(%{id: track_b, module: Track.Vocal})
 
@@ -23,14 +23,14 @@ track_b = "vocal_b"
       track_a => vocal_a,
       track_b => vocal_b
     },
-    tempo: tempo_track
+    globals: %{"global:tempo" => tempo_track}
   })
 
 # ---- Tempo ----
 {:ok, ops, ch} =
   Operation.lower(
     %Coconut.Edit.Operations.InsertNote{
-      track_id: "tempo",
+      track_id: "global:tempo",
       note_id: "t0",
       after_id: :head,
       span: {0, 9600},
@@ -39,7 +39,7 @@ track_b = "vocal_b"
     ws,
     cfg
   )
-{:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+{:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
 # ---- Track A: melody ----
 {:ok, ops_a, ch_a} =

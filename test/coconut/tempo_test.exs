@@ -6,13 +6,13 @@ defmodule Coconut.TempoTest do
   alias Coconut.Util.ID
 
   setup do
-    {:ok, tempo} = Track.new(%{id: "tempo", module: Track.Tempo})
+    {:ok, tempo} = Track.new(%{id: "global:tempo", module: Track.Tempo})
 
     {:ok, ws} =
       Workspace.new(%{
         id: ID.generate_id("WSpc_"),
         edit_version: 0,
-        tempo: tempo
+        globals: %{"global:tempo" => tempo}
       })
 
     {:ok, ws: ws}
@@ -23,7 +23,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, changes} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -37,17 +37,17 @@ defmodule Coconut.TempoTest do
       assert changes.elements == %{"t0" => %{bpm: 120_000}}
       assert changes.span_snapshot == %{"t0" => {0, 1920}}
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
-      assert ws.tempo.space.version == 1
-      assert ws.tempo.space.ids == ["t0"]
-      assert ws.tempo.elements_by_id["t0"] == %{bpm: 120_000}
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, changes)
+      assert ws.globals["global:tempo"].space.version == 1
+      assert ws.globals["global:tempo"].space.ids == ["t0"]
+      assert ws.globals["global:tempo"].elements_by_id["t0"] == %{bpm: 120_000}
     end
 
     test "second tempo event inserted after first", %{ws: ws} do
       {:ok, ops, changes} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -57,12 +57,12 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, changes)
 
       {:ok, ops2, changes2} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t1",
             after_id: "t0",
             span: {1920, 3840},
@@ -72,11 +72,11 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, changes2)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 1, ops2, changes2)
 
-      assert ws.tempo.space.ids == ["t0", "t1"]
-      assert ws.tempo.spans_by_version[2]["t0"] == {0, 1920}
-      assert ws.tempo.spans_by_version[2]["t1"] == {1920, 3840}
+      assert ws.globals["global:tempo"].space.ids == ["t0", "t1"]
+      assert ws.globals["global:tempo"].spans_by_version[2]["t0"] == {0, 1920}
+      assert ws.globals["global:tempo"].spans_by_version[2]["t1"] == {1920, 3840}
     end
   end
 
@@ -85,7 +85,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, changes} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -95,11 +95,11 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, changes)
 
       assert {:error, {:tempo_first_protected, "t0"}} =
                Operation.validate(
-                 %Coconut.Edit.Operations.DeleteNote{track_id: "tempo", note_id: "t0"},
+                 %Coconut.Edit.Operations.DeleteNote{track_id: "global:tempo", note_id: "t0"},
                  ws
                )
     end
@@ -108,7 +108,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, ch} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -118,12 +118,12 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
       {:ok, ops2, ch2} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t1",
             after_id: "t0",
             span: {1920, 3840},
@@ -133,11 +133,11 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, ch2)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 1, ops2, ch2)
 
       assert :ok =
                Operation.validate(
-                 %Coconut.Edit.Operations.DeleteNote{track_id: "tempo", note_id: "t1"},
+                 %Coconut.Edit.Operations.DeleteNote{track_id: "global:tempo", note_id: "t1"},
                  ws
                )
     end
@@ -148,7 +148,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, changes} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -158,18 +158,18 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, changes)
 
       {:ok, cp} =
         Coconut.Edit.Patch.new(%{
-          track_id: "tempo",
+          track_id: "global:tempo",
           anchor: %Tamale.Anchor.Ordinal{refs: ["t0"], at_version: 1},
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.tempo.patches, [cp])
+      ws = put_in(ws.globals["global:tempo"].patches, [cp])
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, "tempo")
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, "global:tempo")
       assert length(survivors) == 1
       assert dead == []
     end
@@ -178,7 +178,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, changes} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -188,19 +188,19 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, changes)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, changes)
 
       {:ok, cp} =
         Coconut.Edit.Patch.new(%{
-          track_id: "tempo",
+          track_id: "global:tempo",
           anchor: %Tamale.Anchor.Metric{coord: :tick, from: 100, to: 200, at_version: 1},
           patch: %Tamale.Patch{base_digest: "abc", payload: %{}}
         })
 
-      ws = put_in(ws.tempo.patches, [cp])
+      ws = put_in(ws.globals["global:tempo"].patches, [cp])
 
-      wp = WarpProvider.tick(Workspace.track_spans(ws, "tempo"))
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, "tempo", wp)
+      wp = WarpProvider.tick(Workspace.track_spans(ws, "global:tempo"))
+      {:ok, survivors, dead} = Workspace.transport_patches(ws, "global:tempo", wp)
       assert length(survivors) == 1
       assert dead == []
       # coordinates unchanged (identity warp)
@@ -213,7 +213,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, ch} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 9600},
@@ -223,7 +223,7 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       # At tick 0, seconds should be 0
@@ -236,7 +236,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, ch} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -246,12 +246,12 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
       {:ok, ops2, ch2} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t1",
             after_id: "t0",
             span: {1920, 3840},
@@ -261,7 +261,7 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 1, ops2, ch2)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 1, ops2, ch2)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       # First section: 1920 ticks at 120 BPM = 1920/(120*480/60) = 2.0 sec
@@ -275,7 +275,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, ch} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 9600},
@@ -285,7 +285,7 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       tick = Score.TempoMap.sec_to_tick(tm, 3.5)
@@ -304,7 +304,7 @@ defmodule Coconut.TempoTest do
           {:ok, ops, ch} =
             Operation.lower(
               %Coconut.Edit.Operations.InsertNote{
-                track_id: "tempo",
+                track_id: "global:tempo",
                 note_id: id,
                 after_id: after_id,
                 span: span,
@@ -314,20 +314,24 @@ defmodule Coconut.TempoTest do
               %Operation.Config{}
             )
 
-          {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
+          {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", ws.edit_version, ops, ch)
           ws
         end)
 
       # Move permutes ids but leaves spans untouched.
       {:ok, ops, ch} =
         Operation.lower(
-          %Coconut.Edit.Operations.MoveNote{track_id: "tempo", note_id: "t2", after_id: "t0"},
+          %Coconut.Edit.Operations.MoveNote{
+            track_id: "global:tempo",
+            note_id: "t2",
+            after_id: "t0"
+          },
           ws,
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
-      assert ws.tempo.space.ids == ["t0", "t2", "t1"]
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", ws.edit_version, ops, ch)
+      assert ws.globals["global:tempo"].space.ids == ["t0", "t2", "t1"]
 
       {:ok, tm} = Workspace.tempo_map(ws)
       assert tuple_size(tm.segments) == 3
@@ -339,7 +343,7 @@ defmodule Coconut.TempoTest do
       {:ok, ops, ch} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 9600},
@@ -349,7 +353,7 @@ defmodule Coconut.TempoTest do
           %Operation.Config{}
         )
 
-      {:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+      {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
       {:ok, tm} = Workspace.tempo_map(ws)
       assert Score.TempoMap.slice(tm, 100, 100) == []
@@ -367,7 +371,7 @@ defmodule Coconut.TempoTest do
           {:ok, ops, ch} =
             Operation.lower(
               %Coconut.Edit.Operations.InsertNote{
-                track_id: "tempo",
+                track_id: "global:tempo",
                 note_id: id,
                 after_id: after_id,
                 span: span,
@@ -377,7 +381,7 @@ defmodule Coconut.TempoTest do
               %Operation.Config{}
             )
 
-          {:ok, ws} = Workspace.apply_batch(ws, "tempo", ws.edit_version, ops, ch)
+          {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", ws.edit_version, ops, ch)
           ws
         end)
 
@@ -441,7 +445,7 @@ defmodule Coconut.TempoTest do
       {:ok, _ops, changes} =
         Operation.lower(
           %Coconut.Edit.Operations.InsertNote{
-            track_id: "tempo",
+            track_id: "global:tempo",
             note_id: "t0",
             after_id: :head,
             span: {0, 1920},
@@ -458,7 +462,7 @@ defmodule Coconut.TempoTest do
       assert {:error, {:invalid_bpm, "fast"}} =
                Operation.validate(
                  %Coconut.Edit.Operations.InsertNote{
-                   track_id: "tempo",
+                   track_id: "global:tempo",
                    note_id: "t0",
                    after_id: :head,
                    span: {0, 1920},
@@ -470,7 +474,7 @@ defmodule Coconut.TempoTest do
       assert {:error, {:invalid_bpm, nil}} =
                Operation.validate(
                  %Coconut.Edit.Operations.InsertNote{
-                   track_id: "tempo",
+                   track_id: "global:tempo",
                    note_id: "t0",
                    after_id: :head,
                    span: {0, 1920},
@@ -484,7 +488,7 @@ defmodule Coconut.TempoTest do
       assert {:error, {:invalid_bpm, -1.5}} =
                Operation.lower(
                  %Coconut.Edit.Operations.InsertNote{
-                   track_id: "tempo",
+                   track_id: "global:tempo",
                    note_id: "t0",
                    after_id: :head,
                    span: {0, 1920},
@@ -516,12 +520,16 @@ defmodule Coconut.TempoTest do
     end
   end
 
-  describe "tempo field validation" do
-    test "rejects a tempo-incapable module in the tempo field" do
-      {:ok, vocal} = Track.new(%{id: "tempo", module: Track.Vocal})
+  describe "globals validation" do
+    test "rejects a tempo-incapable module in the tempo slot" do
+      {:ok, vocal} = Track.new(%{id: "global:tempo", module: Track.Vocal})
 
       assert {:error, {:invalid_tempo_track, Track.Vocal}} =
-               Workspace.new(%{id: ID.generate_id("WSpc_"), edit_version: 0, tempo: vocal})
+               Workspace.new(%{
+                 id: ID.generate_id("WSpc_"),
+                 edit_version: 0,
+                 globals: %{"global:tempo" => vocal}
+               })
     end
 
     test "rejects a tempo-capable track inside tracks" do
@@ -535,14 +543,25 @@ defmodule Coconut.TempoTest do
                })
     end
 
-    test "rejects a tracks key colliding with the tempo track id" do
-      {:ok, vocal} = Track.new(%{id: "tempo", module: Track.Vocal})
+    test "rejects a tracks key in the reserved global namespace" do
+      {:ok, vocal} = Track.new(%{id: "global:tempo", module: Track.Vocal})
 
-      assert {:error, {:tempo_id_collision, "tempo"}} =
+      assert {:error, {:global_id_reserved, "global:tempo"}} =
                Workspace.new(%{
                  id: ID.generate_id("WSpc_"),
                  edit_version: 0,
-                 tracks: %{"tempo" => vocal}
+                 tracks: %{"global:tempo" => vocal}
+               })
+    end
+
+    test "rejects a global whose key differs from its track id" do
+      {:ok, tempo} = Track.new(%{id: "global:swing", module: Track.Tempo})
+
+      assert {:error, {:invalid_global_track, "global:tempo", "global:swing"}} =
+               Workspace.new(%{
+                 id: ID.generate_id("WSpc_"),
+                 edit_version: 0,
+                 globals: %{"global:tempo" => tempo}
                })
     end
   end

@@ -32,7 +32,7 @@ coconut 是一个**引擎无关（engine-agnostic）的编辑器内核，将用�
   → command 翻译 + dispatch（按 workspace_id 路由）
   → Workspace（聚合根，单写者，命令全序点；当前纯模块，GenServer 壳挪 v2，§10）
       tracks: %{track_id => Track.t()}    # 音符轨
-      tempo: Track.t()                    # tempo 轨独立字段，有且仅有一条
+      globals: %{global_id => Track.t()}  # 全局轨（内建 tempo 等），id 带 "global:" 前缀
       tpqn / time_sigs                    # 工程级：tick 分辨率 + 拍号事件
       Track = Space.t() + 侧表（版本化 span 表 / elements_by_id）
               + patches / dead_patches（坟场）
@@ -152,12 +152,14 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   至下一事件），首元素受保护不可删除（`Track.Tempo.validate_gesture/3`）；
 - `:tick` provider 对 tempo log 永远返回 identity；tempo Space 自身几乎
   不会被挂锚，其角色是"序列化容器 + log 发生器"；
-- tempo 轨的存放：Workspace 独立 `tempo` 字段，有且仅有一条（结构性
-  保证）；绑定按能力不按模块身份：任何导出 `tempo_events/1` 的 track
-  module 都可充当 tempo 轨（投影知识在模块上，`Workspace.validate/1`
-  把关能力与 id 冲突）；`fetch_track/2`/`apply_batch/5` 等按 track id
-  透明路由到该字段；空 tempo 轨（无事件）时 `Workspace.tempo_map/1`
-  报 `:no_tempo_track`，引擎走自有回退；
+- tempo 轨的存放：Workspace `globals` map 的内建全局轨，id 为
+  `"global:tempo"`（全局轨只用 id 寻址，`"global:"` 前缀即路由规则，
+  与普通轨命名空间结构性隔离）；绑定按能力不按模块身份：任何导出
+  `tempo_events/1` 的 track module 都可占据 tempo 槽位（投影知识在
+  模块上，`Workspace.validate/1` 把关能力与命名空间）；
+  `fetch_track/2`/`apply_batch/5` 等按 track id 前缀路由到 `globals`；
+  tempo 槽位缺失或空轨（无事件）时 `Workspace.tempo_map/1` 报
+  `:no_tempo_track`，引擎走自有回退；
 - 拍号（TimeSig）：**不作 track**，落 `Workspace` 的 `time_sigs` 字段
   （`[{bar, sig}]` 事件列表，支持中途变拍；bar 是权威坐标，首事件须在
   bar 1 且小节序号严格递增，`Workspace.validate/1` 把关）。它是 tick
@@ -361,7 +363,7 @@ GenServer 壳。
   duration 收缩、右半 offset 重寻址）、`retime_element/3`（trim 的元素
   补偿钩子，`use` 默认 identity）、`view/1`（拍扁乐谱视图，§11.1）。
 - 可选能力由 `Track.supports?/2` 按导出嗅探（不按 behaviour 声明）：
-  `:tempo_derive`（`tempo_events/1`，§6 的 tempo 字段绑定依据）与
+  `:tempo_derive`（`tempo_events/1`，§6 的 tempo 槽位绑定依据）与
   `:element_codec`（`dump_element/1` + `load_element/1` 成对，只导出一半
   视同不具备）；配套内嵌 behaviour（`Track.TempoDerive` /
   `Track.ElementCodec`）给编译期警告。插件轨型（宿主自定义）只需实现
@@ -500,8 +502,8 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
      `{:remove_track, track_id}`。前向 replay = tracks map 的
      put/delete；**边里不存尸体**——被删轨道的全部内容由该边
      之前的边重建（undo 过删除点 = cursor 回到删除前，轨道自然
-     在）；squash 后早期状态本就不可达，一致。tempo 轨是独立
-     字段（§6），不参与增删；`Workspace.new` 带入的初始轨道属
+     在）；squash 后早期状态本就不可达，一致。tempo 轨是 `globals`
+     全局轨（§6），不参与增删；`Workspace.new` 带入的初始轨道属
      root 状态，无需边。删非空轨 v1 允许——undo 经 replay 整体
      恢复其 elements / patches / 坟场（DAW 惯例，无重挂语义）。
      增删轨 bump `edit_version`（渲染产物随之变；规则表述：乐谱

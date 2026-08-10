@@ -14,7 +14,7 @@ cfg = %Operation.Config{}
 track = "vocal"
 
 # ---- 1. Bootstrap workspace ----
-{:ok, tempo_track} = Track.new(%{id: "tempo", module: Track.Tempo})
+{:ok, tempo_track} = Track.new(%{id: "global:tempo", module: Track.Tempo})
 {:ok, vocal_track} = Track.new(%{id: track, module: Track.Vocal})
 
 {:ok, ws} =
@@ -22,14 +22,14 @@ track = "vocal"
     id: ID.generate_id("WSpc_"),
     edit_version: 0,
     tracks: %{track => vocal_track},
-    tempo: tempo_track
+    globals: %{"global:tempo" => tempo_track}
   })
 
 # ---- 2. Insert tempo event ----
 {:ok, ops, ch} =
   Operation.lower(
     %Coconut.Edit.Operations.InsertNote{
-      track_id: "tempo",
+      track_id: "global:tempo",
       note_id: "t0",
       after_id: :head,
       span: {0, 9600},
@@ -38,7 +38,7 @@ track = "vocal"
     ws,
     cfg
   )
-{:ok, ws} = Workspace.apply_batch(ws, "tempo", 0, ops, ch)
+{:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
 # ---- 3. Insert notes ----
 notes = [

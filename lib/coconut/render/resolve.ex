@@ -90,7 +90,7 @@ defmodule Coconut.Render.Resolve do
   # ---- Transport stage ----
 
   # Patches live on their track, so "every patch in the workspace" is every
-  # track's patch list (tempo field included, via `Workspace.all_tracks/1`);
+  # track's patch list (globals included, via `Workspace.all_tracks/1`);
   # an out-of-band mount on an unknown track is rejected at
   # `Workspace.attach_patch/2` and cannot occur here.
   defp transport_all(ws) do
