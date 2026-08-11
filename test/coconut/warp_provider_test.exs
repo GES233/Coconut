@@ -162,8 +162,8 @@ defmodule Coconut.WarpProviderTest do
     end
   end
 
-  test "supported_coords advertises :tick only" do
-    assert WarpProvider.supported_coords() == [:tick]
+  test "supported_coords advertises the native builders" do
+    assert WarpProvider.supported_coords() == [:frame, :tick]
   end
 
   describe "for_coord/3" do
@@ -177,10 +177,116 @@ defmodule Coconut.WarpProviderTest do
       assert Warp.at!(w, 700) == {:ok, {590, 1}}
     end
 
-    test "a coord without a builder entry returns nil" do
-      assert WarpProvider.for_coord(:frame, %{1 => %{"n1" => {0, 480}}}) == nil
+    test ":frame dispatches to the native frame builder" do
+      spans = %{1 => %{"c1" => {0, 100}}, 2 => %{"c1" => {50, 150}}}
+      wp = WarpProvider.for_coord(:frame, spans)
+
+      {:ok, w} =
+        wp.(:frame, {2, [%Op.Retime{id: "c1", old_span: {0, 100}, new_span: {50, 150}}]})
+
+      assert Warp.at!(w, 60) == {:ok, {110, 1}}
       # ...and supported_coords/0 (the Patch.new guard source) agrees
-      refute :frame in WarpProvider.supported_coords()
+      assert :frame in WarpProvider.supported_coords()
+    end
+
+    test "a coord without a builder entry returns nil" do
+      assert WarpProvider.for_coord(:seconds, %{1 => %{"n1" => {0, 480}}}) == nil
+    end
+  end
+
+  describe "frame_over_tick/3 (W_frame = T ∘ W_tick ∘ T⁻¹)" do
+    # 120 bpm, tpqn 480, 100 fps：rate = 100 × 60_000 / (120_000 × 480)
+    # = 5/48 frames per tick → 480 ticks = 50 frames.
+    defp frame_context, do: %{tempo_at: fn _version -> [{0, 120_000}] end, frame_rate: 100, tpqn: 480}
+
+    defp frame_provider(spans, patches \\ [], context \\ frame_context()),
+         do: WarpProvider.frame_over_tick(spans, patches, context)
+
+    test "a batch without warp-relevant ops is identity (no tempo needed)" do
+      wp = frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
+        frame_context()
+        | tempo_at: fn _version -> nil end
+      })
+
+      assert {:ok, Warp.identity()} == wp.(:frame, {2, []})
+    end
+
+    test "a frame anchor rides the tick warp through the tempo staircase" do
+      spans = %{1 => %{"n1" => {0, 480}}, 2 => %{"n1" => {0, 240}}}
+
+      patch = %Coconut.Edit.Patch{
+        track_id: "vocal",
+        channel: :energy,
+        anchor: %Tamale.Anchor.Metric{coord: :frame, from: 0, to: 50, at_version: 1},
+        patch: %Tamale.Patch{base_digest: "d", payload: %{}}
+      }
+
+      wp = frame_provider(spans, [patch])
+
+      {:ok, w} =
+        wp.(:frame, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
+
+      # 50 frames = 480 ticks → retimed to 240 ticks → 25 frames, exact
+      assert Warp.map_interval!(w, 0, 50) == {:ok, {{0, 1}, {25, 1}}}
+    end
+
+    test "a multi-step tempo map composes piecewise" do
+      # 120 bpm until tick 480, then 60 bpm: rates 5/48 and 5/24 f/t.
+      context = %{
+        tempo_at: fn _version -> [{0, 120_000}, {480, 60_000}] end,
+        frame_rate: 100,
+        tpqn: 480
+      }
+
+      spans = %{1 => %{"n1" => {0, 480}}, 2 => %{"n1" => {0, 240}}}
+
+      patch = %Coconut.Edit.Patch{
+        track_id: "vocal",
+        channel: :energy,
+        anchor: %Tamale.Anchor.Metric{coord: :frame, from: 50, to: 100, at_version: 1},
+        patch: %Tamale.Patch{base_digest: "d", payload: %{}}
+      }
+
+      wp = frame_provider(spans, [patch], context)
+
+      {:ok, w} =
+        wp.(:frame, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
+
+      # frames [0, 50] = ticks [0, 480]，跟随 retime 压缩到 [0, 25]；
+      # frame 50 是跳变边界，map_interval 约定起点取到达段，[50, 100] 不变；
+      # 跨界区间 [25, 75]：25 frames = 240 ticks → 120 ticks → 25/2 frames
+      assert Warp.map_interval!(w, 0, 50) == {:ok, {{0, 1}, {25, 1}}}
+      assert Warp.map_interval!(w, 50, 100) == {:ok, {{50, 1}, {100, 1}}}
+      assert Warp.map_interval!(w, 25, 75) == {:ok, {{25, 2}, {75, 1}}}
+    end
+
+    test "missing tempo steps are a construction error, not a crash" do
+      wp =
+        frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
+          frame_context()
+          | tempo_at: fn _version -> nil end
+        })
+
+      assert {:error, {:warp_construction_failed, :missing_tempo_events}} =
+               wp.(:frame, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
+    end
+
+    test "steps not starting at tick 0 are rejected" do
+      wp =
+        frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
+          frame_context()
+          | tempo_at: fn _version -> [{480, 120_000}] end
+        })
+
+      assert {:error, {:warp_construction_failed, :invalid_tempo_steps}} =
+               wp.(:frame, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
+    end
+
+    test "a float frame_rate is rejected (warp coordinates are exact)" do
+      wp = frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{frame_context() | frame_rate: 86.13})
+
+      assert {:error, {:warp_construction_failed, :invalid_frame_rate}} =
+               wp.(:frame, {2, [%Op.Retime{id: "n1", old_span: {0, 480}, new_span: {0, 240}}]})
     end
   end
 end

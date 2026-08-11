@@ -15,12 +15,12 @@ defmodule Coconut.PatchTest do
   end
 
   describe "construction-time validation" do
-    test "Metric anchor with a supported coord (:tick) is accepted" do
+    test "Metric anchor with a supported coord (:tick, :frame) is accepted" do
       assert {:ok, %Patch{}} = metric_patch(:tick)
+      assert {:ok, %Patch{}} = metric_patch(:frame)
     end
 
     test "Metric anchor with an unsupported coord is rejected" do
-      assert {:error, {:unsupported_coord, :frame}} = metric_patch(:frame)
       assert {:error, {:unsupported_coord, :seconds}} = metric_patch(:seconds)
     end
 

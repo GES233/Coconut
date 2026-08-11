@@ -300,14 +300,28 @@ defmodule Coconut.AudioTest do
                Workspace.attach_patch(ws, patch)
     end
 
-    test "frame Metric anchors cannot even be constructed (v1 warp table)" do
-      assert {:error, {:unsupported_coord, :frame}} =
-               Patch.new(%{
-                 track_id: @track,
-                 channel: :default,
-                 anchor: %Tamale.Anchor.Metric{coord: :frame, from: 0, to: 100, at_version: 0},
-                 patch: %Tamale.Patch{base_digest: "d", payload: %{}}
-               })
+    test "frame Metric anchors mount and transport with the native frame warp", %{ws: ws} do
+      ws = insert_clip(ws, "c1", {0, 100})
+
+      {:ok, patch} =
+        Patch.new(%{
+          track_id: @track,
+          channel: :default,
+          anchor: %Tamale.Anchor.Metric{coord: :frame, from: 0, to: 100, at_version: 0},
+          patch: %Tamale.Patch{base_digest: "d", payload: %{}}
+        })
+
+      {:ok, ws, _minted} = Workspace.attach_patch(ws, patch)
+
+      ws =
+        apply_request(ws, %TrimNote{
+          track_id: @track,
+          note_id: "c1",
+          old_span: {0, 100},
+          new_span: {0, 60}
+        })
+
+      assert [%{anchor: %{coord: :frame, from: {0, 1}, to: {60, 1}}}] = audio_track(ws).patches
     end
   end
 

@@ -41,6 +41,8 @@ defmodule Coconut.Edit.Track.Tempo do
     end
   end
 
+  def validate_gesture(_gesture, _track, _info), do: :ok
+
   @impl Coconut.Edit.Track
   def split_elements(element, _context), do: {element || %{}, element || %{}}
 

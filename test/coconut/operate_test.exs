@@ -1378,4 +1378,124 @@ defmodule Coconut.Edit.OperationTest do
       assert is_binary(minted)
     end
   end
+
+  describe "vocal same-track overlap constraint" do
+    # n1 [0, 480)、n2 [960, 1440)，中间留缝；半开区间，相邻合法。
+    setup %{ws: ws} do
+      ws =
+        ws
+        |> apply_gesture(%Coconut.Edit.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n1",
+          after_id: :head,
+          span: {0, 480},
+          attrs: %{}
+        })
+        |> apply_gesture(%Coconut.Edit.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n2",
+          after_id: "n1",
+          span: {960, 1440},
+          attrs: %{}
+        })
+
+      {:ok, ws: ws}
+    end
+
+    test "insert overlapping an existing note is rejected", %{ws: ws} do
+      assert {:error, {:vocal_overlap_rejected, %{span: {240, 720}, conflicting: ["n1"]}}} =
+               Operation.validate(
+                 %Coconut.Edit.Operations.InsertNote{
+                   track_id: @track,
+                   note_id: "n3",
+                   after_id: "n1",
+                   span: {240, 720},
+                   attrs: %{}
+                 },
+                 ws
+               )
+    end
+
+    test "insert abutting existing notes is allowed", %{ws: ws} do
+      assert :ok =
+               Operation.validate(
+                 %Coconut.Edit.Operations.InsertNote{
+                   track_id: @track,
+                   note_id: "n3",
+                   after_id: "n1",
+                   span: {480, 960},
+                   attrs: %{}
+                 },
+                 ws
+               )
+    end
+
+    test "drag onto a neighboring note is rejected", %{ws: ws} do
+      assert {:error, {:vocal_overlap_rejected, %{span: {720, 1200}, conflicting: ["n2"]}}} =
+               Operation.validate(
+                 %Coconut.Edit.Operations.DragNote{
+                   track_id: @track,
+                   note_id: "n1",
+                   after_id: :head,
+                   old_span: {0, 480},
+                   new_span: {720, 1200}
+                 },
+                 ws
+               )
+    end
+
+    test "trim extending over the next note is rejected", %{ws: ws} do
+      assert {:error, {:vocal_overlap_rejected, %{span: {0, 1000}, conflicting: ["n2"]}}} =
+               Operation.validate(
+                 %Coconut.Edit.Operations.TrimNote{
+                   track_id: @track,
+                   note_id: "n1",
+                   old_span: {0, 480},
+                   new_span: {0, 1000}
+                 },
+                 ws
+               )
+    end
+
+    test "merge whose composite span swallows a third note is rejected", %{ws: ws} do
+      ws =
+        apply_gesture(ws, %Coconut.Edit.Operations.InsertNote{
+          track_id: @track,
+          note_id: "n3",
+          after_id: "n2",
+          span: {1920, 2400},
+          attrs: %{}
+        })
+
+      # Move 把 n3 排到 n1 之后（序列 n1 n3 n2），merge [n1, n3] 的复合
+      # span [0, 2400) 会压住 n2 [960, 1440)
+      ws =
+        apply_gesture(ws, %Coconut.Edit.Operations.MoveNote{
+          track_id: @track,
+          note_id: "n3",
+          after_id: "n1"
+        })
+
+      assert {:error, {:vocal_overlap_rejected, %{span: {0, 2400}, conflicting: ["n2"]}}} =
+               Operation.validate(
+                 %Coconut.Edit.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n3"]},
+                 ws
+               )
+    end
+
+    test "merge of abutting notes stays legal", %{ws: ws} do
+      assert :ok =
+               Operation.validate(
+                 %Coconut.Edit.Operations.MergeNotes{track_id: @track, note_ids: ["n1", "n2"]},
+                 ws
+               )
+    end
+  end
+
+  defp apply_gesture(ws, req) do
+    :ok = Operation.validate(req, ws)
+    {:ok, ops, changes} = Operation.lower(req, ws, %Operation.Config{})
+    {:ok, ws} = Workspace.apply_batch(ws, req.track_id, ws.edit_version, ops, changes)
+    ws
+  end
 end

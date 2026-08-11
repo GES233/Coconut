@@ -33,22 +33,16 @@ defmodule Coconut.Render.Engine.Snapshot do
   @doc """
   Flatten a workspace into an engine-facing snapshot.
 
-  `tempo_map` is `nil` when the tempo track has no events — engines
-  apply their own fallback (DiffSinger: flat 120 BPM). An uncompilable
-  tempo track is an `{:error, _}`.
+  `tracks` covers every track, globals included (`Workspace.all_tracks/1`):
+  the tempo track appears under its `"global:tempo"` id with its raw
+  events, so engines (and future tempo interventions / patch projections)
+  see more than the compiled map. `tempo_map` is still the pre-compiled
+  convenience — `nil` when the tempo track has no events, engines apply
+  their own fallback (DiffSinger: flat 120 BPM). An uncompilable tempo
+  track is an `{:error, _}`.
   """
   @spec from_workspace(Workspace.t()) :: {:ok, t()} | {:error, term()}
   def from_workspace(%Workspace{} = ws) do
-    tracks =
-      Map.new(ws.tracks, fn {track_id, track} ->
-        {track_id,
-         %{
-           module: track.module,
-           coord: Track.coord_domain(track),
-           elements: Track.view(track)
-         }}
-      end)
-
     case Workspace.tempo_map(ws) do
       {:ok, tempo_map} ->
         {:ok, tempo_map}
@@ -61,6 +55,16 @@ defmodule Coconut.Render.Engine.Snapshot do
     end
     |> case do
       {:ok, tempo_map} ->
+        tracks =
+          Map.new(Workspace.all_tracks(ws), fn {track_id, track} ->
+            {track_id,
+             %{
+               module: track.module,
+               coord: Track.coord_domain(track),
+               elements: Track.view(track)
+             }}
+          end)
+
         {:ok,
          %__MODULE__{
            tracks: tracks,
