@@ -112,19 +112,5 @@ defmodule Coconut.TrackTest do
       assert Track.supports?(Track.Tempo, :tempo_derive)
       refute Track.supports?(Track.Vocal, :tempo_derive)
     end
-
-    test ":element_codec is sniffed as a pair" do
-      assert Track.supports?(Track.Vocal, :element_codec)
-      assert Track.supports?(Track.Tempo, :element_codec)
-      refute Track.supports?(String, :element_codec)
-    end
-
-    test "exporting only half of :element_codec does not count" do
-      defmodule HalfCodec do
-        def dump_element(_element), do: {:ok, %{}}
-      end
-
-      refute Track.supports?(HalfCodec, :element_codec)
-    end
   end
 end

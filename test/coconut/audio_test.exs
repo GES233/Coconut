@@ -353,21 +353,6 @@ defmodule Coconut.AudioTest do
     end
   end
 
-  describe "element codec" do
-    test "dump/load roundtrip" do
-      clip = %Clip{source: "a.wav", source_offset_frames: 10, duration_frames: 100}
-
-      assert {:ok, dumped} = Audio.dump_element(clip)
-      assert dumped == %{source: "a.wav", source_offset_frames: 10, duration_frames: 100}
-      assert {:ok, ^clip} = Audio.load_element(dumped)
-
-      assert {:error, {:invalid_clip_offset, -1}} =
-               Audio.load_element(%{dumped | source_offset_frames: -1})
-
-      assert {:error, {:invalid_clip_dump, "nope"}} = Audio.load_element("nope")
-    end
-  end
-
   describe "pickle" do
     test "track archive roundtrip through the default registry", %{ws: ws} do
       ws = insert_clip(ws, "c1", {0, 160}, %{source_offset_frames: 10})

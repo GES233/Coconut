@@ -38,9 +38,6 @@ defmodule Coconut.Edit.Track do
   - `:tempo_derive` — `tempo_events/1` (see `TempoDerive`): the tempo-map
     projection; `Coconut.Edit.Workspace` binds (and reserves) the
     `"global:tempo"` globals slot by it.
-  - `:element_codec` — `dump_element/1` + `load_element/1` (see
-    `ElementCodec`), sniffed as a pair: per-element archive codec for
-    `Coconut.Pickle.Track`.
 
   `use Coconut.Edit.Track` supplies permissive defaults for
   `validate_gesture/3` (accepts everything) and `retime_element/3`
@@ -229,29 +226,21 @@ defmodule Coconut.Edit.Track do
   - `:tempo_derive` — `tempo_events/1` (`TempoDerive`): the tempo-map
     projection; `Coconut.Edit.Workspace.validate/1` binds (and reserves) the
     `"global:tempo"` globals slot by it.
-  - `:element_codec` — `dump_element/1` + `load_element/1`
-    (`ElementCodec`), sniffed as a pair: per-element archive codec for
-    `Coconut.Pickle.Track`.
   """
-  @type capability :: :tempo_derive | :element_codec
+  @type capability :: :tempo_derive
 
   @capabilities %{
-    tempo_derive: [tempo_events: 1],
-    element_codec: [dump_element: 1, load_element: 1]
+    tempo_derive: [tempo_events: 1]
   }
 
   @doc """
   Whether `module` exports every callback of the optional `capability`.
 
   The single sniffing point (`Code.ensure_loaded?` + `function_exported?`
-  per callback), keeping capability callback names out of call sites. A
-  multi-callback capability (`:element_codec`) counts only when the full
-  set is exported — a module exporting half of it is treated as not
-  supporting it at all (no half-broken dump/load).
+  per callback), keeping capability callback names out of call sites.
 
-  Declaring the matching `@behaviour` (`TempoDerive` / `ElementCodec`)
-  buys compile-time warnings but is not required: binding stays by
-  export, not by declaration.
+  Declaring the matching `@behaviour` (`TempoDerive`) buys compile-time
+  warnings but is not required: binding stays by export, not by declaration.
   """
   @spec supports?(module(), capability()) :: boolean()
   def supports?(module, capability) when is_atom(module) do
@@ -366,11 +355,16 @@ defmodule Coconut.Edit.Track do
   defp sync_spans(track, _new_version, span_changes) when map_size(span_changes) == 0,
     do: track
 
-  defp sync_spans(track, new_version, span_changes) do
-    new = track |> latest_spans() |> apply_span_deltas(span_changes)
-
-    %{track | spans_by_version: Map.put(track.spans_by_version, new_version, new)}
-  end
+  defp sync_spans(track, new_version, span_changes),
+    do: %{
+      track
+      | spans_by_version:
+          Map.put(
+            track.spans_by_version,
+            new_version,
+            track |> latest_spans() |> apply_span_deltas(span_changes)
+          )
+    }
 
   defp apply_span_deltas(prev, deltas) do
     {upserts, tombstones} = Enum.split_with(deltas, fn {_id, v} -> v != :delete end)
@@ -396,18 +390,5 @@ defmodule Coconut.Edit.Track do
     @callback tempo_events(Coconut.Edit.Track.t()) :: [
                 {Coconut.Score.Tick.numeric_tick(), Coconut.Score.Tempo.Event.t()}
               ]
-  end
-
-  defmodule ElementCodec do
-    @moduledoc """
-    Optional `:element_codec` capability: per-element archive codec for
-    `Coconut.Pickle.Track`. Both callbacks are sniffed as a pair via
-    `Coconut.Edit.Track.supports?/2` — a module exporting only one is treated
-    as codec-less (archiving a non-empty element table then fails with
-    `{:error, {:no_element_codec, module}}`).
-    """
-
-    @callback dump_element(element :: term()) :: {:ok, term()} | {:error, term()}
-    @callback load_element(dumped :: term()) :: {:ok, term()} | {:error, term()}
   end
 end

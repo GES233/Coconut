@@ -15,10 +15,10 @@ defmodule Coconut.Pickle.Track do
     span `{start, stop}` 经 `Coconut.Pickle.TupleCodec` 转为
     `%{start: _, stop: _}`，端点按 `Coconut.Edit.Track.span()` 约定为
     整数直出；
-  - `elements_by_id` 按能力委托：track module 具备 `:element_codec`
-    能力（`dump_element/1` + `load_element/1` 成对导出，统一经
-    `Coconut.Edit.Track.supports?/2` 探测）则逐元素委托；不具备且元素表
-    为空则放行，不具备且非空报 `{:error, {:no_element_codec, module}}`；
+  - `elements_by_id` 按 registry 绑定的 codec 委托：注册项携带
+    `Coconut.Pickle.ElementCodec` 模块（`Registry.to_codec/2` 解析）则
+    逐元素委托；未绑定且元素表为空则放行，未绑定且非空报
+    `{:error, {:no_element_codec, module}}`；
   - `patches` 走 `Coconut.Pickle.Patch` codec；
   - `dead_patches` 的 `{patch, reason}` → `[patch_dump, reason]`，reason
     原样透传但须满足 `Coconut.Pickle` 允许类型约定，否则
@@ -28,25 +28,27 @@ defmodule Coconut.Pickle.Track do
 
   ## registry
 
-  `default_registry/0` 只注册椰子自带的三种轨型。宿主应用应自建
-  registry（可在 `default_registry/0` 基础上 `Registry.register/3` 扩展），
-  并在存取档时显式传入——registry 是存档格式的一部分，不是全局状态。
+  `default_registry/0` 只注册椰子自带的三种轨型（含各自的元素 codec 绑定）。
+  宿主应用应自建 registry（可在 `default_registry/0` 基础上
+  `Registry.register/4` 扩展，插件轨型用 `codec:` 选项绑定自己的
+  `Coconut.Pickle.ElementCodec`），并在存取档时显式传入——registry 是
+  存档格式的一部分，不是全局状态。
   """
 
   alias Coconut.Edit.Track
-  alias Coconut.Pickle.{Patch, Registry, Space, TupleCodec}
+  alias Coconut.Pickle.{ElementCodec, Patch, Registry, Space, TupleCodec}
   import Coconut.Pickle
 
   @span {:span, [:start, :stop]}
 
-  @doc ~s(自带轨型的默认 registry：`"vocal"` / `"tempo"` / `"audio"`。)
+  @doc ~s(自带轨型的默认 registry：`"vocal"` / `"tempo"` / `"audio"`（各带元素 codec 绑定）。)
   @spec default_registry() :: Registry.t()
   def default_registry do
     {:ok, registry} =
       Registry.new(%{
-        "vocal" => Coconut.Edit.Track.Vocal,
-        "tempo" => Coconut.Edit.Track.Tempo,
-        "audio" => Coconut.Edit.Track.Audio
+        "vocal" => {Coconut.Edit.Track.Vocal, ElementCodec.Vocal},
+        "tempo" => {Coconut.Edit.Track.Tempo, ElementCodec.Tempo},
+        "audio" => {Coconut.Edit.Track.Audio, ElementCodec.Audio}
       })
 
     registry
@@ -57,7 +59,7 @@ defmodule Coconut.Pickle.Track do
   def dump(%Track{} = track, %Registry{} = registry) do
     with {:ok, name} <- Registry.to_name(registry, track.module),
          {:ok, space} <- Space.dump(track.space),
-         {:ok, elements} <- dump_elements(track),
+         {:ok, elements} <- dump_elements(track, registry),
          {:ok, patches} <- dump_patches(track.patches),
          {:ok, dead} <- dump_dead(track.dead_patches) do
       {:ok,
@@ -82,7 +84,7 @@ defmodule Coconut.Pickle.Track do
     with {:ok, module} <- load_module(Map.get(data, :module), registry),
          {:ok, space} <- load_space(Map.get(data, :space)),
          {:ok, spans} <- load_spans(Map.get(data, :spans_by_version)),
-         {:ok, elements} <- load_elements(module, Map.get(data, :elements_by_id)),
+         {:ok, elements} <- load_elements(module, registry, Map.get(data, :elements_by_id)),
          {:ok, patches} <- load_patches(Map.get(data, :patches)),
          {:ok, dead} <- load_dead(Map.get(data, :dead_patches)) do
       Track.new(%{
@@ -142,38 +144,42 @@ defmodule Coconut.Pickle.Track do
   defp load_span_table(version, spans),
     do: {:error, {:invalid_span_table_dump, {version, spans}}}
 
-  # ---- elements（按能力委托） ----
+  # ---- elements（按 registry 绑定的 codec 委托） ----
 
-  defp dump_elements(%Track{module: module, elements_by_id: elements}) do
-    cond do
-      map_size(elements) == 0 -> {:ok, %{}}
-      Track.supports?(module, :element_codec) -> dump_elements_with_codec(module, elements)
-      true -> {:error, {:no_element_codec, module}}
+  defp dump_elements(%Track{module: module, elements_by_id: elements}, registry) do
+    if map_size(elements) == 0 do
+      {:ok, %{}}
+    else
+      with {:ok, codec} <- Registry.to_codec(registry, module) do
+        dump_elements_with_codec(codec, elements)
+      end
     end
   end
 
-  defp dump_elements_with_codec(module, elements) do
+  defp dump_elements_with_codec(codec, elements) do
     Enum.reduce_while(elements, {:ok, %{}}, fn {id, element}, {:ok, acc} ->
-      case module.dump_element(element) do
+      case codec.dump_element(element) do
         {:ok, dumped} -> {:cont, {:ok, Map.put(acc, id, dumped)}}
         {:error, _} = err -> {:halt, err}
       end
     end)
   end
 
-  defp load_elements(module, elements) when is_map(elements) do
-    cond do
-      map_size(elements) == 0 -> {:ok, %{}}
-      Track.supports?(module, :element_codec) -> load_elements_with_codec(module, elements)
-      true -> {:error, {:no_element_codec, module}}
+  defp load_elements(module, registry, elements) when is_map(elements) do
+    if map_size(elements) == 0 do
+      {:ok, %{}}
+    else
+      with {:ok, codec} <- Registry.to_codec(registry, module) do
+        load_elements_with_codec(codec, elements)
+      end
     end
   end
 
-  defp load_elements(_module, other), do: {:error, {:invalid_elements_dump, other}}
+  defp load_elements(_module, _registry, other), do: {:error, {:invalid_elements_dump, other}}
 
-  defp load_elements_with_codec(module, elements) do
+  defp load_elements_with_codec(codec, elements) do
     Enum.reduce_while(elements, {:ok, %{}}, fn {id, dumped}, {:ok, acc} ->
-      case module.load_element(dumped) do
+      case codec.load_element(dumped) do
         {:ok, element} -> {:cont, {:ok, Map.put(acc, id, element)}}
         {:error, _} = err -> {:halt, err}
       end

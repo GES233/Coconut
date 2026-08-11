@@ -1,9 +1,9 @@
-defmodule Coconut.Edit.Track.VocalTest do
+defmodule Coconut.Pickle.ElementCodec.VocalTest do
   use ExUnit.Case, async: true
 
   import Coconut.PickleHelper
 
-  alias Coconut.Edit.Track.Vocal
+  alias Coconut.Pickle.ElementCodec.Vocal
   alias Coconut.Score.{Key, Note}
 
   describe "dump_element/1" do

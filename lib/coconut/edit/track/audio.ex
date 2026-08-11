@@ -24,7 +24,6 @@ defmodule Coconut.Edit.Track.Audio do
   """
 
   use Coconut.Edit.Track
-  @behaviour Coconut.Edit.Track.ElementCodec
 
   alias Coconut.Edit.Track
 
@@ -136,29 +135,6 @@ defmodule Coconut.Edit.Track.Audio do
     end)
     |> Enum.sort_by(fn {id, _element, {start, _end}} -> {start, id} end)
   end
-
-  # 可选能力 :element_codec（Coconut.Edit.Track.ElementCodec）：Clip 摊平为
-  # source 字符串 + 两个整数帧字段的 plain map，load 反向重建并校验形状。
-  @impl Coconut.Edit.Track.ElementCodec
-  def dump_element(%Clip{} = clip) do
-    {:ok,
-     %{
-       source: clip.source,
-       source_offset_frames: clip.source_offset_frames,
-       duration_frames: clip.duration_frames
-     }}
-  end
-
-  @impl Coconut.Edit.Track.ElementCodec
-  def load_element(%{} = dumped) do
-    with {:ok, source} <- cast_source(Map.get(dumped, :source)),
-         {:ok, offset} <- cast_offset(Map.get(dumped, :source_offset_frames)),
-         {:ok, duration} <- cast_duration(Map.get(dumped, :duration_frames)) do
-      {:ok, %Clip{source: source, source_offset_frames: offset, duration_frames: duration}}
-    end
-  end
-
-  def load_element(other), do: {:error, {:invalid_clip_dump, other}}
 
   # ---- 字段形状 ----
 

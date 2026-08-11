@@ -367,11 +367,13 @@ GenServer 壳。
   duration 收缩、右半 offset 重寻址）、`retime_element/3`（trim 的元素
   补偿钩子，`use` 默认 identity）、`view/1`（拍扁乐谱视图，§11.1）。
 - 可选能力由 `Track.supports?/2` 按导出嗅探（不按 behaviour 声明）：
-  `:tempo_derive`（`tempo_events/1`，§6 的 tempo 槽位绑定依据）与
-  `:element_codec`（`dump_element/1` + `load_element/1` 成对，只导出一半
-  视同不具备）；配套内嵌 behaviour（`Track.TempoDerive` /
-  `Track.ElementCodec`）给编译期警告。插件轨型（宿主自定义）只需实现
-  回调 + 注册 `Pickle.Registry`，能力自动被发现。
+  `:tempo_derive`（`tempo_events/1`，§6 的 tempo 槽位绑定依据）；配套
+  内嵌 behaviour（`Track.TempoDerive`）给编译期警告，能力自动被发现。
+  元素归档 codec 不是轨型能力——`Pickle.ElementCodec` behaviour 与三个
+  实现（Vocal/Tempo/Audio）都归 `Coconut.Pickle`，轨型 → codec 的绑定
+  由 `Pickle.Registry` 注册项携带（`Registry.to_codec/2` 解析；未绑定且
+  元素表非空报 `{:error, {:no_element_codec, module}}`）。插件轨型
+  （宿主自定义）提供自己的 codec 模块，注册时以 `codec:` 选项一并绑定。
 - 已落地模块：`Track.Vocal`（Note 元素，tick 域）、`Track.Tempo`（bpm 裸
   map，tick 域）、`Track.Audio`（Clip 元素，帧域，见下）。`Track.Synth`
   留位（参数面比 Vocal 简单，不预留实现）。

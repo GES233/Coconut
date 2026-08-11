@@ -13,7 +13,6 @@ defmodule Coconut.Edit.Track.Tempo do
 
   use Coconut.Edit.Track
   @behaviour Coconut.Edit.Track.TempoDerive
-  @behaviour Coconut.Edit.Track.ElementCodec
 
   alias Coconut.Edit.Track
   alias Coconut.Score.Tempo
@@ -44,18 +43,6 @@ defmodule Coconut.Edit.Track.Tempo do
 
   @impl Coconut.Edit.Track
   def split_elements(element, _context), do: {element || %{}, element || %{}}
-
-  # 可选能力 :element_codec（Coconut.Edit.Track.ElementCodec）：元素是
-  # %{bpm: 整数 milli-bpm} 裸 map，dump 校验形状后原样透传，load 同。
-  @impl Coconut.Edit.Track.ElementCodec
-  def dump_element(%{bpm: bpm} = element) when is_integer(bpm), do: {:ok, element}
-
-  def dump_element(other), do: {:error, {:invalid_tempo_element, other}}
-
-  @impl Coconut.Edit.Track.ElementCodec
-  def load_element(%{bpm: bpm} = dumped) when is_integer(bpm), do: {:ok, dumped}
-
-  def load_element(other), do: {:error, {:invalid_tempo_element_dump, other}}
 
   @impl Coconut.Edit.Track
   def view(track) do
