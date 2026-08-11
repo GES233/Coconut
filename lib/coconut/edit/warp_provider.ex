@@ -202,25 +202,35 @@ defmodule Coconut.Edit.WarpProvider do
         tpqn: tpqn
       }) do
     fn :frame, {version, ops} ->
-      case batch_intents(track_spans, version, ops) do
-        [] ->
-          {:ok, Warp.identity()}
-
-        intents ->
-          with {:ok, steps} <- fetch_tempo_steps(tempo_at, version),
-               {:ok, fps} <- cast_frame_rate(frame_rate) do
-            {lower, upper} = frame_domain(track_spans, patches, intents, steps, fps, tpqn)
-
-            with {:ok, w_tick} <- warp_from_intents(intents, lower, upper),
-                 {:ok, t} <- tempo_warp(steps, fps, tpqn, upper) do
-              {:ok, Warp.compose(t, Warp.compose(w_tick, Warp.invert(t)))}
-            end
-          end
-      end
+      frame_warp_for_entry(track_spans, patches, tempo_at, frame_rate, tpqn, version, ops)
     end
   end
 
   # ---- Frame-over-tick composition (§5 item 4) ----
+
+  defp frame_warp_for_entry(track_spans, patches, tempo_at, frame_rate, tpqn, version, ops) do
+    case batch_intents(track_spans, version, ops) do
+      [] ->
+        {:ok, Warp.identity()}
+
+      intents ->
+        with {:ok, steps} <- fetch_tempo_steps(tempo_at, version),
+             {:ok, fps} <- cast_frame_rate(frame_rate) do
+          compose_frame_warp(track_spans, patches, intents, steps, fps, tpqn)
+        end
+    end
+  end
+
+  # W_frame = T ∘ W_tick ∘ T⁻¹：tick 定义域上界先扩到所有 frame 锚的
+  # 最坏原像，再在同一上界上构造 W_tick 与 T。
+  defp compose_frame_warp(track_spans, patches, intents, steps, fps, tpqn) do
+    {lower, upper} = frame_domain(track_spans, patches, intents, steps, fps, tpqn)
+
+    with {:ok, w_tick} <- warp_from_intents(intents, lower, upper),
+         {:ok, t} <- tempo_warp(steps, fps, tpqn, upper) do
+      {:ok, Warp.compose(t, Warp.compose(w_tick, Warp.invert(t)))}
+    end
+  end
 
   defp fetch_tempo_steps(tempo_at, version) do
     case tempo_at.(version) do
