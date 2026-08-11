@@ -506,7 +506,7 @@ defmodule Coconut.Edit.Workspace do
   Builds a compiled `TempoMap` from the tempo global track
   (`"global:tempo"` in `globals`), at the workspace's `tpqn`.
 
-  A missing or empty tempo track yields `{:error, :no_tempo_track}` —
+  A missing or empty tempo track yields `{:error, :missing_tempo_track}` —
   engines apply their own fallback (see `Coconut.Render.Engine.Snapshot`).
   """
   @spec tempo_map(t()) :: {:ok, TempoMap.t()} | {:error, term()}
@@ -515,13 +515,13 @@ defmodule Coconut.Edit.Workspace do
          [_ | _] = events <- tempo.module.tempo_events(tempo) do
       TempoMap.compile(events, tpqn: ws.tpqn)
     else
-      _ -> {:error, :no_tempo_track}
+      _ -> {:error, :missing_tempo_track}
     end
   end
 
   @doc """
   Elapsed physical time of a tick range (e.g. an editor selection) under
-  the workspace's tempo track. Propagates `{:error, :no_tempo_track}`
+  the workspace's tempo track. Propagates `{:error, :missing_tempo_track}`
   from `tempo_map/1` when the tempo track is empty — engines apply their
   own fallback.
   """
@@ -586,7 +586,7 @@ defmodule Coconut.Edit.Workspace do
   end
 
   # The tempo slot may be absent (`tempo_map/1` then reports
-  # `:no_tempo_track`); when present its module must derive tempo.
+  # `:missing_tempo_track`); when present its module must derive tempo.
   defp check_tempo_global(globals) do
     case Map.get(globals, @tempo_global_id) do
       nil ->

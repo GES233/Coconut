@@ -106,7 +106,7 @@ ramp 是区段级数据、不依附单一 element id、生命周期独立（stal
 
 - 选区经过时间：`TempoMap.duration_sec/3`（零宽/反向区段返回 `0.0`，
   与 `slice/3` 空区段语义对齐）与 `Workspace.region_duration_sec/3`
-  （透传 `:no_tempo_track`，引擎走自有回退）——本文档定稿时同步实现，
+  （透传 `:missing_tempo_track`，引擎走自有回退）——本文档定稿时同步实现，
   见 `lib/coconut/score/tempo_map.ex`、`lib/coconut/workspace.ex`。
 
 ## 8. UI 共存（一车道两层）

@@ -22,7 +22,8 @@ defmodule Coconut.Pickle.TupleCodecTest do
       end
 
       assert_raise ArgumentError, ~r/invalid pair shape/, fn ->
-        TupleCodec.dump([1, 2], {:pair, [:a, :b]})
+        # 经 apply/3 调用：类型检查器无法证出必然 raise（那正是被测行为）
+        apply(TupleCodec, :dump, [[1, 2], {:pair, [:a, :b]}])
       end
     end
   end

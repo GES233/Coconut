@@ -166,7 +166,7 @@ defmodule Coconut.Pickle.TrackTest do
 
       {:ok, registry} = Coconut.Pickle.Registry.new(%{"fake" => String})
 
-      assert {:error, {:no_element_codec, String}} = PickleTrack.dump(track, registry)
+      assert {:error, {:missing_element_codec, String}} = PickleTrack.dump(track, registry)
     end
 
     test "non-conform dead reason is an error" do

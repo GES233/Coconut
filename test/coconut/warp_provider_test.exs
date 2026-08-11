@@ -197,16 +197,18 @@ defmodule Coconut.WarpProviderTest do
   describe "frame_over_tick/3 (W_frame = T ∘ W_tick ∘ T⁻¹)" do
     # 120 bpm, tpqn 480, 100 fps：rate = 100 × 60_000 / (120_000 × 480)
     # = 5/48 frames per tick → 480 ticks = 50 frames.
-    defp frame_context, do: %{tempo_at: fn _version -> [{0, 120_000}] end, frame_rate: 100, tpqn: 480}
+    defp frame_context,
+      do: %{tempo_at: fn _version -> [{0, 120_000}] end, frame_rate: 100, tpqn: 480}
 
-    defp frame_provider(spans, patches \\ [], context \\ frame_context()),
-         do: WarpProvider.frame_over_tick(spans, patches, context)
+    defp frame_provider(spans, patches, context \\ frame_context()),
+      do: WarpProvider.frame_over_tick(spans, patches, context)
 
     test "a batch without warp-relevant ops is identity (no tempo needed)" do
-      wp = frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
-        frame_context()
-        | tempo_at: fn _version -> nil end
-      })
+      wp =
+        frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
+          frame_context()
+          | tempo_at: fn _version -> nil end
+        })
 
       assert {:ok, Warp.identity()} == wp.(:frame, {2, []})
     end

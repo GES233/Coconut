@@ -82,10 +82,10 @@ defmodule Coconut.Pickle.RegistryTest do
                {:ok, Coconut.Pickle.ElementCodec.Tempo}
     end
 
-    test "a registration without a codec reports {:no_element_codec, _}" do
+    test "a registration without a codec reports {:missing_element_codec, _}" do
       {:ok, registry} = Registry.new(%{"vocal" => Coconut.Edit.Track.Vocal})
 
-      assert {:error, {:no_element_codec, Coconut.Edit.Track.Vocal}} =
+      assert {:error, {:missing_element_codec, Coconut.Edit.Track.Vocal}} =
                Registry.to_codec(registry, Coconut.Edit.Track.Vocal)
     end
 

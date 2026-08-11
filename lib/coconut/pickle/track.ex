@@ -18,7 +18,7 @@ defmodule Coconut.Pickle.Track do
   - `elements_by_id` 按 registry 绑定的 codec 委托：注册项携带
     `Coconut.Pickle.ElementCodec` 模块（`Registry.to_codec/2` 解析）则
     逐元素委托；未绑定且元素表为空则放行，未绑定且非空报
-    `{:error, {:no_element_codec, module}}`；
+    `{:error, {:missing_element_codec, module}}`；
   - `patches` 走 `Coconut.Pickle.Patch` codec；
   - `dead_patches` 的 `{patch, reason}` → `[patch_dump, reason]`，reason
     原样透传但须满足 `Coconut.Pickle` 允许类型约定，否则

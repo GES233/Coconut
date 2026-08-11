@@ -116,7 +116,11 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
 
 设计主张：
 
-1. **v1 只支持 `:tick` 坐标**；帧空间 Metric 锚在挂载时拒绝。tick warp 与
+1. **坐标支持（2026-08-11 更新）**：`:tick` 与 `:frame` 原生 builder 都在
+   dispatch 表内——`:frame` 条目共用同一套非 ripple 构造（audio 轨的
+   span 本就是帧坐标，无需 tempo 知识），audio 轨的帧域 Metric 锚随之
+   解锁；tick 轨挂帧域 Metric 锚仍在挂载时拒绝（守卫未放开，见第 4 条
+   落地注记）。tick warp 与
    tempo 无关（tempo 变化 tick 不动），provider 是纯函数：
    `ops + span 快照 → Warp`。
 2. 维护**版本化 span 表** `%{version => %{id => span}}`（不可变 map 结构共享，
@@ -129,15 +133,28 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
    （G-INT-03/05 场景）。**自动化拆两级**（2026-08-09 拍板）：clip 级
    （automation 跟 clip 走）用 Ordinal 锚 + clip 相对帧偏移 payload，
    恒等 transport、零 warp，先行落地；轨级（跨 clip、钉时间线）才需要
-   帧域 Metric 锚与本条 warp，排晚期。
+   帧域 Metric 锚与本条 warp，排晚期。**落地注记（2026-08-11）**：
+   组合器以纯函数 `WarpProvider.frame_over_tick/3` 落地（context 为
+   `%{tempo_at, frame_rate, tpqn}`，tempo_at 是 `(version ->
+   [{tick, milli_bpm}] | nil)` 闭包），验收单测钉死精确有理数语义；
+   两个落地时才发现的约束——①tamale `Coord` 拒 float，`TempoMap`
+   的秒是 float 设施，T 必须从精确 milli-bpm 阶梯事件构造（与
+   tempo-curve 文档"`Tempo.Linear` 进 warp 永不"同一约束）；
+   ②provider 拿到的 version 是各轨 Space 私有版本，无法索引 tempo
+   轨，故当前单 T 兼作 T_old/T_new（tempo 在 fold 区间未变时精确），
+   真正的 tempo 对组合待跨轨版本关联设施。组合器不接 dispatch 表：
+   接入同时需要该关联设施与挂载守卫放开（帧域 Metric 锚上 tick 轨），
+   在此之前验收走直接单测。
 5. provider 分派：构造点（写时 `Workspace` / 检查时 `Resolve`）经
    `WarpProvider.for_coord/3` 按轨的 `coord_domain/0` 查分派表构造
    closure，`supported_coords/0` 从同一张表推导（`Patch.new` 挂载守卫
    随之自动放开）；无 builder 的 coord 返回 nil，走 `transport_patches`
    既有 nil 语义（Ordinal 恒等 transport，Metric 以
    `:warp_provider_required` 判死而非 clause 缺失崩溃）。帧 builder 的
-   入参签名（需 tempo map，与本表 (spans, patches) 形状不同质）随第 4 条
-   落地时再定。锚 coord 与轨 domain 的一致性由 `attach_patch` 把关：
+   入参签名已拍板（2026-08-11）：组合器 `frame_over_tick/3` 收 context
+   `%{tempo_at, frame_rate, tpqn}`（见第 4 条落地注记）；dispatch 表项
+   保持 `(spans, patches)` 形状不变。锚 coord 与轨 domain 的一致性由
+   `attach_patch` 把关：
    Metric coord ≠ 轨 coord_domain 拒（`{:anchor_coord_mismatch, _, _}`）。
 
 ## 6. Tempo Track = 一条独立 Space
@@ -159,7 +176,7 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
   模块上，`Workspace.validate/1` 把关能力与命名空间）；
   `fetch_track/2`/`apply_batch/5` 等按 track id 前缀路由到 `globals`；
   tempo 槽位缺失或空轨（无事件）时 `Workspace.tempo_map/1` 报
-  `:no_tempo_track`，引擎走自有回退；
+  `:missing_tempo_track`，引擎走自有回退；
 - 拍号（TimeSig）：**不作 track**，落 `Workspace` 的 `time_sigs` 字段
   （`[{bar, sig}]` 事件列表，支持中途变拍；bar 是权威坐标，首事件须在
   bar 1 且小节序号严格递增，`Workspace.validate/1` 把关）。它是 tick
@@ -263,7 +280,10 @@ Track.Audio（§11.8）。验收测试 = zongzi_feasibility Scenario 模式移�
 v2 遗留：
 
 - GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——v2 差不多时一口气收尾；
-- 帧空间锚 + tempo 对组合（§5 第 4 条）；
+- 帧空间锚 + tempo 对组合（§5 第 4 条）——部分落地（2026-08-11）：原生
+  `:frame` builder 进 dispatch（audio 轨帧域 Metric 锚解锁）、组合器
+  `frame_over_tick/3` 纯函数落地并验收；接 dispatch 待跨轨版本关联设施
+  与挂载守卫放开，见 §5 第 4 条落地注记；
 - orchid/oi 接入——adapter 独立成包，见 design-2026-08-orchid-intervention.md
   §3.3/§4 与 Phase 计划；
 - diff 适配器（§8，随文件导入排期；跨轨拖动已于 2026-08-10 落地，§8）。
@@ -332,16 +352,25 @@ GenServer 壳。
 
 ### 11.7 毛边（记入 backlog，随用随修）
 
-- 错误词汇两套：`missing_x` / `bad_x` / `unknown_x` 混用，接口层对外前
-  统一。
+- 错误词汇（已定，2026-08-11）：内部 reason 三家语义——`invalid_x`（值
+  形状非法）/ `unknown_x`（引用悬空）/ `missing_x`（必需物缺席，原
+  `no_*` 并入）；lib 内部全链路裸 reason。`Coconut.Error`
+  （`defexception`，字段 `reason`，`wrap/1` / `unwrap/1`）定位为壳/
+  接口层的边界工具：lib 内任何模块不调用它，wrap 发生在壳/JSON-RPC
+  对外序列化前（或 sibling 包自己的边界）。曾在四个聚合根模块的公共
+  API 处试 wrap，但这些函数同是库内苦力（`fetch_track` / `tempo_map` /
+  `apply_batches` 等被 Operations、Render、Pickle 广泛调用），每个内部
+  消费点被迫 unwrap、dialyzer 连锁误报 22 处——边界类型出现在调用图
+  中段是错误切法，当日即外移。
 - `Note.to_canonical` 的 key 形状（`%{midi: n}`）是隐性契约：换 tuning
   或改形状 = 全部已挂 patch 的 base_digest 失效。改 canonical 形状视为
   breaking change。
 - `Workspace.tempo_map/1` 每次现编 TempoMap；大工程下考虑缓存。
-- `Engine.Snapshot.from_workspace/1` 的 `tracks` 只含 `ws.tracks`，
-  tempo 轨缺席——引擎只能拿到编译后的 `tempo_map`，拿不到原始 tempo
-  事件/元素（未来 tempo ramp 干预、tempo 编辑的 patch 投影都会卡在这）；
-  当前 DiffSinger 用不到，v2 定 tempo 干预时再补 track view。
+- ~~`Engine.Snapshot.from_workspace/1` 的 `tracks` 只含 `ws.tracks`~~
+  （已补，2026-08-11）：`tracks` 改走 `Workspace.all_tracks/1`，tempo 轨
+  以 `"global:tempo"` 携带原始事件 view（`Track.Tempo.view/1`），引擎
+  不再只有编译后的 `tempo_map`——tempo ramp 干预、tempo 编辑的 patch
+  投影的共同前置已解锁。
 
 ### 11.8 Track 抽象
 
@@ -362,7 +391,9 @@ GenServer 壳。
 - behaviour 回调（7 个）：`coord_domain/0`、`cast_element/3`、
   `edit_element/2`（内容编辑的合并+重铸，`edit_note` lowering 经它一步
   写回）、`validate_gesture/3`（轨型政策挂载点：tempo 首元素保护、
-  Audio 拒 merge/变长 drag；v2 人声轨不重叠约束也挂这里）、
+  Audio 拒 merge/变长 drag、Vocal 同轨不重叠（2026-08-11 落地：半开
+  区间，insert/drag/trim 的新 span 与 merge 的复合 span 不得压住其他
+  存活音符，报 `{:vocal_overlap_rejected, _}`））、
   `split_elements/2`（切分两半的元素载荷，context 带几何——Audio 左半
   duration 收缩、右半 offset 重寻址）、`retime_element/3`（trim 的元素
   补偿钩子，`use` 默认 identity）、`view/1`（拍扁乐谱视图，§11.1）。
@@ -372,7 +403,7 @@ GenServer 壳。
   元素归档 codec 不是轨型能力——`Pickle.ElementCodec` behaviour 与三个
   实现（Vocal/Tempo/Audio）都归 `Coconut.Pickle`，轨型 → codec 的绑定
   由 `Pickle.Registry` 注册项携带（`Registry.to_codec/2` 解析；未绑定且
-  元素表非空报 `{:error, {:no_element_codec, module}}`）。插件轨型
+  元素表非空报 `{:error, {:missing_element_codec, module}}`）。插件轨型
   （宿主自定义）提供自己的 codec 模块，注册时以 `codec:` 选项一并绑定。
 - 已落地模块：`Track.Vocal`（Note 元素，tick 域）、`Track.Tempo`（bpm 裸
   map，tick 域）、`Track.Audio`（Clip 元素，帧域，见下）。`Track.Synth`

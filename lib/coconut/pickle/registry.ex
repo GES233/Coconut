@@ -113,14 +113,14 @@ defmodule Coconut.Pickle.Registry do
   end
 
   @doc """
-  模块 → 绑定的元素 codec；未绑定报 `{:error, {:no_element_codec, module}}`
+  模块 → 绑定的元素 codec；未绑定报 `{:error, {:missing_element_codec, module}}`
   （未注册的模块同此报错——没注册自然没有绑定）。
   """
-  @spec to_codec(t(), module()) :: {:ok, module()} | {:error, {:no_element_codec, module()}}
+  @spec to_codec(t(), module()) :: {:ok, module()} | {:error, {:missing_element_codec, module()}}
   def to_codec(%__MODULE__{codec_by_module: codec_by_module}, module) when is_atom(module) do
     case Map.fetch(codec_by_module, module) do
       {:ok, codec} -> {:ok, codec}
-      :error -> {:error, {:no_element_codec, module}}
+      :error -> {:error, {:missing_element_codec, module}}
     end
   end
 end

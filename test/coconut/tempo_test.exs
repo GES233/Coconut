@@ -414,8 +414,8 @@ defmodule Coconut.TempoTest do
   end
 
   describe "region duration with empty tempo track" do
-    test "propagates :no_tempo_track", %{ws: ws} do
-      assert {:error, :no_tempo_track} = Workspace.region_duration_sec(ws, 0, 480)
+    test "propagates :missing_tempo_track", %{ws: ws} do
+      assert {:error, :missing_tempo_track} = Workspace.region_duration_sec(ws, 0, 480)
     end
   end
 

@@ -47,7 +47,7 @@ defmodule Coconut.Render.Engine.Snapshot do
       {:ok, tempo_map} ->
         {:ok, tempo_map}
 
-      {:error, :no_tempo_track} ->
+      {:error, :missing_tempo_track} ->
         {:ok, nil}
 
       {:error, _} = error ->
