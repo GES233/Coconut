@@ -194,11 +194,15 @@ defmodule Coconut.WarpProviderTest do
     end
   end
 
-  describe "frame_over_tick/3 (W_frame = T ∘ W_tick ∘ T⁻¹)" do
+  describe "frame_over_tick/3 (W_frame = T_new ∘ W_tick ∘ T_old⁻¹)" do
     # 120 bpm, tpqn 480, 100 fps：rate = 100 × 60_000 / (120_000 × 480)
     # = 5/48 frames per tick → 480 ticks = 50 frames.
     defp frame_context,
-      do: %{tempo_at: fn _version -> [{0, 120_000}] end, frame_rate: 100, tpqn: 480}
+      do: %{
+        tempo_pair_at: fn _version -> {[{0, 120_000}], [{0, 120_000}]} end,
+        frame_rate: 100,
+        tpqn: 480
+      }
 
     defp frame_provider(spans, patches, context \\ frame_context()),
       do: WarpProvider.frame_over_tick(spans, patches, context)
@@ -207,7 +211,7 @@ defmodule Coconut.WarpProviderTest do
       wp =
         frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
           frame_context()
-          | tempo_at: fn _version -> nil end
+          | tempo_pair_at: fn _version -> nil end
         })
 
       assert {:ok, Warp.identity()} == wp.(:frame, {2, []})
@@ -234,8 +238,10 @@ defmodule Coconut.WarpProviderTest do
 
     test "a multi-step tempo map composes piecewise" do
       # 120 bpm until tick 480, then 60 bpm: rates 5/48 and 5/24 f/t.
+      steps = [{0, 120_000}, {480, 60_000}]
+
       context = %{
-        tempo_at: fn _version -> [{0, 120_000}, {480, 60_000}] end,
+        tempo_pair_at: fn _version -> {steps, steps} end,
         frame_rate: 100,
         tpqn: 480
       }
@@ -266,7 +272,7 @@ defmodule Coconut.WarpProviderTest do
       wp =
         frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
           frame_context()
-          | tempo_at: fn _version -> nil end
+          | tempo_pair_at: fn _version -> nil end
         })
 
       assert {:error, {:warp_construction_failed, :missing_tempo_events}} =
@@ -274,10 +280,12 @@ defmodule Coconut.WarpProviderTest do
     end
 
     test "steps not starting at tick 0 are rejected" do
+      bad = [{480, 120_000}]
+
       wp =
         frame_provider(%{1 => %{"n1" => {0, 480}}}, [], %{
           frame_context()
-          | tempo_at: fn _version -> [{480, 120_000}] end
+          | tempo_pair_at: fn _version -> {bad, bad} end
         })
 
       assert {:error, {:warp_construction_failed, :invalid_tempo_steps}} =

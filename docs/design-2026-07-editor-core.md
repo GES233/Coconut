@@ -119,8 +119,8 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
 1. **坐标支持（2026-08-11 更新）**：`:tick` 与 `:frame` 原生 builder 都在
    dispatch 表内——`:frame` 条目共用同一套非 ripple 构造（audio 轨的
    span 本就是帧坐标，无需 tempo 知识），audio 轨的帧域 Metric 锚随之
-   解锁；tick 轨挂帧域 Metric 锚仍在挂载时拒绝（守卫未放开，见第 4 条
-   落地注记）。tick warp 与
+   解锁；帧域 Metric 锚也可挂 tick 轨（跟谱、帧寻址，需工程声明
+   `frame_rate`，见第 4 条）。tick warp 与
    tempo 无关（tempo 变化 tick 不动），provider 是纯函数：
    `ops + span 快照 → Warp`。
 2. 维护**版本化 span 表** `%{version => %{id => span}}`（不可变 map 结构共享，
@@ -133,29 +133,43 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
    （G-INT-03/05 场景）。**自动化拆两级**（2026-08-09 拍板）：clip 级
    （automation 跟 clip 走）用 Ordinal 锚 + clip 相对帧偏移 payload，
    恒等 transport、零 warp，先行落地；轨级（跨 clip、钉时间线）才需要
-   帧域 Metric 锚与本条 warp，排晚期。**落地注记（2026-08-11）**：
-   组合器以纯函数 `WarpProvider.frame_over_tick/3` 落地（context 为
-   `%{tempo_at, frame_rate, tpqn}`，tempo_at 是 `(version ->
-   [{tick, milli_bpm}] | nil)` 闭包），验收单测钉死精确有理数语义；
-   两个落地时才发现的约束——①tamale `Coord` 拒 float，`TempoMap`
-   的秒是 float 设施，T 必须从精确 milli-bpm 阶梯事件构造（与
-   tempo-curve 文档"`Tempo.Linear` 进 warp 永不"同一约束）；
-   ②provider 拿到的 version 是各轨 Space 私有版本，无法索引 tempo
-   轨，故当前单 T 兼作 T_old/T_new（tempo 在 fold 区间未变时精确），
-   真正的 tempo 对组合待跨轨版本关联设施。组合器不接 dispatch 表：
-   接入同时需要该关联设施与挂载守卫放开（帧域 Metric 锚上 tick 轨），
-   在此之前验收走直接单测。
+   帧域 Metric 锚与本条 warp，排晚期。**已完整落地（2026-08-11）**：
+   - 语义拍板：tick 轨上的帧域 Metric 锚 = **跟谱、帧寻址**——from/to
+     是引擎帧号，但跟随乐理编辑（本轨 Retime 经对组合映射），纯 tempo
+     编辑也要移动它（否则锚静默指错音符，正是对组合的存在意义）；
+     audio 轨（帧域轨）不动（§4 硬约定）。
+   - 跨轨版本关联设施：每轨 `version_clock`（space version →
+     edit_version，apply_batch 记录、truncate 同步裁剪、Pickle 可选
+     字段入档）；`Workspace.tempo_steps_at/2` 经 tempo 轨 clock 反查
+     版本后取精确阶梯事件（`Track.Tempo.tempo_steps_at/2`，整数
+     milli-bpm——tamale `Coord` 拒 float，`TempoMap` 的秒是 float
+     设施，T 只能从精确事件构造，与 tempo-curve 文档
+     "`Tempo.Linear` 进 warp 永不"同一约束）。
+   - 接线：`frame_over_tick/3`（context `%{tempo_pair_at, frame_rate,
+     tpqn}`，tempo_pair_at 返回 `{T_old 事件, T_new 事件}`）经
+     `for_coord/4` 进 dispatch——tick 域闭包同时服务 :tick（原生）与
+     :frame（对组合）；挂载守卫放开 coord == domain 或（:frame 锚上
+     tick 轨且已声明 `frame_rate`，否则 `{:error, :missing_frame_rate}`）。
+   - **echo transport**：tempo 批次不产生其他轨的 log 条目，故
+     apply_batches 触及 tempo 轨后追加一轮 echo——所有未触及的 tick
+     域轨上的帧锚经 `WarpProvider.tempo_shift/5`（`T_new ∘ T_old⁻¹`）
+     移动；判死进坟场（可见）。同一手势触及的轨跳过（其写时
+     transport 已用 entry 的 T 对，echo 会二次移动）。
+   - 已知限制：bpm 改值是内容编辑（不落 op、不入版本），历史 T 用
+     当前 bpm 值近似——fold 区间内改过 bpm 时帧锚按新值结算；
+     tempo 事件的增/删/移是 op，对组合精确。
 5. provider 分派：构造点（写时 `Workspace` / 检查时 `Resolve`）经
-   `WarpProvider.for_coord/3` 按轨的 `coord_domain/0` 查分派表构造
+   `WarpProvider.for_coord/4` 按轨的 `coord_domain/0` 查分派表构造
    closure，`supported_coords/0` 从同一张表推导（`Patch.new` 挂载守卫
    随之自动放开）；无 builder 的 coord 返回 nil，走 `transport_patches`
    既有 nil 语义（Ordinal 恒等 transport，Metric 以
-   `:warp_provider_required` 判死而非 clause 缺失崩溃）。帧 builder 的
-   入参签名已拍板（2026-08-11）：组合器 `frame_over_tick/3` 收 context
-   `%{tempo_at, frame_rate, tpqn}`（见第 4 条落地注记）；dispatch 表项
-   保持 `(spans, patches)` 形状不变。锚 coord 与轨 domain 的一致性由
-   `attach_patch` 把关：
-   Metric coord ≠ 轨 coord_domain 拒（`{:anchor_coord_mismatch, _, _}`）。
+   `:warp_provider_required` 判死而非 clause 缺失崩溃）。第 4 参数
+   context（`WarpProvider.frame_context()`）由
+   `Workspace.warp_context/2` 统一构造：tick 域闭包在其存在时额外服务
+   `:frame`（T 对组合），缺席时 `:frame` 调用可见失败而非崩溃。锚
+   coord 与轨 domain 的一致性由 `attach_patch` 把关：
+   Metric coord ≠ 轨 coord_domain 拒（`{:anchor_coord_mismatch, _, _}`），
+   唯一例外是帧域锚上 tick 轨（第 4 条，需 `frame_rate`）。
 
 ## 6. Tempo Track = 一条独立 Space
 
@@ -288,10 +302,10 @@ Track.Audio（§11.8）。验收测试 = zongzi_feasibility Scenario 模式移�
 v2 遗留：
 
 - GenServer 壳 + 接口层（JSON-RPC/stdio 优先）——v2 差不多时一口气收尾；
-- 帧空间锚 + tempo 对组合（§5 第 4 条）——部分落地（2026-08-11）：原生
-  `:frame` builder 进 dispatch（audio 轨帧域 Metric 锚解锁）、组合器
-  `frame_over_tick/3` 纯函数落地并验收；接 dispatch 待跨轨版本关联设施
-  与挂载守卫放开，见 §5 第 4 条落地注记；
+- 帧空间锚 + tempo 对组合（§5 第 4 条）——已落地（2026-08-11）：
+  跨轨版本关联（per-track `version_clock`）、真 `T_old`/`T_new` 对组合、
+  dispatch/守卫接线（帧域锚上 tick 轨，需 `frame_rate`）、tempo echo
+  transport；已知限制见 §5 第 4 条；
 - orchid/oi 接入——adapter 独立成包，见 design-2026-08-orchid-intervention.md
   §3.3/§4 与 Phase 计划；
 - diff 适配器——已落地（2026-08-11，`Coconut.Edit.Diff`，决策见 §8）；
@@ -327,7 +341,8 @@ lowering 走 span 几何 + `split_elements/2`，从不经过 Note；内容（lyr
 删除，字段随 `Coconut.Edit.Track` 下沉。`spans_by_version` 的无界增长由
 `Track.truncate/2` + `Workspace.truncate/3` 收口：随 `Space.truncate`
 同步裁剪，span 快照保留 cut 处最新一份作 baseline（warp 的
-`spans_at(v-1)` 需要它）。
+`spans_at(v-1)` 需要它）。`version_clock`（§5 第 4 条的跨轨关联设施）
+随同一 truncate 裁剪，同样保留 baseline。
 
 ### 11.4 port_ref 语义（DTO 化推迟；现状 `{:port, node, port}`）
 
@@ -387,9 +402,12 @@ GenServer 壳。
 曾属于 workspace 侧表抽屉的东西——版本化 span 表（timing 权威，§11.2）、
 元素载荷、per-track patches（干预按轨 transport、按轨存放）。
 
-- `%Track{id, name, module, space, spans_by_version, elements_by_id,
-  patches, dead_patches}`；Workspace = `id/edit_version/tracks` + 独立
-  `tempo` 轨字段 + 工程级 `tpqn/time_sigs`（§6）。
+- `%Track{id, name, module, space, spans_by_version, version_clock,
+  elements_by_id, patches, dead_patches}`；Workspace =
+  `id/edit_version/tracks/globals` + 工程级 `tpqn/frame_rate/time_sigs`
+  （§6）。`frame_rate` 是引擎帧网格声明（正整数或正有理数，nil = 未
+  声明）——工程 metadata 先例同 tpqn：内核存而不解释，仅帧 warp 换算
+  消费（§5 第 4 条）；帧域 Metric 锚上 tick 轨以其已声明为前提。
 - **`name` 是纯 annotation**：可变、可重复（不做唯一性校验）、可空
   （`nil`）；id 不可变，路由/锚/patch/版本钉永远只用 id。与
   `Pickle.Registry` 的轨型逻辑名是两个命名空间（实例显示名 vs 存档
@@ -423,10 +441,12 @@ GenServer 壳。
   无关"硬约定；v1 不做 time-stretch（DAW 的 musical/linear 之辩以
   "帧域固定"收尾）。导入时经 TempoMap 换算落帧，之后 tempo 编辑不影响。
   音量自动化等干预拆两级：clip 级（Ordinal 锚 + clip 相对帧偏移）先行，
-  轨级（帧域 Metric 锚 channel）接 v2 帧空间锚（§5 第 4 条）。
+  轨级（帧域 Metric 锚 channel）所接的 v2 帧空间锚已落地（§5 第 4 条，
+  含跟谱帧寻址语义与 echo transport）。
   **帧单位**：事实单位 = 渲染引擎的帧网格（DiffSinger 为声码器 hop 帧，
   `hop_size`/`sample_rate` 出 vocoder config），单位声明归引擎/工程
-  metadata；内核只见整数帧号、永不解释单位——§4 "帧/采样点 = 引擎层
+  metadata（工程级落点即 `Workspace.frame_rate`）；内核只见整数帧号、
+  永不解释单位——§4 "帧/采样点 = 引擎层
   坐标"的具体化。不以 sample 为单位：sample→hop 的 round 会把 ±1 hop
   量化误差砸在 digest 零容差上。
 - tempo 编辑的 Operation 同步：跨轨拖动 = 两轨各一次 apply_batch，

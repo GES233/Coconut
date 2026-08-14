@@ -106,7 +106,8 @@ defmodule Coconut.Render.Resolve do
               WarpProvider.for_coord(
                 Track.coord_domain(track),
                 Track.spans(track),
-                patches
+                patches,
+                Workspace.warp_context(ws, track)
               )
 
             {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, provider)

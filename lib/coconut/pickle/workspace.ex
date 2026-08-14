@@ -29,6 +29,7 @@ defmodule Coconut.Pickle.Workspace do
     {:tracks, {:map_values, {:codec, Track, :with_ctx}}},
     {:globals, {:map_values, {:codec, Track, :with_ctx}}},
     :tpqn,
+    :frame_rate,
     {:time_sigs, {:list, {:tuple, @time_sig}}}
   ]
 

@@ -9,6 +9,9 @@ defmodule Coconut.Pickle.Track do
 
   - `id` 原样直出；
   - `name` 原样直出（可选字段：load 时缺失默认 `nil`，旧档天然兼容）；
+  - `version_clock`（space version → edit_version 的 int→int map）原样
+    直出（同为可选字段：旧档缺失 load 为 `%{}`——读档后锚都在 head，
+    无历史 fold，新批次会记新 clock）；
   - `module` 经 `Coconut.Pickle.Registry` 换成逻辑名（load 反向还原）；
   - `space` 走 `Coconut.Pickle.Space` codec；
   - `spans_by_version` 的 version 整数键直出（约定允许的 map 键类型），
@@ -69,6 +72,7 @@ defmodule Coconut.Pickle.Track do
          module: name,
          space: space,
          spans_by_version: dump_spans(track.spans_by_version),
+         version_clock: track.version_clock,
          elements_by_id: elements,
          patches: patches,
          dead_patches: dead
@@ -93,6 +97,7 @@ defmodule Coconut.Pickle.Track do
         module: module,
         space: space,
         spans_by_version: spans,
+        version_clock: Map.get(data, :version_clock) || %{},
         elements_by_id: elements,
         patches: patches,
         dead_patches: dead

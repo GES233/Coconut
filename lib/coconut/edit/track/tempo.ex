@@ -83,4 +83,29 @@ defmodule Coconut.Edit.Track.Tempo do
       {start, %Tempo.Event{module: Tempo.Step, context: %{bpm: element.bpm / 1000}}}
     end)
   end
+
+  @doc """
+  Versioned exact step projection for the frame-warp tempo pair
+  (`Coconut.Edit.Workspace.tempo_steps_at/2`): `{start_tick, milli_bpm}`
+  pairs from the span snapshot at `version`, sorted by tick.
+
+  Stays in integer milli-bpm — warp coordinates reject floats, so this
+  never goes through `tempo_events/1`'s denormalization. Element payloads
+  are the current table (bpm value edits are unversioned content edits;
+  documented limitation, design doc §5 item 4).
+  """
+  @impl Coconut.Edit.Track.TempoDerive
+  @spec tempo_steps_at(Track.t(), Tamale.version()) ::
+          [{Coconut.Score.Tick.numeric_tick(), pos_integer()}]
+  def tempo_steps_at(track, version) do
+    track
+    |> Track.spans_at(version)
+    |> Enum.flat_map(fn {id, {start, _end}} ->
+      case Map.fetch(track.elements_by_id, id) do
+        {:ok, %{bpm: milli}} when is_integer(milli) -> [{start, milli}]
+        _ -> []
+      end
+    end)
+    |> Enum.sort_by(fn {tick, _milli} -> tick end)
+  end
 end

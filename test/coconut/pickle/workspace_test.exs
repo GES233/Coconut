@@ -102,6 +102,36 @@ defmodule Coconut.Pickle.WorkspaceTest do
 
       assert_in_delta TempoMap.tick_to_sec(tm_after, 1920), 2.0, 0.01
     end
+
+    test "frame_rate and version_clock round-trip; old dumps tolerate their absence" do
+      {:ok, ws} = Workspace.update(build_workspace(), %{frame_rate: 100})
+      registry = Track.default_registry()
+
+      # build_workspace 的手势序：t0(E1) t1(E2) n1(E3) n2(E4)
+      {:ok, dumped} = PickleWorkspace.dump(ws, registry)
+      assert dumped.frame_rate == 100
+      assert dumped.tracks["vocal"].version_clock == %{1 => 3, 2 => 4}
+      assert dumped.globals["global:tempo"].version_clock == %{1 => 1, 2 => 2}
+
+      assert_pickle_conform(dumped)
+      assert {:ok, loaded} = PickleWorkspace.load(dumped, registry)
+      assert loaded == ws
+
+      # 旧档无这两个字段：load 落默认值（nil / %{}）
+      old =
+        dumped
+        |> Map.delete(:frame_rate)
+        |> Map.update!(:tracks, fn tracks ->
+          Map.new(tracks, fn {id, t} -> {id, Map.delete(t, :version_clock)} end)
+        end)
+        |> Map.update!(:globals, fn globals ->
+          Map.new(globals, fn {id, t} -> {id, Map.delete(t, :version_clock)} end)
+        end)
+
+      assert {:ok, loaded_old} = PickleWorkspace.load(old, registry)
+      assert loaded_old.frame_rate == nil
+      assert loaded_old.tracks["vocal"].version_clock == %{}
+    end
   end
 
   describe "load/2 error paths" do

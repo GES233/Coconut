@@ -34,7 +34,7 @@ defmodule Coconut.Edit.WarpProvider do
     Collisions surface as transport failures (clip / undefined), never as
     silent misplacement.
   - Construction sites never name a per-coord builder directly:
-    `for_coord/3` dispatches on the track's `coord_domain/0` through the
+    `for_coord/4` dispatches on the track's `coord_domain/0` through the
     builder table below, and `supported_coords/0` derives from the same
     table, so the mount-time guard and the construction sites can never
     disagree.
@@ -43,19 +43,18 @@ defmodule Coconut.Edit.WarpProvider do
 
   Two distinct facilities share the `:frame` coordinate:
 
-  - `frame/2` (dispatched via `for_coord/3` on frame-domain tracks): the
+  - `frame/2` (dispatched via `for_coord/4` on frame-domain tracks): the
     same non-ripple construction as `tick/2` — an audio track's spans are
     already frame coordinates, so no tempo knowledge is involved.
-  - `frame_over_tick/3` (a standalone pure function, **not** wired into
-    the dispatch table): the design doc §5 item-4 composition
-    `W_frame = T ∘ W_tick ∘ T⁻¹` for frame-addressed anchors over a
-    tick-domain log. It stays off-dispatch because serving it through
-    `Transport` needs two facilities that do not exist yet: cross-track
-    version correlation (the `version` in a log entry is Space-private and
-    cannot index the tempo track, so a true `T_old`/`T_new` pair is
-    unreachable) and a relaxation of the anchor coord == track domain
-    mount guard. Until those land, acceptance is by direct unit tests
-    (the tamale G-INT-03/05 metric-family vectors).
+  - `frame_over_tick/3` (dispatched on tick-domain tracks when the context
+    carries a tempo pair and frame rate): the design doc §5 item-4
+    composition `W_frame = T_new ∘ W_tick ∘ T_old⁻¹` for frame-addressed,
+    score-following anchors. The `T_old`/`T_new` pair is located through
+    the track's version clock (`Coconut.Edit.Workspace.warp_context/2`),
+    which is what makes the composition exact across interleaved tempo
+    edits. `tempo_shift/5` is the pure `T_new ∘ T_old⁻¹` warp backing the
+    echo transport that runs after a tempo-track batch: a tempo edit adds
+    no entry to other tracks' logs, yet frame anchors must still follow it.
 
   ## Caveats
 
@@ -106,12 +105,10 @@ defmodule Coconut.Edit.WarpProvider do
     fn :frame, {version, ops} -> build_warp(track_spans, patches, version, ops) end
   end
 
-  # coord → builder dispatch table, the single place naming coordinate
-  # systems: supported_coords/0 derives from it and for_coord/3 dispatches
-  # through it, so a new coordinate system is one entry here. The frame
-  # entry is the native builder above; the tick→frame composition lives in
-  # frame_over_tick/3, deliberately outside this table (see the module
-  # doc's "Frame space" section).
+  # coord → builder 表：supported_coords/0 从它推导（Patch.new 的挂载守卫
+  # 来源）。for_coord/4 的 dispatch 在其上叠加上下文：tick 域轨拿到
+  # tempo/帧率上下文时额外服务 :frame（T 对组合），无上下文时 :frame
+  # 可见失败而非崩溃。
   @builders %{frame: &__MODULE__.frame/2, tick: &__MODULE__.tick/2}
 
   @doc """
@@ -126,26 +123,46 @@ defmodule Coconut.Edit.WarpProvider do
   def supported_coords, do: @builders |> Map.keys() |> Enum.sort()
 
   @doc """
-  Returns the `warp_provider` closure serving `coord`, or `nil` when the
-  dispatch table has no builder for it.
+  Returns the `warp_provider` closure for a track with coordinate domain
+  `coord`, or `nil` for an unknown coordinate system.
 
   Construction sites (write-time: `Coconut.Edit.Workspace`; check-time:
   `Coconut.Render.Resolve`) dispatch on the track's `coord_domain/0` through
-  here. A `nil` return plugs into `Workspace.transport_patches/3`'s nil
-  semantics: Ordinal/Relative anchors still travel by identity, while a
-  `Tamale.Anchor.Metric` anchor dies as `:warp_provider_required` — a
-  surfaced transport failure instead of a clause-less-closure crash. Via
-  `Coconut.Edit.Patch.new/1` the Metric case is unreachable anyway (its guard
-  derives from the same table).
+  here, passing a `frame_context()` (built by
+  `Coconut.Edit.Workspace.warp_context/2`) when available. A tick-domain
+  closure then also serves `:frame` anchors via the `frame_over_tick/3`
+  composition; without the context, a `:frame` call returns
+  `{:error, :warp_provider_required}` — a surfaced transport failure
+  (dead patch), never a clause-less-closure crash. A `nil` return plugs
+  into `Workspace.transport_patches/3`'s nil semantics the same way.
   """
-  @spec for_coord(atom(), map(), [Coconut.Edit.Patch.t()]) ::
+  @spec for_coord(atom(), map(), [Coconut.Edit.Patch.t()], frame_context() | map()) ::
           Tamale.Transport.warp_provider() | nil
-  def for_coord(coord, track_spans, patches \\ []) do
-    case Map.fetch(@builders, coord) do
-      {:ok, builder} -> builder.(track_spans, patches)
-      :error -> nil
+  def for_coord(coord, track_spans, patches \\ [], context \\ %{})
+
+  def for_coord(:tick, track_spans, patches, context) do
+    native = tick(track_spans, patches)
+
+    case context do
+      %{tempo_pair_at: _, frame_rate: _, tpqn: _} ->
+        composed = frame_over_tick(track_spans, patches, context)
+
+        fn
+          :tick, entry -> native.(:tick, entry)
+          :frame, entry -> composed.(:frame, entry)
+        end
+
+      _incomplete ->
+        fn
+          :tick, entry -> native.(:tick, entry)
+          :frame, _entry -> {:error, :warp_provider_required}
+        end
     end
   end
+
+  def for_coord(:frame, track_spans, patches, _context), do: frame(track_spans, patches)
+
+  def for_coord(_coord, _track_spans, _patches, _context), do: nil
 
   @typedoc """
   Exact tempo step events for `frame_over_tick/3`: `{start_tick, milli_bpm}`
@@ -158,90 +175,140 @@ defmodule Coconut.Edit.WarpProvider do
   @typedoc """
   Context for `frame_over_tick/3`:
 
-  - `:tempo_at` — `(Tamale.version() -> tempo_steps() | nil)`. The version
-    is the edited track's Space-private one and cannot index the tempo
-    track, so until cross-track version correlation exists,
-    implementations return the current steps and ignore it.
+  - `:tempo_pair_at` — `(Tamale.version() -> {tempo_steps(), tempo_steps()} | nil)`.
+    Given a log entry's (Space-private) version, returns the exact tempo
+    steps before and after the gesture that committed it — the
+    `T_old`/`T_new` pair of the composition (design doc §5 item 4).
+    `nil` when the version cannot be dated or either side has no tempo
+    events. Construction sites build the closure from the workspace's
+    version clocks (`Coconut.Edit.Workspace.warp_context/2`).
   - `:frame_rate` — frames per second as an exact `Tamale.Coord.input()`
     (integer or `{num, den}`; floats are rejected).
   - `:tpqn` — ticks per quarter note.
   """
   @type frame_context :: %{
-          required(:tempo_at) => (Tamale.version() -> tempo_steps() | nil),
+          required(:tempo_pair_at) => (Tamale.version() -> {tempo_steps(), tempo_steps()} | nil),
           required(:frame_rate) => Coord.input(),
           required(:tpqn) => pos_integer()
         }
 
   @doc """
   Returns a `:frame`-serving `warp_provider` over a **tick-domain** log:
-  `W_frame = T ∘ W_tick ∘ T⁻¹` (design doc §5 item 4).
+  `W_frame = T_new ∘ W_tick ∘ T_old⁻¹` (design doc §5 item 4).
 
-  Standalone pure function — deliberately outside the `for_coord/3`
-  dispatch table (see the module doc's "Frame space" section). `T` is the
-  tick→frame staircase built from `context.tempo_at`'s exact milli-bpm
-  steps and `context.frame_rate`; because a log entry's version cannot
-  index the tempo track (Space versions are per-track), one `T` serves as
-  both `T_old` and `T_new` — exact whenever the tempo did not change
-  across the folded entries, the only case reachable until cross-track
-  version correlation lands.
+  `T_old`/`T_new` are tick→frame staircases built from the exact milli-bpm
+  step pairs returned by `context.tempo_pair_at` and `context.frame_rate`.
+  When the tempo did not change across the folded entries the pair is
+  equal and the composition degenerates to `T ∘ W_tick ∘ T⁻¹`.
 
   The composed warp covers every live frame anchor by construction: the
-  tick bound is extended by the anchors' worst-case tick preimage
-  (the slowest step consumes the most ticks per frame), and `T`'s final
-  slope extends to that bound. Missing/empty tempo steps, malformed
-  steps, or a non-exact `frame_rate` are construction errors
-  (`:missing_tempo_events` / `:invalid_tempo_steps` / `:invalid_frame_rate`
-  under `:warp_construction_failed`), surfacing as transport failures
-  like any other warp error.
+  tick bound is extended by the anchors' worst-case tick preimage under
+  either tempo state (the fastest step consumes the most ticks per frame),
+  and each `T`'s final slope extends to that bound. Missing/empty tempo
+  steps, malformed steps, or a non-exact `frame_rate` are construction
+  errors (`:missing_tempo_events` / `:invalid_tempo_steps` /
+  `:invalid_frame_rate` under `:warp_construction_failed`), surfacing as
+  transport failures like any other warp error.
   """
   @spec frame_over_tick(map(), [Coconut.Edit.Patch.t()], frame_context()) ::
           Tamale.Transport.warp_provider()
   def frame_over_tick(track_spans, patches, %{
-        tempo_at: tempo_at,
+        tempo_pair_at: tempo_pair_at,
         frame_rate: frame_rate,
         tpqn: tpqn
       }) do
     fn :frame, {version, ops} ->
-      frame_warp_for_entry(track_spans, patches, tempo_at, frame_rate, tpqn, version, ops)
+      frame_warp_for_entry(track_spans, patches, tempo_pair_at, frame_rate, tpqn, version, ops)
+    end
+  end
+
+  @doc """
+  The pure tempo-change warp `T_new ∘ T_old⁻¹` over the given patches'
+  frame-anchor domain — the echo-transport warp for a tempo-track batch
+  (design doc §5 item 4): frame Metric anchors on tick-domain tracks
+  follow a tempo edit even though their own track's log gained no entry.
+
+  Equal step sets short-circuit to `Warp.identity()`. Domain coverage uses
+  the same worst-case preimage bound as `frame_over_tick/3`, under both
+  tempo states.
+  """
+  @spec tempo_shift(
+          tempo_steps() | nil,
+          tempo_steps() | nil,
+          Coord.input(),
+          pos_integer(),
+          [Coconut.Edit.Patch.t()]
+        ) :: {:ok, Warp.t()} | {:error, {:warp_construction_failed, term()}}
+  def tempo_shift(steps_old, steps_new, frame_rate, tpqn, patches) do
+    with {:ok, fps} <- cast_frame_rate(frame_rate),
+         {:ok, steps_old} <- check_tempo_steps(steps_old),
+         {:ok, steps_new} <- check_tempo_steps(steps_new) do
+      if steps_old == steps_new do
+        {:ok, Warp.identity()}
+      else
+        do_tempo_shift(steps_old, steps_new, fps, tpqn, patches)
+      end
+    end
+  end
+
+  defp do_tempo_shift(steps_old, steps_new, fps, tpqn, patches) do
+    upper =
+      Enum.reduce([steps_old, steps_new], Coord.new(0), fn steps, acc ->
+        Coord.max(acc, tick_preimage_bound(patches, steps, fps, tpqn))
+      end)
+
+    with {:ok, t_old} <- tempo_warp(steps_old, fps, tpqn, upper),
+         {:ok, t_new} <- tempo_warp(steps_new, fps, tpqn, upper) do
+      {:ok, Warp.compose(t_new, Warp.invert(t_old))}
     end
   end
 
   # ---- Frame-over-tick composition (§5 item 4) ----
 
-  defp frame_warp_for_entry(track_spans, patches, tempo_at, frame_rate, tpqn, version, ops) do
+  defp frame_warp_for_entry(track_spans, patches, tempo_pair_at, frame_rate, tpqn, version, ops) do
     case batch_intents(track_spans, version, ops) do
       [] ->
         {:ok, Warp.identity()}
 
       intents ->
-        with {:ok, steps} <- fetch_tempo_steps(tempo_at, version),
+        with {:ok, {steps_old, steps_new}} <- fetch_tempo_pair(tempo_pair_at, version),
              {:ok, fps} <- cast_frame_rate(frame_rate) do
-          compose_frame_warp(track_spans, patches, intents, steps, fps, tpqn)
+          compose_frame_warp(track_spans, patches, intents, steps_old, steps_new, fps, tpqn)
         end
     end
   end
 
-  # W_frame = T ∘ W_tick ∘ T⁻¹：tick 定义域上界先扩到所有 frame 锚的
-  # 最坏原像，再在同一上界上构造 W_tick 与 T。
-  defp compose_frame_warp(track_spans, patches, intents, steps, fps, tpqn) do
-    {lower, upper} = frame_domain(track_spans, patches, intents, steps, fps, tpqn)
+  # W_frame = T_new ∘ W_tick ∘ T_old⁻¹：tick 定义域上界先扩到所有 frame
+  # 锚在两端 tempo 下的最坏原像，再在同一上界上构造 W_tick 与两个 T。
+  defp compose_frame_warp(track_spans, patches, intents, steps_old, steps_new, fps, tpqn) do
+    {lower, upper} =
+      frame_domain(track_spans, patches, intents, [steps_old, steps_new], fps, tpqn)
 
     with {:ok, w_tick} <- warp_from_intents(intents, lower, upper),
-         {:ok, t} <- tempo_warp(steps, fps, tpqn, upper) do
-      {:ok, Warp.compose(t, Warp.compose(w_tick, Warp.invert(t)))}
+         {:ok, t_old} <- tempo_warp(steps_old, fps, tpqn, upper),
+         {:ok, t_new} <- tempo_warp(steps_new, fps, tpqn, upper) do
+      {:ok, Warp.compose(t_new, Warp.compose(w_tick, Warp.invert(t_old)))}
     end
   end
 
-  defp fetch_tempo_steps(tempo_at, version) do
-    case tempo_at.(version) do
-      nil -> {:error, {:warp_construction_failed, :missing_tempo_events}}
-      [] -> {:error, {:warp_construction_failed, :missing_tempo_events}}
-      steps -> check_tempo_steps(steps)
+  defp fetch_tempo_pair(tempo_pair_at, version) do
+    case tempo_pair_at.(version) do
+      {steps_old, steps_new} ->
+        with {:ok, steps_old} <- check_tempo_steps(steps_old),
+             {:ok, steps_new} <- check_tempo_steps(steps_new) do
+          {:ok, {steps_old, steps_new}}
+        end
+
+      _undated ->
+        {:error, {:warp_construction_failed, :missing_tempo_events}}
     end
   end
 
   # 合法形状与 tempo 轨的存储不变式一致：首事件在 tick 0（TempoMap.compile
   # 的 first-at-zero 规则）、tick 严格递增、milli-bpm 为正整数。
+  defp check_tempo_steps(nil), do: {:error, {:warp_construction_failed, :missing_tempo_events}}
+  defp check_tempo_steps([]), do: {:error, {:warp_construction_failed, :missing_tempo_events}}
+
   defp check_tempo_steps([{0, milli} | _] = steps) when is_integer(milli) and milli > 0 do
     if Enum.all?(steps, &valid_step?/1) and strictly_ascending?(Enum.map(steps, &elem(&1, 0))) do
       {:ok, steps}
@@ -278,9 +345,16 @@ defmodule Coconut.Edit.WarpProvider do
   # 复合 warp 的 tick 定义域：常规上界与所有 frame 锚的最坏 tick 原像
   # 取大（最快档 = 最大 milli-bpm 每帧消耗 tick 最多），T 的末段斜率
   # 延伸到该上界，保证 T⁻¹(anchor) 与 W_tick 的像都落在 T 的定义域内。
-  defp frame_domain(track_spans, patches, intents, steps, fps, tpqn) do
+  # steps_list 为对组合的两端 tempo（单 tempo 场景传一个元素的列表）。
+  defp frame_domain(track_spans, patches, intents, steps_list, fps, tpqn) do
     {lower, upper} = domain(track_spans, patches, intents)
-    {lower, Coord.max(upper, tick_preimage_bound(patches, steps, fps, tpqn))}
+
+    upper =
+      Enum.reduce(steps_list, upper, fn steps, acc ->
+        Coord.max(acc, tick_preimage_bound(patches, steps, fps, tpqn))
+      end)
+
+    {lower, upper}
   end
 
   defp tick_preimage_bound(patches, steps, fps, tpqn) do

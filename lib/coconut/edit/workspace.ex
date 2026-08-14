@@ -9,8 +9,9 @@ defmodule Coconut.Edit.Workspace do
   up-to-date anchors, the dead move to the track's `dead_patches`).
 
   A workspace is `id / edit_version / tracks / globals` plus the project-level
-  `tpqn` / `time_sigs` (tick resolution and the bar-grid time signature
-  events — neither participates in the op/transport machinery).
+  `tpqn` / `frame_rate` / `time_sigs` (tick resolution; the engine frame-grid
+  declaration — stored, never interpreted, but consulted by frame warps;
+  the bar-grid time signature events).
   Everything else lives on `Coconut.Edit.Track` (design doc §11.3). Global
   tracks (the tempo track is the built-in one) live in the `globals` map,
   not in `tracks` (design doc §6); their ids carry the `"global:"` prefix
@@ -21,6 +22,7 @@ defmodule Coconut.Edit.Workspace do
   alias Coconut.Edit.{Track, WarpProvider}
   alias Coconut.Score.{TempoMap, TimeSig, TimeSigMap}
   alias Coconut.Util.ID
+  alias Tamale.Warp
 
   import Coconut.Util.Helpers, only: [normalize_attrs: 2, strictly_normalize_attrs: 2]
 
@@ -36,6 +38,7 @@ defmodule Coconut.Edit.Workspace do
           tracks: %{Track.track_id() => Track.t()},
           globals: %{Track.track_id() => Track.t()},
           tpqn: pos_integer(),
+          frame_rate: Tamale.Coord.input() | nil,
           time_sigs: [Coconut.Score.TimeSig.time_sig_event(), ...]
         }
   @keys [
@@ -44,6 +47,7 @@ defmodule Coconut.Edit.Workspace do
     tracks: %{},
     globals: %{@tempo_global_id => %Track{id: @tempo_global_id, module: Coconut.Edit.Track.Tempo}},
     tpqn: 480,
+    frame_rate: nil,
     time_sigs: [{1, {4, 4}}]
   ]
   defstruct @keys
@@ -66,7 +70,7 @@ defmodule Coconut.Edit.Workspace do
   # `update/2` rejects `time_sigs`: meter changes are a score gesture with
   # their own writer (`set_time_sigs/2`) so they can enter the undo history
   # (design doc §6 addendum, §12.4).
-  @update_keys [:id, :edit_version, :tracks, :globals, :tpqn]
+  @update_keys [:id, :edit_version, :tracks, :globals, :tpqn, :frame_rate]
 
   @doc """
   Modify the properties of an existing workspace.
@@ -230,9 +234,16 @@ defmodule Coconut.Edit.Workspace do
   def apply_batches(_ws, _expected_version, []), do: {:error, :empty_batches}
 
   def apply_batches(ws, expected_version, batches) do
+    new_version = ws.edit_version + 1
+
     with :ok <- check_version(ws, expected_version),
-         {:ok, ws} <- apply_track_batches(ws, batches) do
-      {:ok, transport_touched_tracks(%{ws | edit_version: ws.edit_version + 1}, batches)}
+         {:ok, ws} <- apply_track_batches(ws, batches, new_version) do
+      ws = %{ws | edit_version: new_version}
+
+      {:ok,
+       ws
+       |> transport_touched_tracks(batches)
+       |> echo_tempo_transport(batches)}
     end
   end
 
@@ -252,16 +263,29 @@ defmodule Coconut.Edit.Workspace do
 
   # Each batch applies to its own track's Space and syncs that track's
   # side tables; batches on the same track apply sequentially in order.
-  defp apply_track_batches(ws, batches) do
+  # Every committed batch records its version-clock entry (space version →
+  # edit_version) — the cross-track tempo correlation facility (§5 item 4).
+  # Pure content edits (empty op list) don't bump the Space version, so
+  # they must not rewrite the existing entry's commit time.
+  defp apply_track_batches(ws, batches, new_version) do
     Enum.reduce_while(batches, {:ok, ws}, fn {track_id, ops, side_changes}, {:ok, ws} ->
       with {:ok, track} <- fetch_track(ws, track_id),
            {:ok, space} <- Tamale.Space.apply_batch(track.space, ops) do
-        {:cont,
-         {:ok, put_track(ws, Track.sync(%{track | space: space}, space.version, side_changes))}}
+        track = %{track | space: space, version_clock: record_clock(track, space, new_version)}
+
+        {:cont, {:ok, put_track(ws, Track.sync(track, space.version, side_changes))}}
       else
         {:error, _} = err -> {:halt, err}
       end
     end)
+  end
+
+  # 纯内容编辑（空 op 列表）不 bump Space version，不得覆写既有 clock
+  # 条目的提交时刻。
+  defp record_clock(track, space, new_version) do
+    if space.version == track.space.version,
+      do: track.version_clock,
+      else: Map.put(track.version_clock, space.version, new_version)
   end
 
   # Write-time transport for every touched track, in first-touch order;
@@ -320,7 +344,12 @@ defmodule Coconut.Edit.Workspace do
     {:ok, track} = fetch_track(ws, track_id)
 
     provider =
-      WarpProvider.for_coord(Track.coord_domain(track), Track.spans(track), track.patches)
+      WarpProvider.for_coord(
+        Track.coord_domain(track),
+        Track.spans(track),
+        track.patches,
+        warp_context(ws, track)
+      )
 
     {:ok, survivors, dead} = transport_patches(ws, track_id, provider)
 
@@ -332,6 +361,105 @@ defmodule Coconut.Edit.Workspace do
 
     put_track(ws, track)
   end
+
+  # ---- Tempo echo transport (design doc §5 item 4) ----
+
+  # A tempo batch adds no entry to other tracks' logs, yet frame-addressed,
+  # score-following anchors must still follow it: after a tempo-track batch,
+  # map every :frame Metric anchor on tick-domain tracks through
+  # T_new ∘ T_old⁻¹. The tempo track itself is covered by its own log
+  # entry's transport; frame-domain tracks (audio) never drift (§4).
+  # Tracks touched by this same gesture are excluded — their write-time
+  # transport already used the entry's {T_old, T_new} pair; echoing them
+  # would move the anchor twice.
+  defp echo_tempo_transport(ws, batches) do
+    touched = MapSet.new(batches, fn {track_id, _ops, _changes} -> track_id end)
+
+    if MapSet.member?(touched, @tempo_global_id) do
+      steps_old = tempo_steps_at(ws, ws.edit_version - 1)
+      steps_new = tempo_steps_at(ws, ws.edit_version)
+
+      Enum.reduce(all_tracks(ws), ws, fn {track_id, track}, ws ->
+        maybe_echo_track(ws, track_id, track, steps_old, steps_new, touched)
+      end)
+    else
+      ws
+    end
+  end
+
+  # 同一手势已触及的轨跳过：其写时 transport 已用 entry 的 T 对，echo
+  # 会二次移动。无帧锚的轨与帧域轨（audio 不漂移，§4）零成本跳过。
+  defp maybe_echo_track(ws, track_id, track, steps_old, steps_new, touched) do
+    if MapSet.member?(touched, track_id) or Track.coord_domain(track) != :tick or
+         not frame_anchored?(track) do
+      ws
+    else
+      echo_track(ws, track, steps_old, steps_new)
+    end
+  end
+
+  defp frame_anchored?(track) do
+    Enum.any?(track.patches, fn
+      %Coconut.Edit.Patch{anchor: %Tamale.Anchor.Metric{coord: :frame}} -> true
+      _ -> false
+    end)
+  end
+
+  defp echo_track(ws, track, steps_old, steps_new) do
+    case WarpProvider.tempo_shift(steps_old, steps_new, ws.frame_rate, ws.tpqn, track.patches) do
+      {:ok, warp} -> apply_echo(ws, track, warp)
+      {:error, reason} -> kill_frame_anchors(ws, track, reason)
+    end
+  end
+
+  defp apply_echo(ws, track, warp) do
+    {survivors, dead} =
+      track.patches
+      |> Enum.map(&echo_anchor(&1, warp))
+      |> Enum.reduce({[], []}, fn
+        {:ok, patch}, {sv, dd} -> {[patch | sv], dd}
+        {dead_patch, reason}, {sv, dd} -> {sv, [{dead_patch, reason} | dd]}
+      end)
+
+    put_track(ws, %{
+      track
+      | patches: Enum.reverse(survivors),
+        dead_patches: track.dead_patches ++ Enum.reverse(dead)
+    })
+  end
+
+  # warp 构造失败（tempo 缺失 / 帧率未声明）：本轨所有帧锚判死
+  # （可见失败），其他锚原样保留
+  defp kill_frame_anchors(ws, track, reason) do
+    {frame_patches, others} =
+      Enum.split_with(track.patches, fn
+        %Coconut.Edit.Patch{anchor: %Tamale.Anchor.Metric{coord: :frame}} -> true
+        _ -> false
+      end)
+
+    dead = Enum.map(frame_patches, &{&1, reason})
+
+    put_track(ws, %{track | patches: others, dead_patches: track.dead_patches ++ dead})
+  end
+
+  # 非 :frame Metric 锚与 Ordinal/Relative 不受 tempo 影响，原样存活。
+  # at_version 不动：echo 不产生 log entry。
+  defp echo_anchor(
+         %Coconut.Edit.Patch{
+           anchor: %Tamale.Anchor.Metric{coord: :frame, from: from, to: to} = anchor
+         } = patch,
+         warp
+       ) do
+    case Warp.map_interval(warp, from, to) do
+      {:ok, {new_from, new_to}} ->
+        {:ok, %{patch | anchor: %{anchor | from: new_from, to: new_to}}}
+
+      other ->
+        {patch, other}
+    end
+  end
+
+  defp echo_anchor(patch, _warp), do: {:ok, patch}
 
   # ---- Transport helpers ----
 
@@ -424,7 +552,10 @@ defmodule Coconut.Edit.Workspace do
   A Metric anchor whose `coord` differs from the track's `coord_domain`
   is rejected as well (`{:error, {:anchor_coord_mismatch, _, _}}`, design
   doc §5): it would otherwise mount fine and only die as
-  `:warp_provider_required` at transport time.
+  `:warp_provider_required` at transport time. The one cross-domain
+  exception: a `:frame` Metric anchor on a `:tick` track (score-following,
+  frame-addressed, §5 item 4), which requires a declared `frame_rate`
+  (`{:error, :missing_frame_rate}`).
 
   Returns `{:ok, workspace, patch}` where `patch` is the mounted patch
   after id minting — the recordable form (design doc §12.4).
@@ -433,7 +564,7 @@ defmodule Coconut.Edit.Workspace do
           {:ok, t(), Coconut.Edit.Patch.t()} | {:error, term()}
   def attach_patch(ws, %Coconut.Edit.Patch{track_id: track_id} = patch) do
     with {:ok, track} <- fetch_track(ws, track_id),
-         :ok <- check_anchor_domain(patch, track) do
+         :ok <- check_anchor_domain(patch, track, ws) do
       patch = mint_patch_id(patch)
       track = %{track | patches: track.patches ++ [patch]}
       {:ok, put_track(ws, track), patch}
@@ -447,21 +578,30 @@ defmodule Coconut.Edit.Workspace do
 
   defp mint_patch_id(patch), do: patch
 
-  # Anchor coord vs track domain consistency (design doc §5 todo, landed with
-  # `Track.Audio`): a Metric anchor's coord must equal the track's
-  # coord_domain. Ordinal/Relative anchors are coord-free and always pass.
-  defp check_anchor_domain(
-         %Coconut.Edit.Patch{anchor: %Tamale.Anchor.Metric{coord: coord}},
-         track
-       ) do
-    if coord == Track.coord_domain(track) do
-      :ok
-    else
-      {:error, {:anchor_coord_mismatch, coord, Track.coord_domain(track)}}
+  # Anchor coord vs track domain consistency (design doc §5): a Metric
+  # anchor's coord must equal the track's coord_domain — except a `:frame`
+  # anchor on a `:tick` track (score-following, frame-addressed, §5 item 4),
+  # which additionally requires the workspace to declare a `frame_rate`
+  # (the tick↔frame grid) at mount time. Ordinal/Relative anchors are
+  # coord-free and always pass.
+  defp check_anchor_domain(patch, track, ws) do
+    case patch.anchor do
+      %Tamale.Anchor.Metric{coord: coord} -> check_metric_coord(coord, track, ws)
+      _anchor -> :ok
     end
   end
 
-  defp check_anchor_domain(_patch, _track), do: :ok
+  defp check_metric_coord(coord, track, ws) do
+    domain = Track.coord_domain(track)
+    frame_on_tick? = coord == :frame and domain == :tick
+
+    cond do
+      coord == domain -> :ok
+      frame_on_tick? and is_nil(ws.frame_rate) -> {:error, :missing_frame_rate}
+      frame_on_tick? -> :ok
+      true -> {:error, {:anchor_coord_mismatch, coord, domain}}
+    end
+  end
 
   @doc """
   Appends a list of patches. See `attach_patch/2`.
@@ -500,6 +640,92 @@ defmodule Coconut.Edit.Workspace do
       end)
 
     {dead, ws}
+  end
+
+  @doc """
+  Exact tempo steps (`[{tick, milli_bpm}]`) in effect at `edit_version`,
+  located through the tempo track's version clock — the cross-track
+  correlation backing frame warps (design doc §5 item 4).
+
+  `nil` when the tempo track is missing or had no events at that moment.
+  Element payloads are the current table (bpm value edits are unversioned
+  content edits — a documented approximation).
+  """
+  @spec tempo_steps_at(t(), Tamale.version()) ::
+          [{Coconut.Score.Tick.numeric_tick(), pos_integer()}] | nil
+  def tempo_steps_at(ws, edit_version) when is_integer(edit_version) and edit_version >= 0 do
+    with %Track{} = tempo <- Map.get(ws.globals, @tempo_global_id),
+         version when is_integer(version) <- tempo_version_at(tempo, edit_version),
+         [{_, _} | _] = steps <- tempo.module.tempo_steps_at(tempo, version) do
+      steps
+    else
+      _ -> nil
+    end
+  end
+
+  # 反查 tempo 轨在 edit_version E 时的 Space 版本：clock 非空取
+  # edit_version ≤ E 的最大 space version（无 → 0，出生状态）；旧档 clock
+  # 为空时事件无法定年，一律视为与读档状态同时（最新快照——读档后锚都
+  # 在 head，无历史 fold，这是正确的近似）。
+  defp tempo_version_at(tempo, edit_version) do
+    case tempo.version_clock do
+      clock when map_size(clock) == 0 ->
+        tempo.spans_by_version |> Map.keys() |> Enum.max(fn -> nil end)
+
+      clock ->
+        clock
+        |> Enum.filter(fn {_v, ev} -> ev <= edit_version end)
+        |> Enum.max_by(fn {v, _ev} -> v end, fn -> nil end)
+        |> case do
+          nil -> 0
+          {v, _ev} -> v
+        end
+    end
+  end
+
+  @doc """
+  The `Coconut.Edit.WarpProvider.frame_context()` for one track: the
+  tempo-pair closure (dated through the track's version clock), the
+  workspace's `frame_rate`, and `tpqn`. Shared by the two provider
+  construction sites — write-time (`apply_batches/3`) and check-time
+  (`Coconut.Render.Resolve`).
+  """
+  @spec warp_context(t(), Track.t()) :: WarpProvider.frame_context()
+  def warp_context(ws, track) do
+    %{
+      tempo_pair_at: fn version ->
+        with {:ok, e} <- edit_version_at(track, version),
+             steps_old when not is_nil(steps_old) <- tempo_steps_at(ws, e - 1),
+             steps_new when not is_nil(steps_new) <- tempo_steps_at(ws, e) do
+          {steps_old, steps_new}
+        else
+          _ -> nil
+        end
+      end,
+      frame_rate: ws.frame_rate,
+      tpqn: ws.tpqn
+    }
+  end
+
+  # log entry 的 space version → edit_version：精确命中优先，缺失时取
+  # ≤ version 的最近记录（截断 baseline 由此兜底）；全无记录 → :error
+  # （旧档的历史 entry 无法定年，对组合拒绝服务，帧锚可见判死）。
+  defp edit_version_at(track, version) do
+    clock = track.version_clock
+
+    case Map.fetch(clock, version) do
+      {:ok, e} ->
+        {:ok, e}
+
+      :error ->
+        clock
+        |> Enum.filter(fn {v, _e} -> v <= version end)
+        |> Enum.max_by(fn {v, _e} -> v end, fn -> nil end)
+        |> case do
+          nil -> :error
+          {_v, e} -> {:ok, e}
+        end
+    end
   end
 
   @doc """
@@ -557,10 +783,21 @@ defmodule Coconut.Edit.Workspace do
     with :ok <- check_globals(ws.globals),
          :ok <- check_tracks(ws.tracks),
          :ok <- check_tempo_global(ws.globals),
+         :ok <- check_frame_rate(ws.frame_rate),
          :ok <- check_time_sigs(ws.time_sigs) do
       {:ok, ws}
     end
   end
+
+  # 帧网格声明：工程 metadata，内核存而不解释（单位归引擎，§11.8）。
+  # nil = 未声明（帧域 Metric 锚上不了 tick 轨）；正整数或正有理数。
+  defp check_frame_rate(nil), do: :ok
+  defp check_frame_rate(rate) when is_integer(rate) and rate > 0, do: :ok
+
+  defp check_frame_rate({n, d}) when is_integer(n) and is_integer(d) and n > 0 and d > 0,
+    do: :ok
+
+  defp check_frame_rate(other), do: {:error, {:invalid_frame_rate, other}}
 
   # Every `globals` key must carry the prefix and equal its track's id.
   defp check_globals(globals) do

@@ -5,7 +5,11 @@ defmodule Coconut.Edit.Track do
   Tracks own everything that used to live in the workspace `Side` drawer
   (design doc §11.3): the versioned span table (the timing authority,
   §11.2), the element payloads, and the track's patches — interventions
-  transport per track, so they are stored per track.
+  transport per track, so they are stored per track. The `version_clock`
+  maps each of the track's Space versions to the workspace `edit_version`
+  at which it was committed — the cross-track correlation facility that lets
+  a frame-coord warp locate the tempo state paired with a log entry
+  (design doc §5 item 4, the `T_old`/`T_new` pair).
 
   ## Track modules (behaviour)
 
@@ -65,6 +69,7 @@ defmodule Coconut.Edit.Track do
           module: module(),
           space: Tamale.Space.t(),
           spans_by_version: %{Tamale.version() => %{Tamale.id() => span()}},
+          version_clock: %{Tamale.version() => Tamale.version()},
           elements_by_id: %{Tamale.id() => term()},
           patches: [Coconut.Edit.Patch.t()],
           dead_patches: [{Coconut.Edit.Patch.t(), term()}]
@@ -77,6 +82,7 @@ defmodule Coconut.Edit.Track do
     name: nil,
     space: %Tamale.Space{},
     spans_by_version: %{},
+    version_clock: %{},
     elements_by_id: %{},
     patches: [],
     dead_patches: []
@@ -225,12 +231,14 @@ defmodule Coconut.Edit.Track do
 
   - `:tempo_derive` — `tempo_events/1` (`TempoDerive`): the tempo-map
     projection; `Coconut.Edit.Workspace.validate/1` binds (and reserves) the
-    `"global:tempo"` globals slot by it.
+    `"global:tempo"` globals slot by it. Plus `tempo_steps_at/2`: the
+    versioned, exact (integer milli-bpm) step projection backing the
+    frame-warp tempo pair (design doc §5 item 4).
   """
   @type capability :: :tempo_derive
 
   @capabilities %{
-    tempo_derive: [tempo_events: 1]
+    tempo_derive: [tempo_events: 1, tempo_steps_at: 2]
   }
 
   @doc """
@@ -255,6 +263,19 @@ defmodule Coconut.Edit.Track do
   @doc "The track's versioned span table, for `Coconut.Edit.WarpProvider.for_coord/3`."
   @spec spans(t()) :: %{Tamale.version() => %{Tamale.id() => span()}}
   def spans(%__MODULE__{spans_by_version: spans_by_version}), do: spans_by_version
+
+  @doc "The latest recorded span table at or before `version` (`%{}` when none)."
+  @spec spans_at(t(), Tamale.version()) :: %{Tamale.id() => span()}
+  def spans_at(track, version) do
+    track.spans_by_version
+    |> Map.keys()
+    |> Enum.filter(&(&1 <= version))
+    |> Enum.max(fn -> nil end)
+    |> case do
+      nil -> %{}
+      v -> Map.fetch!(track.spans_by_version, v)
+    end
+  end
 
   @doc """
   The latest recorded span table.
@@ -313,8 +334,25 @@ defmodule Coconut.Edit.Track do
     %{
       track
       | space: Tamale.Space.truncate(track.space, oldest_live_version),
-        spans_by_version: spans_by_version
+        spans_by_version: spans_by_version,
+        version_clock: truncate_clock(track.version_clock, oldest_live_version)
     }
+  end
+
+  # version_clock 与 span 表同规则裁剪：cut 以下保留最新一份作 baseline
+  # （截断后存活 log entry 的 tempo 对组合仍要查它）。
+  defp truncate_clock(clock, oldest_live_version) do
+    kept = for {v, e} <- clock, v > oldest_live_version, into: %{}, do: {v, e}
+
+    baseline =
+      clock
+      |> Enum.filter(fn {v, _} -> v <= oldest_live_version end)
+      |> Enum.max_by(fn {v, _} -> v end, fn -> nil end)
+
+    case baseline do
+      nil -> kept
+      {v, e} -> Map.put(kept, v, e)
+    end
   end
 
   # ---- Sync (the write side of `Workspace.apply_batch/5`) ----
@@ -382,13 +420,24 @@ defmodule Coconut.Edit.Track do
   defmodule TempoDerive do
     @moduledoc """
     Optional `:tempo_derive` capability: the tempo-map projection
-    (`Coconut.Edit.Workspace.tempo_map/1`). Sniffed via
-    `Coconut.Edit.Track.supports?/2`; declaring this behaviour buys
-    compile-time warnings but is not required.
+    (`Coconut.Edit.Workspace.tempo_map/1`) plus the versioned exact step
+    projection (`Coconut.Edit.Workspace.tempo_steps_at/2`, frame-warp tempo
+    pairs). Sniffed via `Coconut.Edit.Track.supports?/2`; declaring this
+    behaviour buys compile-time warnings but is not required.
     """
 
     @callback tempo_events(Coconut.Edit.Track.t()) :: [
                 {Coconut.Score.Tick.numeric_tick(), Coconut.Score.Tempo.Event.t()}
+              ]
+
+    @doc """
+    Exact tempo steps at a track version: `{start_tick, milli_bpm}` pairs
+    sorted by tick, derived from the span snapshot at `version` and the
+    current element table (bpm value edits are content edits — unversioned;
+    documented limitation of the frame-warp tempo pair, design doc §5).
+    """
+    @callback tempo_steps_at(Coconut.Edit.Track.t(), Tamale.version()) :: [
+                {Coconut.Score.Tick.numeric_tick(), pos_integer()}
               ]
   end
 end
