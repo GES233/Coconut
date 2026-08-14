@@ -97,20 +97,21 @@ defmodule Coconut.Edit.Diff do
   # ---- Pass 1: exact composite key (span + content) ----
 
   defp exact_match(olds, news) do
-    Enum.reduce(news, {[], olds, []}, fn new, {pairs, free_olds, rest_news} ->
-      key = {new.span, content_key(new.element)}
+    {pairs, rest_olds, rest_news} = Enum.reduce(news, {[], olds, []}, &match_one_new/2)
 
-      case Enum.find(free_olds, fn {_id, element, span} -> {span, content_key(element)} == key end) do
-        {old_id, _element, _span} ->
-          {[{old_id, new.idx} | pairs], reject_old(free_olds, old_id), rest_news}
+    {Enum.reverse(pairs), rest_olds, Enum.reverse(rest_news)}
+  end
 
-        nil ->
-          {pairs, free_olds, [new | rest_news]}
-      end
-    end)
-    |> then(fn {pairs, rest_olds, rest_news} ->
-      {Enum.reverse(pairs), rest_olds, Enum.reverse(rest_news)}
-    end)
+  defp match_one_new(new, {pairs, free_olds, rest_news}) do
+    key = {new.span, content_key(new.element)}
+
+    case Enum.find(free_olds, fn {_id, element, span} -> {span, content_key(element)} == key end) do
+      {old_id, _element, _span} ->
+        {[{old_id, new.idx} | pairs], reject_old(free_olds, old_id), rest_news}
+
+      nil ->
+        {pairs, free_olds, [new | rest_news]}
+    end
   end
 
   # ---- Pass 2: mutual-best span overlap, strict ----
@@ -120,16 +121,15 @@ defmodule Coconut.Edit.Diff do
   defp overlap_match(pairs, rest_olds, rest_news) do
     accepted =
       for {old_id, _element, old_span} <- rest_olds,
-          best = strict_best(old_span, rest_news, fn new -> new.idx end),
-          best != nil,
-          mutual?(old_id, old_span, best, rest_olds),
-          do: {old_id, best}
+          best_idx = strict_best(old_span, rest_news, fn new -> new.idx end),
+          best_idx != nil,
+          mutual?(old_id, best_idx, rest_news, rest_olds),
+          do: {old_id, best_idx}
 
     accepted_old_ids = Enum.map(accepted, &elem(&1, 0))
     accepted_new_idxs = Enum.map(accepted, &elem(&1, 1))
 
-    {pairs ++ accepted,
-     Enum.reject(rest_olds, fn old -> elem(old, 0) in accepted_old_ids end),
+    {pairs ++ accepted, Enum.reject(rest_olds, fn old -> elem(old, 0) in accepted_old_ids end),
      Enum.reject(rest_news, fn new -> new.idx in accepted_new_idxs end)}
   end
 
@@ -146,18 +146,11 @@ defmodule Coconut.Edit.Diff do
     end
   end
 
-  defp mutual?(old_id, old_span, new_idx, rest_olds) do
-    new_span = nil
-
-    best_old =
-      strict_best_for_old(new_idx, rest_olds)
-
-    best_old == old_id and elem(find_score(old_span, new_span), 0) > 0
+  # 互为最优才成立：new 一侧在剩余 olds 中的严格最优也必须是这个 old。
+  defp mutual?(old_id, new_idx, rest_news, rest_olds) do
+    new = Enum.find(rest_news, &(&1.idx == new_idx))
+    strict_best(new.span, rest_olds, fn {id, _element, _span} -> id end) == old_id
   end
-
-  defp strict_best_for_old(_new_idx, _rest_olds), do: nil
-
-  defp find_score(_old_span, _new_span), do: {0, 0}
 
   defp cand_span({_id, _element, span}), do: span
   defp cand_span(%{span: span}), do: span
@@ -205,22 +198,26 @@ defmodule Coconut.Edit.Diff do
     {ops, _final} =
       final_ids
       |> Enum.with_index()
-      |> Enum.reduce({[], current}, fn {id, k}, {ops, cur} ->
-        if Enum.at(cur, k) == id do
-          {ops, cur}
-        else
-          after_id = if k == 0, do: :head, else: Enum.at(final_ids, k - 1)
-
-          if MapSet.member?(insert_ids, id) do
-            {[%Tamale.Op.Insert{id: id, after_id: after_id} | ops], List.insert_at(cur, k, id)}
-          else
-            {[%Tamale.Op.Move{id: id, after_id: after_id} | ops],
-             cur |> List.delete(id) |> List.insert_at(k, id)}
-          end
-        end
+      |> Enum.reduce({[], current}, fn {id, k}, acc ->
+        place_step(acc, id, k, final_ids, insert_ids)
       end)
 
     Enum.reverse(ops)
+  end
+
+  defp place_step({ops, cur}, id, k, final_ids, insert_ids) do
+    if Enum.at(cur, k) == id do
+      {ops, cur}
+    else
+      after_id = if k == 0, do: :head, else: Enum.at(final_ids, k - 1)
+
+      if MapSet.member?(insert_ids, id) do
+        {[%Tamale.Op.Insert{id: id, after_id: after_id} | ops], List.insert_at(cur, k, id)}
+      else
+        {[%Tamale.Op.Move{id: id, after_id: after_id} | ops],
+         cur |> List.delete(id) |> List.insert_at(k, id)}
+      end
+    end
   end
 
   # ---- Side changes ----

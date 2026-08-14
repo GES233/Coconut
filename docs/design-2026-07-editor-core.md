@@ -207,17 +207,25 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 
 ## 8. 已知缺口（coconut 侧待补）
 
-已补齐：warp provider（§5）、undo（§12）。待施工的三件（跨 Space 重挂
-方案已拍板，见末条）：
+已补齐：warp provider（§5）、undo（§12）、diff 适配器（见首条）。
+待施工的两件（跨 Space 重挂方案已拍板，见末条）：
 
-- **diff(old, new) 回退适配器**（文件导入用）：正常路径是手势 → op 批次；
-  文件导入（MIDI/UST）、外部整轨改写、整块粘贴只给"改完的状态"，需从
-  新旧元素快照反推六 op 序列。启发式 = 身份对齐（导入格式无 coconut id，
-  按复合键还是位置贪心）+ 顺序/时间/数量变化归类；"集中在这一个函数"
-  指不确定性收口一处，其余路径保持纯 op。未拍板：身份匹配键与保守策略
-  （宁可 Delete+Insert 不错认 Move，还是反过来）。落点为
-  `Coconut.Edit.Operation` 同级独立模块，输出标准 `ops + side_changes`
-  走同一 `apply_batch` 管道；头号用户 MIDI 导入是 v2 项，v1 可欠。
+- **diff(old, new) 回退适配器**：已落地（2026-08-11，`Coconut.Edit.Diff`，
+  与 `Operation` 同级）。正常路径是手势 → op 批次；文件导入
+  （MIDI/UST）、外部整轨改写、整块粘贴只给"改完的状态"，由它在旧轨
+  快照与新元素列表间反推六 op 序列，输出标准 `ops + side_changes`
+  走同一 `apply_batch` 管道，不确定性收口在这一个函数。两个原未拍板
+  点已定：①身份匹配**分层**——先复合键（span + 去 id 的元素内容）
+  精确配对，再按 span 重叠度**互为严格最优**贪心兜底（重叠相同则
+  start 近者胜；任一方向平分即放弃）；②保守策略**宁可 Delete +
+  Insert 不错认**——错认 Retime/Move 会让 patch 载荷静默挂错对象，
+  Delete+Insert 则 id 换新、patch 判死进坟场（可见失败，策略层可
+  重挂）。配对成功的 span 变 → Retime、内容变 → 侧表 upsert（纯内容
+  编辑不落 op，§7）、序列变 → Move。新元素经轨型模块 `cast_element/3`
+  重铸（内容合法性在此把关）；新状态的轨型政策合法性（如 Vocal 不
+  重叠）是调用方责任——diff 走 apply_batch 本就绕过 validate 层。
+  骨架通用、Vocal 先行（Tempo/Audio 的匹配键随用到再定型）；头号
+  用户 MIDI 导入在下游排期。
 - **chunked digest helper**：`Tamale.Digest.digest/1` 一次性吃完整
   canonical term，整轨投影大时物化成本高；helper 为分块流式 digest。
   命门：分块结果必须与一次性 digest **逐比特一致**，否则同一内容的
@@ -286,7 +294,8 @@ v2 遗留：
   与挂载守卫放开，见 §5 第 4 条落地注记；
 - orchid/oi 接入——adapter 独立成包，见 design-2026-08-orchid-intervention.md
   §3.3/§4 与 Phase 计划；
-- diff 适配器（§8，随文件导入排期；跨轨拖动已于 2026-08-10 落地，§8）。
+- diff 适配器——已落地（2026-08-11，`Coconut.Edit.Diff`，决策见 §8）；
+  头号用户 MIDI 导入在下游排期（跨轨拖动已于 2026-08-10 落地，§8）。
 
 ## 11. 已知架构问题与演进方向
 
