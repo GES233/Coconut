@@ -31,7 +31,7 @@ defmodule Coconut.MixProject do
   defp deps do
     [
       # Rebase support
-      {:tamale, github: "SynapticStrings/Tamal"},
+      {:tamale, "~> 0.1"},
       # Lib Management
       {:ex_doc, "~> 0.40.3", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
