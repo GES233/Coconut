@@ -307,6 +307,39 @@ oi 有两条干预通道，需要选型（或明确分工）：
   含噪声采样（PoC 以 `System.system_time()` 播种）的步要么排除、
   要么把 noise 改为注入的种子参数，否则缓存命中即撒谎。
 
+### 6.6 channel base 分类：content base vs output base（2026-09-03 拍板）
+
+缘起：neume 侧讨论 melisma 晋升/断组时 duration pin 的语义漂移（音符自身
+内容不变，content base 的 digest 不 veto，pin 静默指向新音素）。结论是
+§6.3 的 land 语义本就覆盖此情形，并由此抽出一条通用分类原则：
+
+- **短路型干预**（payload 完整替代 stage 输出，如 Lyric 改词短路 G2P）：
+  base 钉 **score 内容**（静态 workspace 投影，现 `Channels.Duration/Lyric`
+  的形态）。
+- **微调型干预**（payload 是 stage 输出的稀疏修正，如 duration pin、
+  pitch pin）：base 钉 **模型输出**（extract 时刻该 word 的预测值 +
+  音素序列进 digest base）。
+
+推论与边界：
+
+- duration 是首个消费者且条件最好：ph_dur_pred 是整数帧（§6.4 精确化
+  天然满足），且预测在 pin 应用的上游（`_fit_durations` 只事后归一化），
+  同一趟推理可同时产出干净底料与干预后结果，无循环依赖、无需两趟。
+- **裁决位置后移**：微调型 channel 的 resolve 发生在引擎 probe 阶段而非
+  静态 check——底料物化归引擎（§4.1），coconut 内置 channel 契约
+  `projection(ws, patch)` 保持纯 workspace；此类 channel 由引擎侧自定义
+  channel 实现。
+- **volatile base 是预期代价**：上游编辑改变上下文 → 预测变 → pin 被
+  veto，哪怕语义无害。与 §6.2 "简单狠"先例同款取舍；冲突由用户裁决
+  （三手势：re-extract 重挂 / 修改后重挂 / 丢弃——与死 patch、adopt
+  失败共用同一个冲突解决界面）。
+- melisma 场景的收益：晋升/断组 → G2P 与预测变 → digest 自动失配浮出
+  冲突，无需给静态投影加组上下文的偏方。
+- **可视化意图（立项动机之一）**：channel 语义对齐关系是 DAG 之外的第
+  二个可视化面——干预在图上表示为**落在数据边上的节点**，并以**虚线
+  连接的小图钉**指回其 base 来源（stage 输出 / score 内容）。此表示随
+  Phase 3 可视化一并评估，不影响内核契约。
+
 ## 7. 暂不做的
 
 - port_ref DTO 化（§11.4）：推迟，边界转换即可，内核内部形状自由演进。
