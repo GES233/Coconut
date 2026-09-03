@@ -592,8 +592,8 @@ defmodule Coconut.Edit.OperationTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 1, ops, ch)
 
-      assert Workspace.latest_span(ws, @track, "n1") == {0, 240}
-      assert Workspace.latest_span(ws, @track, "n2") == {240, 480}
+      assert Track.latest_span(ws.tracks[@track], "n1") == {0, 240}
+      assert Track.latest_span(ws.tracks[@track], "n2") == {240, 480}
 
       assert %Note{id: "n2", key: %TwelveET{midi: 60}} =
                ws.tracks[@track].elements_by_id["n2"]
@@ -657,8 +657,8 @@ defmodule Coconut.Edit.OperationTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops, ch)
 
-      assert Workspace.latest_span(ws, @track, "n1") == {0, 960}
-      assert Workspace.latest_span(ws, @track, "n2") == nil
+      assert Track.latest_span(ws.tracks[@track], "n1") == {0, 960}
+      assert Track.latest_span(ws.tracks[@track], "n2") == nil
       refute Map.has_key?(ws.tracks[@track].elements_by_id, "n2")
       # `into` keeps its own payload — content merging is domain policy.
       assert %Note{lyric: "ら"} = ws.tracks[@track].elements_by_id["n1"]
@@ -777,9 +777,9 @@ defmodule Coconut.Edit.OperationTest do
 
       assert ws.tracks[@track].space.version == 3
       refute Map.has_key?(ws.tracks[@track].spans_by_version, 3)
-      assert Workspace.latest_span(ws, @track, "n1") == {0, 480}
-      assert Workspace.latest_spans(ws, @track) == %{"n1" => {0, 480}, "n2" => {480, 960}}
-      assert Workspace.latest_span(ws, @track, "nope") == nil
+      assert Track.latest_span(ws.tracks[@track], "n1") == {0, 480}
+      assert Track.latest_spans(ws.tracks[@track]) == %{"n1" => {0, 480}, "n2" => {480, 960}}
+      assert Track.latest_span(ws.tracks[@track], "nope") == nil
     end
   end
 
@@ -810,7 +810,7 @@ defmodule Coconut.Edit.OperationTest do
 
       ws = put_in(ws.tracks[@track].patches, [cp])
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
+      {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track])
       assert length(survivors) == 1
       assert dead == []
       # anchor updated to head version (1, since no new ops)
@@ -906,7 +906,7 @@ defmodule Coconut.Edit.OperationTest do
 
       {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
+      {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track])
       assert length(survivors) == 1
       assert dead == []
       assert hd(survivors).anchor.refs == ["n1"]
@@ -943,7 +943,7 @@ defmodule Coconut.Edit.OperationTest do
 
       ws = put_in(ws.tracks[@track].patches, [cp])
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
+      {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track])
       assert survivors == []
       assert [{^cp, {:error, :warp_provider_required}}] = dead
     end
@@ -980,7 +980,7 @@ defmodule Coconut.Edit.OperationTest do
 
       wp = fn :tick, _entry -> {:error, {:warp_construction_failed, :boom}} end
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
+      {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track], wp)
       assert survivors == []
       assert [{^cp, {:error, {:warp_construction_failed, :boom}}}] = dead
     end
@@ -1027,11 +1027,11 @@ defmodule Coconut.Edit.OperationTest do
 
       wp =
         WarpProvider.tick(
-          Workspace.track_spans(ws, @track),
+          Track.spans(ws.tracks[@track]),
           ws.tracks[@track].patches
         )
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
+      {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track], wp)
 
       assert dead == []
       assert [survivor] = survivors
@@ -1118,7 +1118,7 @@ defmodule Coconut.Edit.OperationTest do
 
       ws = put_in(ws.tracks[@track].patches, [cp1, cp2])
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, @track)
+      {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track])
       # cp1 (track @track) transported, cp2 (track "harmony") passed through
       assert length(survivors) == 2
       assert dead == []
@@ -1176,8 +1176,8 @@ defmodule Coconut.Edit.OperationTest do
     {:ok, ws} = Workspace.apply_batch(ws, @track, 2, ops3, changes3)
 
     # Transport with warp_provider — Relative should NOT use it (dispatch to transport/2)
-    wp = WarpProvider.tick(Workspace.track_spans(ws, @track))
-    {:ok, survivors, dead} = Workspace.transport_patches(ws, @track, wp)
+    wp = WarpProvider.tick(Track.spans(ws.tracks[@track]))
+    {:ok, survivors, dead} = Track.transport_patches(ws.tracks[@track], wp)
 
     assert dead == []
     assert length(survivors) == 1
@@ -1414,6 +1414,22 @@ defmodule Coconut.Edit.OperationTest do
                  },
                  ws
                )
+    end
+
+    test "low-level batch cannot bypass the whole-track invariant", %{ws: ws} do
+      request = %Coconut.Edit.Operations.InsertNote{
+        track_id: @track,
+        note_id: "n3",
+        after_id: "n1",
+        span: {240, 720},
+        attrs: %{}
+      }
+
+      {:ok, ops, changes} = Operation.lower(request, ws, %Operation.Config{})
+
+      assert {:error,
+              {:vocal_overlap_rejected, %{id: "n3", span: {240, 720}, conflicting: ["n1"]}}} =
+               Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
     end
 
     test "insert abutting existing notes is allowed", %{ws: ws} do

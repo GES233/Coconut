@@ -18,6 +18,36 @@ alias Coconut.Render.Resolve
 alias Coconut.Util.ID
 alias Tamale.Warp
 
+defmodule Coconut.Examples.WarpChannel do
+  @behaviour Coconut.Render.Channel
+
+  alias Coconut.Edit.{Patch, Track}
+
+  @impl true
+  def projection(ws, %Patch{track_id: track_id, anchor: %Tamale.Anchor.Metric{} = anchor}) do
+    from_tick = to_tick(anchor.from)
+    to_tick = to_tick(anchor.to)
+
+    overlapping =
+      for {id, {start_tick, end_tick}} <- Track.latest_spans(ws.tracks[track_id]),
+          start_tick < to_tick and end_tick > from_tick,
+          into: %{} do
+        element = Map.get(ws.tracks[track_id].elements_by_id, id)
+        {id, canonicalize(element)}
+      end
+
+    {:ok, overlapping}
+  end
+
+  @impl true
+  def target(%Patch{channel: channel}), do: {:port, :synth, channel}
+
+  defp canonicalize(%Coconut.Score.Note{} = note), do: Coconut.Score.Note.to_canonical(note)
+  defp canonicalize(other), do: other
+  defp to_tick({numerator, denominator}), do: div(numerator, denominator)
+  defp to_tick(tick) when is_integer(tick), do: tick
+end
+
 cfg = %Operation.Config{}
 track = "vocal"
 
@@ -36,8 +66,8 @@ show_pieces = fn %Warp{pieces: pieces} ->
 end
 
 transport_and_report = fn ws, label ->
-  wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
-  {:ok, survivors, dead} = Workspace.transport_patches(ws, track, wp)
+  wp = WarpProvider.tick(Track.spans(ws.tracks[track]), ws.tracks[track].patches)
+  {:ok, survivors, dead} = Track.transport_patches(ws.tracks[track], wp)
 
   IO.puts("\n=== #{label} ===")
 
@@ -49,36 +79,6 @@ transport_and_report = fn ws, label ->
   Enum.each(dead, fn {cp, reason} ->
     IO.puts("  DIES      #{cp.channel}: #{inspect(reason)}")
   end)
-end
-
-# Toy channel projection — the "base slice" a patch guards: the elements
-# overlapping the anchor's span.
-to_tick = fn
-  {n, d} -> div(n, d)
-  i when is_integer(i) -> i
-end
-
-projection = fn ws, %Patch{} = cp ->
-  %Tamale.Anchor.Metric{from: f, to: t} = cp.anchor
-  from_t = to_tick.(f)
-  to_t = to_tick.(t)
-
-  overlapping =
-    for {id, {s, e}} <- Workspace.latest_spans(ws, cp.track_id),
-        s < to_t and e > from_t,
-        into: %{} do
-      element = Map.get(ws.tracks[track].elements_by_id, id)
-
-      canonical =
-        case element do
-          %Coconut.Score.Note{} = note -> Coconut.Score.Note.to_canonical(note)
-          other -> other
-        end
-
-      {id, canonical}
-    end
-
-  {:ok, overlapping}
 end
 
 # ---- 1. Bootstrap: one track, three adjacent notes ----
@@ -113,12 +113,13 @@ ws =
         ws,
         cfg
       )
+
     {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
     ws
   end)
 
 IO.puts("=== Setup ===")
-IO.inspect(Workspace.latest_spans(ws, track), label: "spans")
+IO.inspect(Track.latest_spans(ws.tracks[track]), label: "spans")
 
 # ---- 2. Mount Metric patches (base digest captured at mount) ----
 ver = ws.tracks[track].space.version
@@ -126,7 +127,7 @@ ver = ws.tracks[track].space.version
 mount = fn from, to, channel, payload ->
   anchor = %Tamale.Anchor.Metric{coord: :tick, from: from, to: to, at_version: ver}
   probe = %Patch{track_id: track, anchor: anchor, channel: channel}
-  {:ok, base} = projection.(ws, probe)
+  {:ok, base} = Coconut.Examples.WarpChannel.projection(ws, probe)
   {:ok, tp} = Tamale.Patch.new(base, payload)
   {:ok, cp} = Patch.new(%{track_id: track, anchor: anchor, channel: channel, patch: tp})
   cp
@@ -166,8 +167,8 @@ IO.puts("  space   [2100, 2200]  past the end (empty space)")
 IO.puts("\n=== Act 1: drag n3 [960, 1440] -> [1440, 1920] ===")
 IO.puts("warp pieces for the batch:")
 
-wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
-w = wp.(:tick, {ws.tracks[track].space.version, ops})
+wp = WarpProvider.tick(Track.spans(ws.tracks[track]), ws.tracks[track].patches)
+{:ok, w} = wp.(:tick, {ws.tracks[track].space.version, ops})
 show_pieces.(w)
 
 IO.puts("sample points:")
@@ -197,8 +198,8 @@ transport_and_report.(ws, "transport after act 1 (curve follows n3)")
 IO.puts("\n=== Act 2: shrink n2 [480, 960] -> [480, 640] (slope 1/3) ===")
 IO.puts("warp pieces for the batch:")
 
-wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
-w = wp.(:tick, {ws.tracks[track].space.version, ops})
+wp = WarpProvider.tick(Track.spans(ws.tracks[track]), ws.tracks[track].patches)
+{:ok, w} = wp.(:tick, {ws.tracks[track].space.version, ops})
 show_pieces.(w)
 
 IO.puts("sample points (exact rationals, no float dust):")
@@ -208,9 +209,9 @@ IO.puts("  at 700 -> #{inspect(Warp.at!(w, 700))}")
 transport_and_report.(ws, "transport after act 2 (vibrato compresses 1/3)")
 
 # ---- 5. Check round while everything is alive ----
-channels = [:energy, :vibrato, :curve, :space] |> Map.new(fn c ->
-  {c, %{projection: projection, target: {:port, :synth, c}}}
-end)
+channels =
+  [:energy, :vibrato, :curve, :space]
+  |> Map.new(&{&1, Coconut.Examples.WarpChannel})
 
 IO.puts("\n=== Resolve.run_check (all alive) ===")
 
@@ -227,13 +228,14 @@ end
 # ---- 6. Act 3: delete n3 — the curve patch loses its ground ----
 {:ok, ops, ch} =
   Operation.lower(%Coconut.Edit.Operations.DeleteNote{track_id: track, note_id: "n3"}, ws, cfg)
+
 {:ok, ws} = Workspace.apply_batch(ws, track, ws.edit_version, ops, ch)
 
 IO.puts("\n=== Act 3: delete n3 (now at [1440, 1920]) ===")
 IO.puts("warp pieces for the batch:")
 
-wp = WarpProvider.tick(Workspace.track_spans(ws, track), ws.tracks[track].patches)
-w = wp.(:tick, {ws.tracks[track].space.version, ops})
+wp = WarpProvider.tick(Track.spans(ws.tracks[track]), ws.tracks[track].patches)
+{:ok, w} = wp.(:tick, {ws.tracks[track].space.version, ops})
 show_pieces.(w)
 
 transport_and_report.(ws, "transport after act 3 (live set already folded by apply_batch)")

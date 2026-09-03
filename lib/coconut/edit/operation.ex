@@ -151,6 +151,9 @@ defmodule Coconut.Edit.Operation do
 
   Multi-track requests do not implement `lower/3`; calling this on one
   returns `{:error, {:multi_track_request, _}}` — use `lower_batches/3`.
+
+  This is a low-level adapter API and does not call `validate/2`. Host
+  applications should normally write through `Coconut.Edit.History.apply/4`.
   """
   @spec lower(request(), Workspace.t(), Config.t()) ::
           {:ok, [Tamale.Op.t()], side_changes()} | {:error, term()}

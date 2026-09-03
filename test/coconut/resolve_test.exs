@@ -11,6 +11,25 @@ defmodule Coconut.ResolveTest do
 
   @track "vocal"
 
+  defmodule FanoutChannel do
+    alias Coconut.Render.Channels.Lyric
+
+    @behaviour Coconut.Render.Channel
+
+    @impl true
+    def projection(ws, patch), do: Lyric.projection(ws, patch)
+
+    @impl true
+    def target do
+      fn payload ->
+        [
+          {{:port, :synth, :lyric}, payload.lyric},
+          {{:port, :synth, :energy}, payload.energy}
+        ]
+      end
+    end
+  end
+
   setup do
     {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})
 
@@ -69,23 +88,6 @@ defmodule Coconut.ResolveTest do
   defp rewrite_note(ws, note_id, attrs) do
     {:ok, note} = Note.from_element(note_id, attrs)
     put_in(ws.tracks[@track].elements_by_id[note_id], note)
-  end
-
-  defp lyric_channel do
-    %{
-      projection: fn ws, %Patch{} = patch ->
-        case patch.anchor do
-          %Tamale.Anchor.Ordinal{refs: [id | _]} ->
-            with {:ok, element} <- Map.fetch(ws.tracks[@track].elements_by_id, id) do
-              {:ok, Note.to_canonical(element)}
-            end
-
-          _other ->
-            {:error, :unsupported_anchor}
-        end
-      end,
-      target: {:port, :synth, :lyric}
-    }
   end
 
   defp channels, do: %{lyric: Coconut.Render.Channels.Lyric}
@@ -227,11 +229,7 @@ defmodule Coconut.ResolveTest do
     ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"})
     ws = attach_lyric_patch(ws, "n1", %{lyric: "らん", energy: 80})
 
-    fanout = fn payload ->
-      [{{:port, :synth, :lyric}, payload.lyric}, {{:port, :synth, :energy}, payload.energy}]
-    end
-
-    channels = %{lyric: %{lyric_channel() | target: fanout}}
+    channels = %{lyric: FanoutChannel}
 
     assert {:ok, %{interventions: interventions}} = Resolve.run_check(ws, channels)
 

@@ -16,6 +16,8 @@ defmodule Coconut.Edit.Command do
     via `Coconut.Edit.History.apply/4`, not built by hand);
   - `:attach_patches` — `[Patch.t()]`; execution mints patch ids, so the
     resolved command can differ from the input one;
+  - `:discard_patches` — `[{track_id, patch_id, reason}]`; active patches
+    move to their tracks' graveyards;
   - `:add_track` — a fully constructed `Coconut.Edit.Track.t()`;
   - `:remove_track` — `track_id`;
   - `:rename_track` — `{track_id, name}`;
@@ -31,6 +33,7 @@ defmodule Coconut.Edit.Command do
   @type op ::
           :batch
           | :attach_patches
+          | :discard_patches
           | :add_track
           | :remove_track
           | :rename_track
@@ -65,6 +68,11 @@ defmodule Coconut.Edit.Command do
   @spec attach_patches([Patch.t()]) :: t()
   def attach_patches(patches) when is_list(patches),
     do: %__MODULE__{op: :attach_patches, payload: patches, label: "AttachPatches"}
+
+  @doc "Move active patches to their tracks' graveyards with explicit reasons."
+  @spec discard_patches([{Track.track_id(), ID.t(), term()}]) :: t()
+  def discard_patches(entries) when is_list(entries),
+    do: %__MODULE__{op: :discard_patches, payload: entries, label: "DiscardPatches"}
 
   @doc """
   Build an add-track command from `Track.new/1` attrs; `:id` is minted
@@ -129,6 +137,9 @@ defmodule Coconut.Edit.Command do
       {:error, _} = err -> err
     end
   end
+
+  def execute(ws, %__MODULE__{op: :discard_patches, payload: entries} = command, _opts),
+    do: run(command, fn -> Workspace.discard_patches(ws, entries) end)
 
   def execute(ws, %__MODULE__{op: :add_track, payload: %Track{} = track} = command, _opts),
     do: run(command, fn -> Workspace.add_track(ws, track) end)

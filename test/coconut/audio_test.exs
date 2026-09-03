@@ -147,6 +147,23 @@ defmodule Coconut.AudioTest do
                  ws
                )
     end
+
+    test "low-level batch cannot bypass no-stretch", %{ws: ws} do
+      ws = insert_clip(ws, "c1", {0, 160})
+
+      request = %DragNote{
+        track_id: @track,
+        note_id: "c1",
+        after_id: :head,
+        old_span: {0, 160},
+        new_span: {0, 100}
+      }
+
+      {:ok, ops, changes} = Operation.lower(request, ws, %Operation.Config{})
+
+      assert {:error, {:clip_duration_span_mismatch, %{duration_frames: 160, span_frames: 100}}} =
+               Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
+    end
   end
 
   describe "trim" do

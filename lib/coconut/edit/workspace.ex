@@ -43,7 +43,7 @@ defmodule Coconut.Edit.Workspace do
         }
   @keys [
     :id,
-    :edit_version,
+    edit_version: 0,
     tracks: %{},
     globals: %{@tempo_global_id => %Track{id: @tempo_global_id, module: Coconut.Edit.Track.Tempo}},
     tpqn: 480,
@@ -208,7 +208,13 @@ defmodule Coconut.Edit.Workspace do
   # ---- Apply ----
 
   @doc """
-  Apply op batches to one or more tracks atomically, syncing side tables.
+  Apply already-lowered op batches to one or more tracks atomically, syncing
+  side tables.
+
+  This is a low-level adapter/replay boundary and does not run gesture policy.
+  Host applications should use `Coconut.Edit.History.apply/4`, which validates
+  and lowers the request first. Whole-track invariants are still checked here
+  before a commit is accepted.
 
   `batches` is a list of `{track_id, ops, side_changes}` — the output of
   `Coconut.Edit.Operation.lower_batches/3` (single-track gestures yield a
@@ -237,7 +243,8 @@ defmodule Coconut.Edit.Workspace do
     new_version = ws.edit_version + 1
 
     with :ok <- check_version(ws, expected_version),
-         {:ok, ws} <- apply_track_batches(ws, batches, new_version) do
+         {:ok, ws} <- apply_track_batches(ws, batches, new_version),
+         :ok <- validate_touched_tracks(ws, batches) do
       ws = %{ws | edit_version: new_version}
 
       {:ok,
@@ -288,6 +295,27 @@ defmodule Coconut.Edit.Workspace do
       else: Map.put(track.version_clock, space.version, new_version)
   end
 
+  defp validate_touched_tracks(ws, batches) do
+    batches
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.uniq()
+    |> Enum.find_value(:ok, fn track_id ->
+      case validate_track(ws, track_id) do
+        :ok ->
+          nil
+
+        {:error, _} = error ->
+          error
+      end
+    end)
+  end
+
+  defp validate_track(ws, track_id) do
+    with {:ok, track} <- fetch_track(ws, track_id) do
+      Track.validate_state(track)
+    end
+  end
+
   # Write-time transport for every touched track, in first-touch order;
   # a track hit by several batches gets the concatenated patches_add.
   defp transport_touched_tracks(ws, batches) do
@@ -298,42 +326,6 @@ defmodule Coconut.Edit.Workspace do
     |> Enum.reduce(ws, fn {track_id, patches_add}, ws ->
       transport_track_patches(ws, track_id, patches_add)
     end)
-  end
-
-  # ---- Transport ----
-
-  @doc """
-  Transport a track's patch anchors along its op log.
-
-  Returns `{:ok, survivors, dead}` where survivors have updated anchors.
-  `warp_provider` is required for `Tamale.Anchor.Metric` patches; pass `nil`
-  for Ordinal/Relative-only v1.
-
-  `apply_batch/5` already transports at write time and persists the
-  results, so calling this on a workspace whose patches all sit at head is
-  a no-op fold — it remains as the check-time safety net (`Coconut.Render.Resolve`)
-  for patches mounted out-of-band.
-
-  Dead patches are `{patch, result}` tuples — the caller decides whether to
-  garbage-collect, notify, or retry.
-  """
-  @spec transport_patches(
-          t(),
-          Track.track_id(),
-          warp_provider :: Tamale.Transport.warp_provider() | nil
-        ) :: {:ok, survivors :: [Coconut.Edit.Patch.t()], dead :: [term()]}
-  def transport_patches(ws, track_id, warp_provider \\ nil) do
-    {:ok, track} = fetch_track(ws, track_id)
-
-    {survivors, dead} =
-      Enum.reduce(track.patches, {[], []}, fn cp, {surv, dead} ->
-        case transport_one(cp, track.space, warp_provider) do
-          {:ok, new_anchor} -> {[%{cp | anchor: new_anchor} | surv], dead}
-          result -> {surv, [{cp, result} | dead]}
-        end
-      end)
-
-    {:ok, Enum.reverse(survivors), Enum.reverse(dead)}
   end
 
   # Write-time transport (design doc §2 flow step 4). Runs inside
@@ -351,7 +343,7 @@ defmodule Coconut.Edit.Workspace do
         warp_context(ws, track)
       )
 
-    {:ok, survivors, dead} = transport_patches(ws, track_id, provider)
+    {:ok, survivors, dead} = Track.transport_patches(track, provider)
 
     track = %{
       track
@@ -461,27 +453,6 @@ defmodule Coconut.Edit.Workspace do
 
   defp echo_anchor(patch, _warp), do: {:ok, patch}
 
-  # ---- Transport helpers ----
-
-  # Ordinal & Relative travel by identity (transport/2).
-  # Metric travels by warp (transport/3). Dispatch on anchor type.
-  defp transport_one(cp, space, nil) do
-    case cp.anchor do
-      %Tamale.Anchor.Metric{} -> {:error, :warp_provider_required}
-      anchor -> Tamale.Transport.transport(anchor, space)
-    end
-  end
-
-  defp transport_one(cp, space, warp_provider) do
-    case cp.anchor do
-      %Tamale.Anchor.Metric{} ->
-        Tamale.Transport.transport(cp.anchor, space, warp_provider)
-
-      anchor ->
-        Tamale.Transport.transport(anchor, space)
-    end
-  end
-
   # ---- Other helpers ----
 
   defp check_version(ws, expected) do
@@ -502,42 +473,6 @@ defmodule Coconut.Edit.Workspace do
   def truncate(ws, track_id, oldest_live_version) do
     with {:ok, track} <- fetch_track(ws, track_id) do
       {:ok, put_track(ws, Track.truncate(track, oldest_live_version))}
-    end
-  end
-
-  @doc """
-  Returns the track's versioned span table, for `WarpProvider.for_coord/3`.
-  """
-  @spec track_spans(t(), Track.track_id()) :: %{
-          Tamale.version() => %{Tamale.id() => Track.span()}
-        }
-  def track_spans(ws, track_id) do
-    case fetch_track(ws, track_id) do
-      {:ok, track} -> Track.spans(track)
-      {:error, _} -> %{}
-    end
-  end
-
-  @doc """
-  Returns the track's latest recorded span table. See `Track.latest_spans/1`.
-  """
-  @spec latest_spans(t(), Track.track_id()) :: %{Tamale.id() => Track.span()}
-  def latest_spans(ws, track_id) do
-    case fetch_track(ws, track_id) do
-      {:ok, track} -> Track.latest_spans(track)
-      {:error, _} -> %{}
-    end
-  end
-
-  @doc """
-  Returns the latest recorded span for a single element, or `nil`.
-  See `Track.latest_span/2`.
-  """
-  @spec latest_span(t(), Track.track_id(), Tamale.id()) :: Track.span() | nil
-  def latest_span(ws, track_id, id) do
-    case fetch_track(ws, track_id) do
-      {:ok, track} -> Track.latest_span(track, id)
-      {:error, _} -> nil
     end
   end
 
@@ -623,6 +558,79 @@ defmodule Coconut.Edit.Workspace do
       {:ok, ws, minted} -> {:ok, ws, Enum.reverse(minted)}
       err -> err
     end)
+  end
+
+  @doc """
+  Moves active patches into their tracks' graveyards.
+
+  Each entry is `{track_id, patch_id, reason}`. The whole discard is
+  validated before any track changes, so an unknown or repeated patch leaves
+  the workspace untouched. Patch lifecycle changes do not bump
+  `edit_version`, matching `attach_patch/2`.
+  """
+  @spec discard_patches(t(), [{Track.track_id(), ID.t(), term()}]) ::
+          {:ok, t()} | {:error, term()}
+  def discard_patches(ws, entries) when is_list(entries) do
+    with :ok <- validate_discard_shapes(entries),
+         :ok <- validate_discard_entries(ws, entries) do
+      {:ok, Enum.reduce(entries, ws, &discard_patch/2)}
+    end
+  end
+
+  def discard_patches(_ws, entries), do: {:error, {:invalid_patch_discards, entries}}
+
+  defp validate_discard_shapes(entries) do
+    if Enum.all?(entries, fn
+         {track_id, patch_id, _reason} when not is_nil(track_id) and not is_nil(patch_id) -> true
+         _other -> false
+       end) do
+      :ok
+    else
+      {:error, {:invalid_patch_discards, entries}}
+    end
+  end
+
+  defp validate_discard_entries(ws, entries) do
+    refs = Enum.map(entries, fn {track_id, patch_id, _reason} -> {track_id, patch_id} end)
+
+    if length(refs) != MapSet.size(MapSet.new(refs)) do
+      {:error, :duplicate_patch_discard}
+    else
+      Enum.reduce_while(refs, :ok, &validate_discard_ref(ws, &1, &2))
+    end
+  end
+
+  defp validate_discard_ref(ws, {track_id, patch_id}, :ok) do
+    case fetch_discard_patch(ws, track_id, patch_id) do
+      :ok -> {:cont, :ok}
+      {:error, _} = error -> {:halt, error}
+    end
+  end
+
+  defp fetch_discard_patch(ws, track_id, patch_id) do
+    with {:ok, track} <- fetch_track(ws, track_id) do
+      validate_patch_count(Enum.count(track.patches, &(&1.id == patch_id)), track_id, patch_id)
+    end
+  end
+
+  defp validate_patch_count(1, _track_id, _patch_id), do: :ok
+
+  defp validate_patch_count(0, track_id, patch_id),
+    do: {:error, {:unknown_patch, track_id, patch_id}}
+
+  defp validate_patch_count(_many, track_id, patch_id),
+    do: {:error, {:ambiguous_patch, track_id, patch_id}}
+
+  defp discard_patch({track_id, patch_id, reason}, ws) do
+    {:ok, track} = fetch_track(ws, track_id)
+    {discarded, active} = Enum.split_with(track.patches, &(&1.id == patch_id))
+    [patch] = discarded
+
+    put_track(ws, %{
+      track
+      | patches: active,
+        dead_patches: track.dead_patches ++ [{patch, reason}]
+    })
   end
 
   @doc """
@@ -780,13 +788,31 @@ defmodule Coconut.Edit.Workspace do
   # projection lives on the module.
   @spec validate(t()) :: {:ok, t()} | {:error, term()}
   def validate(%__MODULE__{} = ws) do
-    with :ok <- check_globals(ws.globals),
+    with :ok <- check_edit_version(ws.edit_version),
+         :ok <- check_tpqn(ws.tpqn),
+         :ok <- check_globals(ws.globals),
          :ok <- check_tracks(ws.tracks),
          :ok <- check_tempo_global(ws.globals),
          :ok <- check_frame_rate(ws.frame_rate),
-         :ok <- check_time_sigs(ws.time_sigs) do
+         :ok <- check_time_sigs(ws.time_sigs),
+         :ok <- check_track_states(ws) do
       {:ok, ws}
     end
+  end
+
+  defp check_edit_version(version) when is_integer(version) and version >= 0, do: :ok
+  defp check_edit_version(version), do: {:error, {:invalid_edit_version, version}}
+
+  defp check_tpqn(tpqn) when is_integer(tpqn) and tpqn > 0, do: :ok
+  defp check_tpqn(tpqn), do: {:error, {:invalid_tpqn, tpqn}}
+
+  defp check_track_states(ws) do
+    Enum.find_value(all_tracks(ws), :ok, fn {_id, track} ->
+      case Track.validate_state(track) do
+        :ok -> nil
+        {:error, _} = error -> error
+      end
+    end)
   end
 
   # 帧网格声明：工程 metadata，内核存而不解释（单位归引擎，§11.8）。

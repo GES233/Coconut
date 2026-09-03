@@ -6,8 +6,8 @@ defmodule Coconut.Render.Channels.Lyric do
   fetched from the patch's own track (`elements_by_id`) by the anchor's
   first Ordinal ref and reduced via `Coconut.Score.Note.to_canonical/1`
   (digests reject structs). The payload folds to the conventional
-  `{:port, :synth, :lyric}` port. Callers wiring a different port can pass
-  an ad-hoc spec map (or their own module) instead.
+  `{:port, :synth, :lyric}` port. Callers wiring a different port provide
+  their own channel module.
   """
 
   @behaviour Coconut.Render.Channel

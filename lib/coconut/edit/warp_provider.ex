@@ -71,7 +71,7 @@ defmodule Coconut.Edit.WarpProvider do
   - Warp pieces are exact rational coordinates (`Tamale.Coord` rejects
     floats), so the tempo conversion in `frame_over_tick/3` is built from
     integer milli-bpm steps — never from `Coconut.Score.TempoMap`, whose
-    seconds are floats. Non-linear tempo segments (`Tempo.Linear`) are
+    seconds are floats. Non-linear tempo segments are
     excluded by the same constraint (tempo-curve design doc §4).
   """
 
@@ -84,7 +84,7 @@ defmodule Coconut.Edit.WarpProvider do
   Returns a `warp_provider` closure for the `:tick` coordinate system.
 
   `track_spans` is the track's versioned span table (see
-  `Workspace.track_spans/2`). `patches` should be the track's live patches:
+  `Track.spans/1`). `patches` should be the track's live patches:
   their Metric coordinates extend the warp domain so every live anchor is
   covered.
   """
@@ -134,7 +134,7 @@ defmodule Coconut.Edit.WarpProvider do
   composition; without the context, a `:frame` call returns
   `{:error, :warp_provider_required}` — a surfaced transport failure
   (dead patch), never a clause-less-closure crash. A `nil` return plugs
-  into `Workspace.transport_patches/3`'s nil semantics the same way.
+  into `Track.transport_patches/2`'s nil semantics the same way.
   """
   @spec for_coord(atom(), map(), [Coconut.Edit.Patch.t()], frame_context() | map()) ::
           Tamale.Transport.warp_provider() | nil

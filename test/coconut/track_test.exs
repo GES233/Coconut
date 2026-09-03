@@ -48,7 +48,7 @@ defmodule Coconut.TrackTest do
           note_id: "n1",
           after_id: :head,
           old_span: {0, 480},
-          new_span: {100, 580}
+          new_span: {100, 480}
         })
 
       track = ws.tracks[@track]
@@ -67,7 +67,7 @@ defmodule Coconut.TrackTest do
       refute Map.has_key?(track.spans_by_version, 1)
       assert Map.has_key?(track.spans_by_version, 2)
       assert Track.latest_span(track, "n2") == {480, 960}
-      assert Track.latest_span(track, "n1") == {100, 580}
+      assert Track.latest_span(track, "n1") == {100, 480}
     end
 
     test "a Move-only tail still has a span baseline after truncation", %{ws: ws} do

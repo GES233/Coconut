@@ -39,19 +39,6 @@ defmodule Coconut.Pickle do
   @doc "Loads a domain struct from a plain serialized map."
   @callback load(serialized()) :: {:ok, term()} | {:error, term()}
 
-  defmodule WithRegistry do
-    @moduledoc "Pickle behaviour with outside Registry."
-
-    alias Coconut.Pickle
-    alias Coconut.Pickle.Registry, as: PickleRegistry
-
-    @doc "Dumps a domain struct into a plain serialized map."
-    @callback dump(term(), PickleRegistry.t()) :: {:ok, Pickle.serialized()} | {:error, term()}
-
-    @doc "Loads a domain struct from a plain serialized map."
-    @callback load(Pickle.serialized(), PickleRegistry.t()) :: {:ok, term()} | {:error, term()}
-  end
-
   # ---- Helpers ----
 
   @spec pickle_conform?(term()) :: boolean()

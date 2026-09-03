@@ -38,6 +38,31 @@ defmodule Coconut.Edit.Track.Vocal do
 
   def validate_gesture(_gesture, _track, _info), do: :ok
 
+  @impl true
+  def validate_state(track) do
+    track
+    |> Track.latest_spans()
+    |> Enum.sort_by(fn {id, {start_tick, _end_tick}} -> {start_tick, id} end)
+    |> find_overlap(nil)
+  end
+
+  defp find_overlap([], _previous), do: :ok
+  defp find_overlap([{id, span} | rest], nil), do: find_overlap(rest, {id, span})
+
+  defp find_overlap(
+         [{id, {start_tick, end_tick} = span} | rest],
+         {previous_id, {_previous_start, previous_end} = previous_span}
+       ) do
+    if start_tick < previous_end do
+      {:error, {:vocal_overlap_rejected, %{span: span, conflicting: [previous_id], id: id}}}
+    else
+      previous =
+        if end_tick > previous_end, do: {id, span}, else: {previous_id, previous_span}
+
+      find_overlap(rest, previous)
+    end
+  end
+
   defp check_overlap(track, {s, e}, exclude_ids) do
     conflicts =
       track

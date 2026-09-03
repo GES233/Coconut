@@ -32,6 +32,8 @@ defmodule Coconut.Edit.Track do
     the element unchanged (the `use` default).
   - `view/1` — the flattened score view for `Coconut.Render.Engine.Snapshot`:
     `[{id, element, span}]` ordered by `{start, id}`.
+  - `validate_state/1` — whole-track invariants checked at construction and
+    after every workspace commit.
 
   ## Optional capabilities
 
@@ -161,6 +163,10 @@ defmodule Coconut.Edit.Track do
   @doc "Flattened score view for `Coconut.Render.Engine.Snapshot`."
   @callback view(t()) :: view()
 
+  @doc "Validate invariants of a fully materialized track state."
+  @callback validate_state(t()) :: :ok | {:error, term()}
+  @optional_callbacks validate_state: 1
+
   defmacro __using__(_opts) do
     quote do
       @behaviour Coconut.Edit.Track
@@ -171,7 +177,10 @@ defmodule Coconut.Edit.Track do
       @impl true
       def retime_element(element, _old_span, _new_span), do: {:ok, element}
 
-      defoverridable validate_gesture: 3, retime_element: 3
+      @impl true
+      def validate_state(_track), do: :ok
+
+      defoverridable validate_gesture: 3, retime_element: 3, validate_state: 1
     end
   end
 
@@ -216,6 +225,62 @@ defmodule Coconut.Edit.Track do
   @doc "The flattened score view (see `Coconut.Edit.Track.view/1` in the behaviour docs)."
   @spec view(t()) :: view()
   def view(%__MODULE__{module: module} = track), do: module.view(track)
+
+  @doc "Validate the track module's whole-state invariants."
+  @spec validate_state(t()) :: :ok | {:error, term()}
+  def validate_state(%__MODULE__{module: module} = track) do
+    with :ok <- validate_live_tables(track),
+         :ok <- validate_spans(track),
+         {:module, _module} <- Code.ensure_loaded(module) do
+      if function_exported?(module, :validate_state, 1),
+        do: module.validate_state(track),
+        else: :ok
+    else
+      {:error, reason} when is_atom(reason) -> {:error, {:invalid_track_module, module, reason}}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate_live_tables(track) do
+    live_ids = MapSet.new(track.space.ids)
+    element_ids = track.elements_by_id |> Map.keys() |> MapSet.new()
+    span_ids = track |> latest_spans() |> Map.keys() |> MapSet.new()
+
+    cond do
+      MapSet.size(live_ids) != length(track.space.ids) ->
+        {:error, :duplicate_track_ids}
+
+      element_ids != live_ids ->
+        {:error, table_mismatch(:elements_by_id, live_ids, element_ids)}
+
+      span_ids != live_ids ->
+        {:error, table_mismatch(:spans_by_version, live_ids, span_ids)}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp table_mismatch(table, live_ids, actual_ids) do
+    {:track_table_mismatch,
+     %{
+       table: table,
+       missing: live_ids |> MapSet.difference(actual_ids) |> Enum.sort(),
+       extra: actual_ids |> MapSet.difference(live_ids) |> Enum.sort()
+     }}
+  end
+
+  defp validate_spans(track) do
+    Enum.find_value(latest_spans(track), :ok, fn
+      {_id, {start_tick, end_tick}}
+      when is_integer(start_tick) and start_tick >= 0 and is_integer(end_tick) and
+             end_tick > start_tick ->
+        nil
+
+      {id, span} ->
+        {:error, {:invalid_track_span, id, span}}
+    end)
+  end
 
   # ---- Capabilities ----
 
@@ -296,6 +361,45 @@ defmodule Coconut.Edit.Track do
   @spec latest_span(t(), Tamale.id()) :: span() | nil
   def latest_span(track, id) do
     track |> latest_spans() |> Map.get(id)
+  end
+
+  # ---- Transport ----
+
+  @doc """
+  Transport this track's patch anchors along its op log.
+
+  Returns `{:ok, survivors, dead}`. Metric anchors require a warp provider;
+  Ordinal and Relative anchors use Tamale's identity transport.
+  """
+  @spec transport_patches(t(), Tamale.Transport.warp_provider() | nil) ::
+          {:ok, survivors :: [Coconut.Edit.Patch.t()], dead :: [term()]}
+  def transport_patches(track, warp_provider \\ nil) do
+    {survivors, dead} =
+      Enum.reduce(track.patches, {[], []}, fn patch, {survivors, dead} ->
+        case transport_one(patch, track.space, warp_provider) do
+          {:ok, new_anchor} -> {[%{patch | anchor: new_anchor} | survivors], dead}
+          result -> {survivors, [{patch, result} | dead]}
+        end
+      end)
+
+    {:ok, Enum.reverse(survivors), Enum.reverse(dead)}
+  end
+
+  defp transport_one(patch, space, nil) do
+    case patch.anchor do
+      %Tamale.Anchor.Metric{} -> {:error, :warp_provider_required}
+      anchor -> Tamale.Transport.transport(anchor, space)
+    end
+  end
+
+  defp transport_one(patch, space, warp_provider) do
+    case patch.anchor do
+      %Tamale.Anchor.Metric{} ->
+        Tamale.Transport.transport(patch.anchor, space, warp_provider)
+
+      anchor ->
+        Tamale.Transport.transport(anchor, space)
+    end
   end
 
   # ---- Truncation (design doc §11.3) ----

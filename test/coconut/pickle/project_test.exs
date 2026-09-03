@@ -65,9 +65,9 @@ defmodule Coconut.Pickle.ProjectTest do
       assert {:ok, dumped} = PickleProject.dump(project, registry)
 
       assert dumped.id == project.id
-      assert dumped.engine == nil
-      assert dumped.settings == nil
-      assert dumped.assets == nil
+      refute Map.has_key?(dumped, :engine)
+      refute Map.has_key?(dumped, :settings)
+      refute Map.has_key?(dumped, :assets)
 
       assert dumped.voicebank == %{
                name: "OU-xia",
@@ -99,6 +99,10 @@ defmodule Coconut.Pickle.ProjectTest do
       assert {:error, {:missing_id, "Proj_"}} = Project.new(%{workspace: build_workspace()})
     end
 
+    test "workspace is required" do
+      assert {:error, {:invalid_workspace, nil}} = Project.new(%{id: ID.generate_id("Proj_")})
+    end
+
     test "voicebank with wrong shape is an error" do
       ws = build_workspace()
 
@@ -113,11 +117,11 @@ defmodule Coconut.Pickle.ProjectTest do
       end
     end
 
-    test "reserved fields must stay nil" do
+    test "legacy reserved fields are not Project attributes" do
       ws = build_workspace()
 
       for {field, value} <- [engine: :diffsinger, settings: %{}, assets: []] do
-        assert {:error, {:reserved_field_set, ^field}} =
+        assert {:error, {:extra_attrs, [^field]}} =
                  Project.new(%{
                    field => value,
                    id: ID.generate_id("Proj_"),
@@ -132,9 +136,18 @@ defmodule Coconut.Pickle.ProjectTest do
       project = build_project()
       registry = PickleTrack.default_registry()
       {:ok, dumped} = PickleProject.dump(project, registry)
-      bad = %{dumped | settings: %{"gain" => 1}}
+      bad = Map.put(dumped, :settings, %{"gain" => 1})
 
       assert {:error, {:reserved_field_set, :settings}} = PickleProject.load(bad, registry)
+    end
+
+    test "legacy nil fields remain load-compatible" do
+      project = build_project()
+      registry = PickleTrack.default_registry()
+      {:ok, dumped} = PickleProject.dump(project, registry)
+      legacy = Map.merge(dumped, %{engine: nil, settings: nil, assets: nil})
+
+      assert {:ok, ^project} = PickleProject.load(legacy, registry)
     end
 
     test "invalid voicebank shape surfaces Project.new/1's error" do
