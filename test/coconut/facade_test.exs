@@ -140,6 +140,20 @@ defmodule Coconut.FacadeTest do
     assert restored_id == patch.id
   end
 
+  test "active patches can be explicitly superseded without touching track internals" do
+    assert {:ok, session} = insert(session())
+    assert {:ok, session, patch} = Coconut.mount(session, @track, "n1", :lyric, :old)
+
+    assert {:ok, session} = Coconut.discard_patches(session, patch, :superseded)
+    assert Coconut.workspace(session).tracks[@track].patches == []
+    assert [{discarded, :superseded}] = Coconut.workspace(session).tracks[@track].dead_patches
+    assert discarded.id == patch.id
+
+    assert {:ok, session} = Coconut.undo(session)
+    assert [%{id: restored_id}] = Coconut.workspace(session).tracks[@track].patches
+    assert restored_id == patch.id
+  end
+
   test "facade validates configuration and reports missing dependencies" do
     workspace = Scenario.base_workspace()
 

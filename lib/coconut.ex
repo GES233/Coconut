@@ -222,6 +222,29 @@ defmodule Coconut do
     end
   end
 
+  @doc """
+  Moves one or more active patches to the persistent graveyard.
+
+  This is the explicit policy entry for cases such as superseding an older
+  patch before mounting its replacement. The discard is recorded in history
+  and can be undone.
+  """
+  @spec discard_patches(Session.t(), Patch.t() | [Patch.t()], term(), keyword()) ::
+          {:ok, Session.t()} | {:error, term()}
+  def discard_patches(%Session{} = session, patches, reason, opts \\ []) do
+    patches = List.wrap(patches)
+
+    case patches do
+      [] ->
+        {:ok, session}
+
+      patches ->
+        with {:ok, discards} <- patch_discards(patches, reason) do
+          run(session, Command.discard_patches(discards), opts)
+        end
+    end
+  end
+
   @doc "Drains apply-time and explicitly discarded patches as a history edge."
   @spec take_dead_patches(Session.t()) :: {[{Patch.t(), term()}], Session.t()}
   def take_dead_patches(%Session{} = session) do
@@ -311,6 +334,20 @@ defmodule Coconut do
     end)
     |> case do
       {:ok, entries} -> {:ok, Enum.reverse(entries)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp patch_discards(patches, reason) do
+    Enum.reduce_while(patches, {:ok, []}, fn
+      %Patch{id: patch_id, track_id: track_id}, {:ok, acc} when not is_nil(patch_id) ->
+        {:cont, {:ok, [{track_id, patch_id, reason} | acc]}}
+
+      patch, _acc ->
+        {:halt, {:error, {:invalid_patch_discard, patch}}}
+    end)
+    |> case do
+      {:ok, discards} -> {:ok, Enum.reverse(discards)}
       {:error, _} = error -> error
     end
   end

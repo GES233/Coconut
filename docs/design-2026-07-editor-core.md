@@ -672,6 +672,8 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
 - `discard_conflicts/3` 把 Resolve entries 转成可重放的
   `:discard_patches` command；是否丢弃仍由宿主策略显式决定，Facade
   不默认吞冲突。
+- `discard_patches/4` 覆盖 supersede 等尚未产生 Resolve entry 的显式
+  策略丢弃，同样入史且可撤销；宿主不再直接改 Track 的 patch 列表。
 - Project 只持久化当前 Workspace 与工程元数据；History、engine handle
   和 checked round 都是 session-scoped。由 Project 打开的 session 可用
   `Coconut.project/1` 导出当前状态。
