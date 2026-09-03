@@ -169,7 +169,7 @@ defmodule Coconut.TempoTest do
 
       ws = put_in(ws.globals["global:tempo"].patches, [cp])
 
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, "global:tempo")
+      {:ok, survivors, dead} = Track.transport_patches(ws.globals["global:tempo"])
       assert length(survivors) == 1
       assert dead == []
     end
@@ -199,8 +199,8 @@ defmodule Coconut.TempoTest do
 
       ws = put_in(ws.globals["global:tempo"].patches, [cp])
 
-      wp = WarpProvider.tick(Workspace.track_spans(ws, "global:tempo"))
-      {:ok, survivors, dead} = Workspace.transport_patches(ws, "global:tempo", wp)
+      wp = WarpProvider.tick(Track.spans(ws.globals["global:tempo"]))
+      {:ok, survivors, dead} = Track.transport_patches(ws.globals["global:tempo"], wp)
       assert length(survivors) == 1
       assert dead == []
       # coordinates unchanged (identity warp)

@@ -39,6 +39,7 @@ track_b = "vocal_b"
     ws,
     cfg
   )
+
 {:ok, ws} = Workspace.apply_batch(ws, "global:tempo", 0, ops, ch)
 
 # ---- Track A: melody ----
@@ -54,7 +55,9 @@ track_b = "vocal_b"
     ws,
     cfg
   )
+
 {:ok, ws} = Workspace.apply_batch(ws, track_a, 1, ops_a, ch_a)
+
 {:ok, ops_a2, ch_a2} =
   Operation.lower(
     %Coconut.Edit.Operations.InsertNote{
@@ -67,6 +70,7 @@ track_b = "vocal_b"
     ws,
     cfg
   )
+
 {:ok, ws} = Workspace.apply_batch(ws, track_a, 2, ops_a2, ch_a2)
 
 # ---- Track B: harmony, overlaps with A ----
@@ -82,6 +86,7 @@ track_b = "vocal_b"
     ws,
     cfg
   )
+
 {:ok, ws} = Workspace.apply_batch(ws, track_b, 3, ops_b, ch_b)
 
 IO.puts("=== After insert (both tracks) ===")
@@ -92,11 +97,13 @@ IO.inspect(ws.tracks[track_b].space.ids, label: "#{track_b} order")
 IO.inspect(art.payload.notes, label: "render (flat)")
 
 # ---- Attach patches to A ----
-{:ok, cp_a} = Patch.new(%{
-  track_id: track_a,
-  anchor: %Tamale.Anchor.Ordinal{refs: ["a1"], at_version: ws.tracks[track_a].space.version},
-  patch: %Tamale.Patch{base_digest: "aaa", payload: %{}}
-})
+{:ok, cp_a} =
+  Patch.new(%{
+    track_id: track_a,
+    anchor: %Tamale.Anchor.Ordinal{refs: ["a1"], at_version: ws.tracks[track_a].space.version},
+    patch: %Tamale.Patch{base_digest: "aaa", payload: %{}}
+  })
+
 {:ok, ws, _minted} = Workspace.attach_patch(ws, cp_a)
 
 # ---- Drag a1 (overlaps b1) ----
@@ -107,22 +114,23 @@ IO.inspect(art.payload.notes, label: "render (flat)")
       note_id: "a1",
       after_id: :head,
       old_span: {0, 480},
-      new_span: {0, 600}
+      new_span: {0, 400}
     },
     ws,
     cfg
   )
+
 {:ok, ws} = Workspace.apply_batch(ws, track_a, ws.edit_version, ops, ch)
 
-IO.puts("\n=== After drag a1 to {0,600} ===")
+IO.puts("\n=== After drag a1 to {0,400} ===")
 {:ok, request} = Request.for_workspace(ws)
 {:ok, art} = Engine.run_render(Mock, request, nil)
 IO.inspect(art.payload.notes, label: "render")
-# a1 {0,600} overlaps b1 {240,720} at {240,600} -- fine, different tracks
+# a1 {0,400} overlaps b1 {240,720} at {240,400} -- fine, different tracks
 
 # ---- Transport (track A only) ----
-wp = WarpProvider.tick(Workspace.track_spans(ws, track_a))
-{:ok, survivors, dead} = Workspace.transport_patches(ws, track_a, wp)
+wp = WarpProvider.tick(Track.spans(ws.tracks[track_a]))
+{:ok, survivors, dead} = Track.transport_patches(ws.tracks[track_a], wp)
 IO.puts("\nTransport track A: survivors=#{length(survivors)} dead=#{length(dead)}")
 
 # ---- Transport (track B -- no patches, but verify Space isolation) ----

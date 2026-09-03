@@ -169,10 +169,12 @@ defmodule Coconut.Edit.Operations.CoreComponents do
               {Tick.numeric_tick(), Tick.numeric_tick(), Tick.numeric_tick()}}}
           | {:error, {:missing_span_for_id, Tamale.id()}}
   def within_span?(ws, track, id, at_tick) do
-    case Workspace.latest_span(ws, track, id) do
-      {s, e} when at_tick > s and at_tick < e -> :ok
-      {s, e} -> {:error, {:split_out_of_bounds, {s, e, at_tick}}}
-      nil -> {:error, {:missing_span_for_id, id}}
+    with {:ok, track} <- Workspace.fetch_track(ws, track) do
+      case Track.latest_span(track, id) do
+        {s, e} when at_tick > s and at_tick < e -> :ok
+        {s, e} -> {:error, {:split_out_of_bounds, {s, e, at_tick}}}
+        nil -> {:error, {:missing_span_for_id, id}}
+      end
     end
   end
 end

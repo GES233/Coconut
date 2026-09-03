@@ -98,6 +98,30 @@ defmodule Coconut.Edit.Track.Audio do
   def validate_gesture(_gesture, _track, _info), do: :ok
 
   @impl Coconut.Edit.Track
+  def validate_state(track) do
+    spans = Track.latest_spans(track)
+
+    Enum.find_value(track.space.ids, :ok, fn id ->
+      with %Clip{} = clip <- Map.get(track.elements_by_id, id),
+           true <- valid_clip?(clip),
+           {start_frame, end_frame} <- Map.get(spans, id),
+           :ok <- check_no_stretch(clip.duration_frames, end_frame - start_frame) do
+        nil
+      else
+        nil -> {:error, {:incomplete_audio_track, id}}
+        {:error, _} = error -> error
+        _other -> {:error, {:invalid_audio_clip, id}}
+      end
+    end)
+  end
+
+  defp valid_clip?(clip) do
+    is_binary(clip.source) and clip.source != "" and
+      is_integer(clip.source_offset_frames) and clip.source_offset_frames >= 0 and
+      is_integer(clip.duration_frames) and clip.duration_frames > 0
+  end
+
+  @impl Coconut.Edit.Track
   def split_elements(%Clip{} = parent, %{span: {start_f, _end_f}, at: at}) do
     left_frames = at - start_f
 

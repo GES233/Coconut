@@ -64,7 +64,7 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
 配套契约：
 
 - **channel** = `Coconut.Render.Channel` behaviour，注册表即 `run_check/3`
-  的 channels map（值可为 behaviour 模块或 ad-hoc spec map）；首发三路
+  的 channels map（值为 behaviour 模块）；首发三路
   见 §9。不挂音符的全局参数走 `Request.globals`：过 check（`Engine.info`
   的 `:globals` 声明做白名单+范围/枚举校验）、不过 resolve（无
   anchor/digest/transport），render 透传。
@@ -95,9 +95,8 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
   渐速靠加密 tempo 点逼近，采样端拟合。渐速编辑的落地路径见
   `design-2026-08-tempo-curve.md`（Step 为骨、曲线为皮、bake 为界——
   曲线是适配层编辑投影，经确定性 bake 落到阶梯事件；本约定不变）。
-  `Tempo.Linear` 作为消费层插值设施存在（`Tempo.Segment` 实现）：
-  tempo 轨只产 Step 事件，op / digest / warp 只见阶梯；渲染侧消费点
-  尚未接线（见 tempo-curve 文档 §2）。
+  线性插值留给消费层在出现真实接线需求后实现：tempo 轨只产 Step
+  事件，op / digest / warp 只见阶梯（见 tempo-curve 文档 §2）。
 - tick↔帧换算收敛到唯一一处（warp_provider / Resolve 采样处），
   zongzi_feasibility 的教训：跨语言舍入一致性是隐形地雷。
 
@@ -144,7 +143,7 @@ tamale 的干预模型与引擎/调度器范式不同，Resolve 显式隔离两�
      版本后取精确阶梯事件（`Track.Tempo.tempo_steps_at/2`，整数
      milli-bpm——tamale `Coord` 拒 float，`TempoMap` 的秒是 float
      设施，T 只能从精确事件构造，与 tempo-curve 文档
-     "`Tempo.Linear` 进 warp 永不"同一约束）。
+     "线性 tempo 插值永不进 warp"同一约束）。
    - 接线：`frame_over_tick/3`（context `%{tempo_pair_at, frame_rate,
      tpqn}`，tempo_pair_at 返回 `{T_old 事件, T_new 事件}`）经
      `for_coord/4` 进 dispatch——tick 域闭包同时服务 :tick（原生）与
@@ -281,9 +280,10 @@ tempo 变化作用于工程所有轨道 → tempo 是工程级数据：
 4. **API 边界**：Elixir API + JSON-RPC/stdio + CLI 三件套，MCP 后加；
    渲染为长任务（check 同步一票否决，render 异步 job + 事件）。随
    GenServer 壳施工（§10）。
-5. **持久化**：Pickle codec（`lib/coconut/pickle*.ex`）；Project 字段：
-   engine/settings/assets 保留 nil，voicebank = `%{name, engine, digest}`
-   签名；文件外壳为 `%{format, version, project}` 信封 + `term_to_binary`。
+5. **持久化**：Pickle codec（`lib/coconut/pickle*.ex`）；Project 只保留
+   已定形的 workspace / voicebank / metadata，未来字段不进入领域模型；
+   codec 兼容旧档中为 nil 的 engine/settings/assets。文件外壳为
+   `%{format, version, project}` 信封 + `term_to_binary`。
 
 ## 10. 状态与 v2 排期
 
@@ -623,12 +623,12 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
   = 新 op 子句 + 构造器，History 零改动。
 - 分支结构 API（子分支枚举等）v1 不暴露——树 UI 是壳层议题，
   届时再加。
-- `Workspace` 的 `apply_batch/5` / `attach_patch/2`（返回 mint 后
-  patch）/ `add_track/2` / `remove_track/2` / `rename_track/3` /
-  `set_time_sigs/2` 是纯函数写原语，`Command.execute/3` 分派其上；
-  其余纯函数 API（`validate` / `lower`）不动——History 是组合层，
-  测试与将来的壳直接用；Workspace 保持纯值、零例外字段，Pickle
-  字段列表不动。
+- `History.apply/4` / `run/3` 是宿主安全写入口，负责
+  validate → lower → Command → Workspace。Workspace 的
+  `apply_batch/5` 等纯函数是 Command / Diff / 导入 / replay 使用的
+  低层原语；提交仍检查可由完整状态判定的轨道 invariant（Vocal 不重叠、
+  Audio no-stretch），但像 tempo 首事件保护这样的手势语义只能由安全
+  入口保证。宿主不直接组合 `Operation.lower` 与 `Workspace.apply_batch`。
 - 边数上限、K 为模块常量；knob 化留壳层。
 
 ### 12.6 测试点

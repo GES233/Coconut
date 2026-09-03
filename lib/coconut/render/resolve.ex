@@ -19,9 +19,9 @@ defmodule Coconut.Render.Resolve do
   `%{port_ref => %{input: value}}` engine interventions via each channel's
   `target`.
 
-  Channel specs are caller-supplied: digest projection shapes are domain
-  policy, not kernel policy. A spec is either a module implementing the
-  `Coconut.Render.Channel` behaviour or an ad-hoc `%{projection, target}` map.
+  Channels are caller-supplied modules implementing
+  `Coconut.Render.Channel`: digest projection shapes are domain policy,
+  not kernel policy.
   """
 
   alias Coconut.Edit.{Patch, Track, WarpProvider, Workspace}
@@ -39,12 +39,7 @@ defmodule Coconut.Render.Resolve do
   - `target` — where a resolved payload lands: a single `port_ref`, or a
     function fanning the payload out to `[{port_ref, value}]` pairs.
   """
-  @type channel_spec ::
-          module()
-          | %{
-              projection: (Workspace.t(), Patch.t() -> {:ok, term()} | {:error, term()}),
-              target: port_ref() | (term() -> [{port_ref(), term()}])
-            }
+  @type channel_spec :: module()
 
   @typedoc "A single check failure. Entries are aggregated before vetoing."
   @type check_entry :: %{
@@ -95,7 +90,7 @@ defmodule Coconut.Render.Resolve do
   # `Workspace.attach_patch/2` and cannot occur here.
   defp transport_all(ws) do
     {surv_acc, entry_acc} =
-      Enum.reduce(Workspace.all_tracks(ws), {[], []}, fn {track_id, track},
+      Enum.reduce(Workspace.all_tracks(ws), {[], []}, fn {_track_id, track},
                                                          {surv_acc, entry_acc} ->
         case track.patches do
           [] ->
@@ -110,7 +105,7 @@ defmodule Coconut.Render.Resolve do
                 Workspace.warp_context(ws, track)
               )
 
-            {:ok, survivors, dead} = Workspace.transport_patches(ws, track_id, provider)
+            {:ok, survivors, dead} = Track.transport_patches(track, provider)
             entries = Enum.map(dead, &transport_entry(elem(&1, 0), elem(&1, 1)))
 
             {Enum.reverse(survivors, surv_acc), Enum.reverse(entries, entry_acc)}
@@ -152,7 +147,7 @@ defmodule Coconut.Render.Resolve do
         {ok_acc, [entry | entry_acc]}
 
       {:ok, spec} ->
-        case resolve_one(ws, patch, normalize_spec(spec)) do
+        case resolve_one(ws, patch, spec) do
           {:ok, payload} -> {[{patch, payload} | ok_acc], entry_acc}
           {:error, entry} -> {ok_acc, [entry | entry_acc]}
         end
@@ -160,7 +155,7 @@ defmodule Coconut.Render.Resolve do
   end
 
   defp resolve_one(ws, %Patch{} = patch, spec) do
-    with {:ok, fresh_base} <- spec.projection.(ws, patch),
+    with {:ok, fresh_base} <- spec.projection(ws, patch),
          {:ok, payload} <- Tamale.Patch.resolve(patch.patch, fresh_base) do
       {:ok, payload}
     else
@@ -185,7 +180,7 @@ defmodule Coconut.Render.Resolve do
          }}
 
       # Bare non-tuple failures (e.g. `Map.fetch/2`'s raw `:error` leaking
-      # out of an ad-hoc projection) land here instead of crashing the
+      # out of a channel projection) land here instead of crashing the
       # whole round with a CaseClauseError.
       other ->
         {:error,
@@ -201,31 +196,11 @@ defmodule Coconut.Render.Resolve do
 
   # ---- Fold ----
 
-  # A channel spec is either an ad-hoc map or a `Coconut.Render.Channel` module.
-  defp normalize_spec(%{projection: _, target: _} = spec), do: spec
-
-  defp normalize_spec(module) when is_atom(module) do
-    Code.ensure_loaded!(module)
-    base = %{projection: &module.projection/2}
-
-    cond do
-      function_exported?(module, :target, 1) ->
-        Map.put(base, :patch_target, &module.target/1)
-
-      function_exported?(module, :target, 0) ->
-        Map.put(base, :target, module.target())
-
-      true ->
-        raise ArgumentError, "channel #{inspect(module)} exports neither target/0 nor target/1"
-    end
-  end
-
   # Mirrors equinox Runner.fold_resolved: later writes to the same port
   # override earlier ones.
   defp fold_resolved(resolved, channels) do
     Enum.reduce(resolved, %{}, fn {patch, payload}, acc ->
       channels[patch.channel]
-      |> normalize_spec()
       |> target_for(patch)
       |> bind_payload(payload)
       |> Enum.reduce(acc, fn {port_ref, value}, inner ->
@@ -234,8 +209,18 @@ defmodule Coconut.Render.Resolve do
     end)
   end
 
-  defp target_for(%{patch_target: fun}, patch), do: fun.(patch)
-  defp target_for(%{target: target}, _patch), do: target
+  defp target_for(module, patch) do
+    cond do
+      function_exported?(module, :target, 1) ->
+        module.target(patch)
+
+      function_exported?(module, :target, 0) ->
+        module.target()
+
+      true ->
+        raise ArgumentError, "channel #{inspect(module)} exports neither target/0 nor target/1"
+    end
+  end
 
   defp bind_payload({:port, _, _} = port_ref, payload), do: [{port_ref, payload}]
   defp bind_payload(fun, payload) when is_function(fun, 1), do: fun.(payload)

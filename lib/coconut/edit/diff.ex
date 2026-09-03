@@ -35,11 +35,11 @@ defmodule Coconut.Edit.Diff do
   (callers pass their usual `expected_version`). An unchanged track yields
   `{:ok, [], empty_changes}` — callers may skip the apply.
 
-  Legality of the *new* state is the caller's business: track-module
-  gesture policy (e.g. Vocal's same-track non-overlap) is enforced at
-  `Operation.validate/2`, a layer this adapter bypasses by design. New
-  elements are still cast through the track module's `cast_element/3`, so
-  malformed content is rejected here.
+  Gesture-specific policy is bypassed by design, but
+  `Workspace.apply_batch/5` still checks whole-track invariants (for example
+  Vocal same-track non-overlap) before committing. New elements are cast
+  through the track module's `cast_element/3`, so malformed content is
+  rejected here.
   """
 
   alias Coconut.Edit.{Operation, Track}

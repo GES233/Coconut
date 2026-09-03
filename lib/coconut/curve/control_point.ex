@@ -11,7 +11,6 @@ defmodule Coconut.Curve.ControlPoint do
   # nil  -> auto (1/3 rule)
   # %{tick: integer(), value: float()}  -> offset from anchor
   #
-  # CatmullRom ignores these handles.
   # --------------------------------------------------
 
   @typedoc "Bezier control handle"

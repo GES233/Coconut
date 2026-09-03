@@ -5,7 +5,7 @@ defmodule Coconut.Render.Channel do
   A channel is one data facet the engine consumes (lyric, phoneme, phoneme
   duration, pitch, ...). Channels are deliberately *not* hardcoded: any
   module implementing this behaviour can be registered in the channel map
-  passed to `Coconut.Render.Resolve.run_check/3`, next to plain ad-hoc spec maps.
+  passed to `Coconut.Render.Resolve.run_check/3`.
 
   Each channel supplies:
 

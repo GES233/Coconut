@@ -242,8 +242,8 @@ per-note 锚无法表达"这组音符共同承载一份内容"。这是 Frame/Co
    点——§5 Phase 2 的 worker stage 拆分范围随之包含"可抽出"。extract
    是异步引擎往返，GenServer 壳的 job/事件模型按"编辑 + extract 两类
    往返"设计。
-2. **edit**：payload = 控制点容器（Bezier 手柄 / CatmullRom 张力为适配层
-   参数化），坐标按 §6.4 spec 精确化。**rasterize 发生在消费边界**
+2. **edit**：payload = 控制点容器（Bezier 手柄为适配层参数化），坐标按
+   §6.4 spec 精确化。**rasterize 发生在消费边界**
    （dispatch/engine，经 TempoMap 转秒/帧域），不进内核、不进
    digest——digest 的输入是控制点 canonical form。与 tempo-curve
    "Step 为骨、曲线为皮"同构：内核只见精确值，连续曲线是编辑投影。
@@ -254,9 +254,9 @@ per-note 锚无法表达"这组音符共同承载一份内容"。这是 Frame/Co
 
 对 `Coconut.Curve.*` 的处置（07 文档 §11.8"曲线模块与曲线参数的合并
 留待 Audio 落地"旧决议由此了断）：parked 代码收编为**适配层曲线参数化
-库**——Bezier / CatmullRom 作控制点容器的插值模式；当前实现是 float
-世界（`tension: 0.5` 等），完成 §6.4 exact 化之前只用于编辑投影与
-rasterize，不出现于 canonical form。
+库**——当前只保留有真实消费者的 Bezier 插值；它在完成 §6.4 exact
+化之前只用于编辑投影与 rasterize，不出现于 canonical form。其他插值
+模式等出现消费者后再实现。
 
 ### 6.4 精确化 spec：canonical payload 整数化规范（已定）
 
