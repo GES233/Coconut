@@ -561,6 +561,79 @@ defmodule Coconut.Edit.Workspace do
   end
 
   @doc """
+  Moves active patches into their tracks' graveyards.
+
+  Each entry is `{track_id, patch_id, reason}`. The whole discard is
+  validated before any track changes, so an unknown or repeated patch leaves
+  the workspace untouched. Patch lifecycle changes do not bump
+  `edit_version`, matching `attach_patch/2`.
+  """
+  @spec discard_patches(t(), [{Track.track_id(), ID.t(), term()}]) ::
+          {:ok, t()} | {:error, term()}
+  def discard_patches(ws, entries) when is_list(entries) do
+    with :ok <- validate_discard_shapes(entries),
+         :ok <- validate_discard_entries(ws, entries) do
+      {:ok, Enum.reduce(entries, ws, &discard_patch/2)}
+    end
+  end
+
+  def discard_patches(_ws, entries), do: {:error, {:invalid_patch_discards, entries}}
+
+  defp validate_discard_shapes(entries) do
+    if Enum.all?(entries, fn
+         {track_id, patch_id, _reason} when not is_nil(track_id) and not is_nil(patch_id) -> true
+         _other -> false
+       end) do
+      :ok
+    else
+      {:error, {:invalid_patch_discards, entries}}
+    end
+  end
+
+  defp validate_discard_entries(ws, entries) do
+    refs = Enum.map(entries, fn {track_id, patch_id, _reason} -> {track_id, patch_id} end)
+
+    if length(refs) != MapSet.size(MapSet.new(refs)) do
+      {:error, :duplicate_patch_discard}
+    else
+      Enum.reduce_while(refs, :ok, &validate_discard_ref(ws, &1, &2))
+    end
+  end
+
+  defp validate_discard_ref(ws, {track_id, patch_id}, :ok) do
+    case fetch_discard_patch(ws, track_id, patch_id) do
+      :ok -> {:cont, :ok}
+      {:error, _} = error -> {:halt, error}
+    end
+  end
+
+  defp fetch_discard_patch(ws, track_id, patch_id) do
+    with {:ok, track} <- fetch_track(ws, track_id) do
+      validate_patch_count(Enum.count(track.patches, &(&1.id == patch_id)), track_id, patch_id)
+    end
+  end
+
+  defp validate_patch_count(1, _track_id, _patch_id), do: :ok
+
+  defp validate_patch_count(0, track_id, patch_id),
+    do: {:error, {:unknown_patch, track_id, patch_id}}
+
+  defp validate_patch_count(_many, track_id, patch_id),
+    do: {:error, {:ambiguous_patch, track_id, patch_id}}
+
+  defp discard_patch({track_id, patch_id, reason}, ws) do
+    {:ok, track} = fetch_track(ws, track_id)
+    {discarded, active} = Enum.split_with(track.patches, &(&1.id == patch_id))
+    [patch] = discarded
+
+    put_track(ws, %{
+      track
+      | patches: active,
+        dead_patches: track.dead_patches ++ [{patch, reason}]
+    })
+  end
+
+  @doc """
   Returns the accumulated dead patches (`{patch, reason}` tuples) across
   all tracks and clears the graveyards. The policy layer decides re-mount
   or discard (design doc §6: 锚判死由策略层重挂).

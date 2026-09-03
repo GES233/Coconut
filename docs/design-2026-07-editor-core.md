@@ -583,6 +583,10 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
      Space 机器，边存全量新值，replay = 调对应纯函数。轨道名是
      annotation（§11.8，rename 可撤销是 DAW 惯例），中途变拍是
      乐谱手势（§6，不可撤销是真实的洞）：二者入史。
+   - resolve-time 冲突由策略决定是否丢弃；显式丢弃通过
+     `:discard_patches` 边，把 `{track_id, patch_id, reason}` 指定的
+     active patch 移入所属轨道坟场。不得由宿主直接改 Track struct。
+     此边不 bump `edit_version`，与 attach 对称，可 undo/redo。
    - `take_dead_patches` 清坟场是 mutation（现状名为读取性操作）
      → 记 `:consume_dead` 边（解析后载荷 = 取走的
      `{patch, reason}` 元组；replay 不读载荷，重放实况 drain）。
@@ -598,7 +602,7 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
      边——先记在这里，免得再漏。
 3. **重放与实况共用同一 apply**：replay 与实况写都调
    `Command.execute/3` 这唯一分发表（内部分派到
-   `Workspace.apply_batch` / `attach_patches` / `add_track` /
+   `Workspace.apply_batch` / `attach_patches` / `discard_patches` / `add_track` /
    `remove_track` / `rename_track` / `set_time_sigs` 等纯函数），
    禁止 replay 专用分支（第二种实现 = 发散源）。
 
@@ -616,7 +620,8 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
   即 `{:stale_pin, _}`，§12.2 的壳校验）；`apply/4` 另收 `:config`，
   `run/3` 另收 `:expected_version`。
 - `Coconut.Edit.Command`：边记录结构体（`op / payload / label`）+
-  各 op 构造器（`batch/2`、`attach_patches/1`、`add_track/1`（mint
+  各 op 构造器（`batch/2`、`attach_patches/1`、
+  `discard_patches/1`、`add_track/1`（mint
   id + 构造 Track）、`remove_track/1`、`rename_track/2`、
   `set_time_sigs/1`、`consume_dead/0`）+ 唯一执行入口 `execute/3`
   （返回解析后 command；live 与 replay 共用，纪律 3）。新增写操作
@@ -654,3 +659,21 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
 - Pickle：dump/load 回归（Workspace 无新字段；重载历史为空；
   Track `name` 为可选字段，旧档缺失 load 为 `nil`）。
 - 跨手势混合序列随机 round-trip（断言重放等价）。
+
+### 12.7 宿主 Facade
+
+- `Coconut` 是应用层统一入口；`Coconut.Session` 持有 History、channel
+  注册、engine 配置、基础 interventions/globals 与最近一次 check round。
+- 主路径为 `new → edit/run/mount → resolve/check/render`；undo/redo 和
+  patch graveyard 也通过同一 session 穿线。任何 Workspace 写都会使旧
+  check round 失效。
+- `mount/6` 收走宿主重复实现的 Ordinal anchor 版本捕获、channel
+  projection、Tamale digest、Patch 构造和入史挂载。
+- `discard_conflicts/3` 把 Resolve entries 转成可重放的
+  `:discard_patches` command；是否丢弃仍由宿主策略显式决定，Facade
+  不默认吞冲突。
+- Project 只持久化当前 Workspace 与工程元数据；History、engine handle
+  和 checked round 都是 session-scoped。由 Project 打开的 session 可用
+  `Coconut.project/1` 导出当前状态。
+- MusicXML/其他导入格式、声库发现与加载、WAV/调试文件落盘属于宿主，
+  不进入 Facade，避免把一次性应用的策略重新固化进内核。
