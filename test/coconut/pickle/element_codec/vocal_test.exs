@@ -19,9 +19,9 @@ defmodule Coconut.Pickle.ElementCodec.VocalTest do
 
       assert {:ok, dumped} = Vocal.dump_element(note)
 
-      assert dumped == %{
+      assert dumped === %{
                id: "n1",
-               key: %{module: Key.TwelveET, midi: 60.0},
+               key: %{module: Key.TwelveET, midi: 60},
                lyric: "ら",
                annotation: "stress",
                metadata: %{"phonemes" => [["r", "a"]]}
@@ -40,7 +40,22 @@ defmodule Coconut.Pickle.ElementCodec.VocalTest do
   end
 
   describe "load_element/1" do
-    test "round-trip preserves the note" do
+    test "整数 MIDI 精确 round-trip" do
+      {:ok, note} =
+        Note.new(%{
+          id: "n1",
+          key: %Key.TwelveET{midi: 60},
+          lyric: "啦"
+        })
+
+      assert {:ok, dumped} = Vocal.dump_element(note)
+      assert dumped.key.midi === 60
+      assert {:ok, loaded} = Vocal.load_element(dumped)
+      assert loaded === note
+      assert loaded.key.midi === 60
+    end
+
+    test "小数 MIDI 由 adapter 以十进制字符串 round-trip" do
       {:ok, note} =
         Note.new(%{
           id: "n1",
@@ -50,8 +65,22 @@ defmodule Coconut.Pickle.ElementCodec.VocalTest do
         })
 
       assert {:ok, dumped} = Vocal.dump_element(note)
+      assert dumped.key.midi === "60.5"
       assert {:ok, loaded} = Vocal.load_element(dumped)
-      assert loaded == note
+      assert loaded === note
+    end
+
+    test "兼容旧 codec 写出的整数值 float" do
+      dumped = %{
+        id: "n1",
+        key: %{module: Key.TwelveET, midi: 60.0},
+        lyric: "啦",
+        annotation: nil,
+        metadata: %{}
+      }
+
+      assert {:ok, loaded} = Vocal.load_element(dumped)
+      assert loaded.key.midi === 60
     end
 
     test "missing id surfaces Note.new/1's validation error" do
@@ -65,7 +94,7 @@ defmodule Coconut.Pickle.ElementCodec.VocalTest do
     end
 
     test "unknown key module is wrapped, not raised" do
-      assert {:error, {:key_from_midi_failed, %{module: No.Such.Key, midi: 60}}} =
+      assert {:error, {:key_load_failed, %{module: No.Such.Key, midi: 60}}} =
                Vocal.load_element(%{id: "n1", key: %{module: No.Such.Key, midi: 60}})
     end
   end

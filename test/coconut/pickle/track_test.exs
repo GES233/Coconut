@@ -44,7 +44,7 @@ defmodule Coconut.Pickle.TrackTest do
                0 => %{"n1" => %{start: 0, stop: 480}, "n2" => %{start: 480, stop: 960}}
              }
 
-      assert dumped.elements_by_id["n1"].key == %{module: Score.Key.TwelveET, midi: 60.0}
+      assert dumped.elements_by_id["n1"].key === %{module: Score.Key.TwelveET, midi: 60}
 
       assert_pickle_conform(dumped)
       assert {:ok, loaded} = PickleTrack.load(dumped, registry)

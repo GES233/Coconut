@@ -7,12 +7,15 @@ defmodule Coconut.Score.Key do
   Key module owns its exact, digest-safe canonical form, so the kernel never
   presupposes MIDI (see docs/design-2026-08-orchid-intervention.md §6.4).
 
-  Handles conversion between two representations:
+  每个 adapter 同时拥有三类边界：
 
-  * Staff notation data
-  * MIDI / frequency data
+  * `to_canonical/1`：进入 Tamale digest 的精确、无 float 表示；
+  * `dump/1` / `load/1`：Key 自身的 Pickle 载荷；
+  * `Inner` protocol：面向乐谱显示或引擎的 MIDI / Hz 换算，允许 float。
 
-  Key values are stored and serialized in their internal type.
+  微分音 adapter 应在前两类边界使用整数分子/分母、音律步级或规范化
+  十进制字符串；只有送往声学引擎时才转换为 float。这样增加新音律无需
+  修改 `Coconut.Score.Note`、Pickle 或 Tamale。
   """
 
   @type key_struct :: struct()
@@ -31,6 +34,15 @@ defmodule Coconut.Score.Key do
 
   @callback from_midi(midi_note :: number(), ctx :: term()) ::
               {:ok, key_struct()} | {:error, term()}
+
+  @doc "返回供 Tamale digest 使用的精确 plain term；不得包含 float 或 struct。"
+  @callback to_canonical(key_struct()) :: term()
+
+  @doc "把 Key 摊平为不含 module 标签的 Pickle map。"
+  @callback dump(key_struct()) :: {:ok, map()} | {:error, term()}
+
+  @doc "从 adapter 自己的 Pickle map 重建 Key。"
+  @callback load(map()) :: {:ok, key_struct()} | {:error, term()}
 
   # Outbound
   defprotocol Inner do
@@ -58,6 +70,12 @@ defmodule Coconut.Score.Key do
   def from_score(data, type, ctx, module), do: module.from_score(data, type, ctx)
 
   def from_midi(midi, ctx, module), do: module.from_midi(midi, ctx)
+
+  def to_canonical(%module{} = key), do: module.to_canonical(key)
+
+  def dump(%module{} = key), do: module.dump(key)
+
+  def load(data, module) when is_atom(module), do: module.load(data)
 
   defdelegate to_score(key, type, ctx), to: Inner
 

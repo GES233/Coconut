@@ -44,9 +44,14 @@ defmodule Coconut.Project do
           {:error, {:missing_id, "Proj_"}}
 
         {:ok, id} ->
-          __MODULE__
-          |> struct(Map.put(normalized, :id, id))
-          |> validate()
+          project = %__MODULE__{
+            id: id,
+            workspace: Map.get(normalized, :workspace),
+            voicebank: Map.get(normalized, :voicebank),
+            metadata: Map.get(normalized, :metadata)
+          }
+
+          validate(project)
       end
     end
   end

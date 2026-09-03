@@ -88,8 +88,9 @@ defmodule Coconut.Score.Note do
   @doc """
   Canonical projection for digests (`Tamale.Digest` rejects structs).
 
-  The key struct is reduced to a plain map (`Map.from_struct/1`); every
-  remaining field is already canonical.
+  Key 的 canonical 形式由所属 `Coconut.Score.Key` adapter 提供。整数
+  十二平均律保持 `%{midi: integer}`；微分音 adapter 可用整数分数或音律
+  步级表达，Note 不假设 MIDI，也不让 float 进入 Tamale digest。
   """
   @spec to_canonical(t()) :: map()
   def to_canonical(%__MODULE__{} = note) do
@@ -98,7 +99,7 @@ defmodule Coconut.Score.Note do
     # key is some *struct* implements `Coconut.Score.Key` or nil(e.g. Rap).
     |> Map.update!(:key, fn
       nil -> nil
-      %_{} = key -> Map.from_struct(key)
+      %_{} = key -> Key.to_canonical(key)
     end)
   end
 
