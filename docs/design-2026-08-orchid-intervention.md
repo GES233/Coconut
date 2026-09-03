@@ -307,34 +307,44 @@ oi 有两条干预通道，需要选型（或明确分工）：
   含噪声采样（PoC 以 `System.system_time()` 播种）的步要么排除、
   要么把 noise 改为注入的种子参数，否则缓存命中即撒谎。
 
-### 6.6 channel base 分类：content base vs output base（2026-09-03 拍板）
+### 6.6 channel base 分类：三档底料与 re-patch（2026-09-03 拍板，同日修正）
 
 缘起：neume 侧讨论 melisma 晋升/断组时 duration pin 的语义漂移（音符自身
-内容不变，content base 的 digest 不 veto，pin 静默指向新音素）。结论是
-§6.3 的 land 语义本就覆盖此情形，并由此抽出一条通用分类原则：
+内容不变，content base 的 digest 不 veto，pin 静默指向新音素）。§6.3 的
+land 语义本就覆盖此情形；进一步按 **payload 是否引用模型输出的数值**
+把底料分三档（初版只分两档，把绝对 pin 错划进 output base，同日修正）：
 
-- **短路型干预**（payload 完整替代 stage 输出，如 Lyric 改词短路 G2P）：
-  base 钉 **score 内容**（静态 workspace 投影，现 `Channels.Duration/Lyric`
-  的形态）。
-- **微调型干预**（payload 是 stage 输出的稀疏修正，如 duration pin、
-  pitch pin）：base 钉 **模型输出**（extract 时刻该 word 的预测值 +
-  音素序列进 digest base）。
+| payload 形状 | base | 裁决时机 | 例子 |
+|---|---|---|---|
+| 短路型（完整替代 stage 输出） | **score 内容**（静态 workspace 投影） | 静态 check | Lyric 改词短路 G2P |
+| 绝对微调（稀疏绝对值，不引用预测数值） | **身份底料**：下标指向的对象身份（如词内音素序列） | probe 期（G2P 后） | duration/pitch pin |
+| 增量微调（payload 骑在输出上的差量） | **output base**：extract 时刻的 stage 输出（§6.3 land） | probe 期 | 将来的曲线编辑（"抹平这段颤音"） |
 
-推论与边界：
+拍板与推论：
 
-- duration 是首个消费者且条件最好：ph_dur_pred 是整数帧（§6.4 精确化
-  天然满足），且预测在 pin 应用的上游（`_fit_durations` 只事后归一化），
-  同一趟推理可同时产出干净底料与干预后结果，无循环依赖、无需两趟。
-- **裁决位置后移**：微调型 channel 的 resolve 发生在引擎 probe 阶段而非
-  静态 check——底料物化归引擎（§4.1），coconut 内置 channel 契约
-  `projection(ws, patch)` 保持纯 workspace；此类 channel 由引擎侧自定义
-  channel 实现。
-- **volatile base 是预期代价**：上游编辑改变上下文 → 预测变 → pin 被
-  veto，哪怕语义无害。与 §6.2 "简单狠"先例同款取舍；冲突由用户裁决
-  （三手势：re-extract 重挂 / 修改后重挂 / 丢弃——与死 patch、adopt
-  失败共用同一个冲突解决界面）。
-- melisma 场景的收益：晋升/断组 → G2P 与预测变 → digest 自动失配浮出
-  冲突，无需给静态投影加组上下文的偏方。
+- **绝对 pin 不钉预测值**：pin 的语义是"钉死这个音素/这一帧"，与预测
+  数值无关；钉预测值只会让邻居编辑造成的数值漂移误伤 pin（veto 疲劳）。
+  身份底料把爆炸半径缩到"词内音素序列变了才炸"——晋升/断组/改词会炸
+  （正是要抓的漂移），改音高、改邻居音符不会。
+- **排序纪律：不检测、不预防，冲突兜底**。阶段顺序由渲染 DAG 固定
+  （duration → pitch → …），patch 之间不做依赖分析；上游依赖下游数据
+  这类极端形状（如 pitch pin 钉 duration 输出）由 digest 失配自然浮出
+  conflict，不单独设防。
+- **base = 挂载/重挂时刻的有效输出**（其他在册干预已应用的世界），不是
+  pristine 零干预输出——否则共存的上游干预会让下游 patch 陷入
+  "veto → 重挂 → 再 veto" 死循环。
+- **re-patch 手势**：`(Patch(old, diff), new) -> Patch(new, diff')`。
+  底料漂移后用户批量重挂：payload 在新底料上仍可表达（下标在界内等）
+  则保留重签，否则降级为"修改后挂载"。批量重挂是一条历史边（undo
+  一次全还原）；与死 patch、adopt 失败共用同一个冲突裁决界面。
+- **裁决位置后移**（不变）：身份/output 底料的 resolve 发生在引擎 probe
+  阶段而非静态 check——底料物化归引擎（§4.1），coconut 内置 channel
+  契约 `projection(ws, patch)` 保持纯 workspace；此类 channel 由引擎侧
+  自定义 channel 实现。推论：probe（小模型，不跑 acoustic/vocoder）必须
+  够快，因为裁决等它；分窗 probe 是曲目变长后的后备优化。
+- **精确化**：身份底料（音素序列 `[[lang, phone]]`）是字符串列表，天然
+  digest 安全；output base 才需要面对 float 预测值的 §6.4 量化（帧数
+  为整数者免）。
 - **可视化意图（立项动机之一）**：channel 语义对齐关系是 DAG 之外的第
   二个可视化面——干预在图上表示为**落在数据边上的节点**，并以**虚线
   连接的小图钉**指回其 base 来源（stage 输出 / score 内容）。此表示随
@@ -346,6 +356,7 @@ oi 有两条干预通道，需要选型（或明确分工）：
 - fold 同 port 覆盖语义显式化：§3.2 聚合规则在 assemble 层事实上消解了
   同阶段多 patch 的覆盖问题；跨阶段同 port 不可能出现。等真出现再议。
 - `run_render` 的 edit_version 强制校验：随 GenServer 壳（前文档 §11.5）。
+- 干预间的依赖/拓扑分析（§6.6：冲突兜底，不设防）。
 - OrchidInstrument / orchid_symbiont：不依赖。
 
 ## 8. Phase 0/1 实证经验（coconut_oi，2026-08-09）
