@@ -24,10 +24,11 @@ defmodule Coconut.Pickle.Registry do
   @type t :: %__MODULE__{
           by_name: %{binary() => module()},
           by_module: %{module() => binary()},
-          codec_by_module: %{module() => module()}
+          codec_by_module: %{module() => module()},
+          track_by_element: %{module() => module()}
         }
 
-  defstruct by_name: %{}, by_module: %{}, codec_by_module: %{}
+  defstruct by_name: %{}, by_module: %{}, codec_by_module: %{}, track_by_element: %{}
 
   @doc """
   从 `%{name => module}` 建 registry（`%{}` 建空表）。
@@ -84,7 +85,8 @@ defmodule Coconut.Pickle.Registry do
            registry
            | by_name: Map.put(registry.by_name, name, module),
              by_module: Map.put(registry.by_module, module, name),
-             codec_by_module: maybe_put_codec(registry.codec_by_module, module, codec)
+             codec_by_module: maybe_put_codec(registry.codec_by_module, module, codec),
+             track_by_element: maybe_index_element(registry.track_by_element, module, codec)
          }}
     end
   end
@@ -93,6 +95,18 @@ defmodule Coconut.Pickle.Registry do
 
   defp maybe_put_codec(codec_by_module, module, codec),
     do: Map.put(codec_by_module, module, codec)
+
+  # codec 声明了 element_module/0 才建立 元素模块 → 轨型 索引
+  # （裸 map 元素的轨型不声明，归档按 plain 数据透传）。
+  defp maybe_index_element(track_by_element, _module, nil), do: track_by_element
+
+  defp maybe_index_element(track_by_element, module, codec) do
+    if Code.ensure_loaded?(codec) and function_exported?(codec, :element_module, 0) do
+      Map.put(track_by_element, codec.element_module(), module)
+    else
+      track_by_element
+    end
+  end
 
   @doc "模块 → 逻辑名；未注册报 `{:error, {:unregistered_module, module}}`。"
   @spec to_name(t(), module()) :: {:ok, binary()} | {:error, {:unregistered_module, module()}}
@@ -121,6 +135,31 @@ defmodule Coconut.Pickle.Registry do
     case Map.fetch(codec_by_module, module) do
       {:ok, codec} -> {:ok, codec}
       :error -> {:error, {:missing_element_codec, module}}
+    end
+  end
+
+  @doc """
+  元素 struct 模块 → `{轨型逻辑名, 元素 codec}`。
+
+  供无轨道上下文的归档分派（History record 的 `:batch` side_changes 只有
+  track_id，元素按 `__struct__` 反查）。轨型 codec 未声明
+  `element_module/0`（裸 map 元素）报
+  `{:error, {:unregistered_element_module, _}}`。
+  """
+  @spec to_element_codec(t(), module()) ::
+          {:ok, {binary(), module()}} | {:error, {:unregistered_element_module, module()}}
+  def to_element_codec(%__MODULE__{} = registry, element_module) when is_atom(element_module) do
+    with {:ok, track_module} <- fetch_element(registry, element_module),
+         {:ok, codec} <- to_codec(registry, track_module),
+         {:ok, name} <- to_name(registry, track_module) do
+      {:ok, {name, codec}}
+    end
+  end
+
+  defp fetch_element(registry, element_module) do
+    case Map.fetch(registry.track_by_element, element_module) do
+      {:ok, track_module} -> {:ok, track_module}
+      :error -> {:error, {:unregistered_element_module, element_module}}
     end
   end
 end

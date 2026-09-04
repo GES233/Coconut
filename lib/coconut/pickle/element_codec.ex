@@ -12,4 +12,16 @@ defmodule Coconut.Pickle.ElementCodec do
 
   @callback dump_element(element :: term()) :: {:ok, term()} | {:error, term()}
   @callback load_element(dumped :: term()) :: {:ok, term()} | {:error, term()}
+
+  @doc """
+  该 codec 处理的元素 struct 模块（可选）。
+
+  声明后 `Coconut.Pickle.Registry` 建立 元素模块 → 轨型 索引，供无轨道
+  上下文的 codec 分派（History record 的 `:batch` side_changes 只有
+  track_id 没有轨型，元素按 `__struct__` 反查 codec）。元素是裸 map 的
+  轨型（如 Tempo）不声明——裸 map 元素在归档时按 plain 数据透传。
+  """
+  @callback element_module() :: module()
+
+  @optional_callbacks element_module: 0
 end

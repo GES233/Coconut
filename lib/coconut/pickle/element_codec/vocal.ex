@@ -15,6 +15,9 @@ defmodule Coconut.Pickle.ElementCodec.Vocal do
   alias Coconut.Score.{Key, Note}
 
   @impl true
+  def element_module, do: Note
+
+  @impl true
   def dump_element(%Note{} = note) do
     with {:ok, key} <- dump_key(note.key) do
       {:ok,

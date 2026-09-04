@@ -106,11 +106,87 @@ defmodule Coconut.Edit.History do
   checkpoint behind the target.
   """
   @spec state_at(t(), node_id()) :: {:ok, Workspace.t()} | {:error, {:unknown_node, node_id()}}
-  def state_at(hist, node_id) when is_integer(node_id) do
+  def state_at(%__MODULE__{} = hist, node_id) when is_integer(node_id) do
     if Map.has_key?(hist.nodes, node_id) do
       {:ok, materialize(hist, node_id)}
     else
       {:error, {:unknown_node, node_id}}
+    end
+  end
+
+  # ---- Restore (the load endpoint of `Coconut.Pickle.History`) ----
+
+  @doc """
+  Rebuild a history from deserialized fields.
+
+  `present` is not archived; it is re-derived here by folding from the
+  nearest checkpoint at or behind `cursor` (the same `materialize/2` path as
+  cursor jumps, so replay shares `Command.execute/3` with live writes,
+  §12.4). Invariants re-checked: window ordering (`base_seq <= cursor <=
+  seq`), dense node coverage of `base_seq..seq`, and a checkpoint on the
+  window root (initial root or squash frontier, §12.3).
+  """
+  @spec restore(map()) :: {:ok, t()} | {:error, term()}
+  def restore(attrs) when is_map(attrs) do
+    with {:ok, hist} <- build_restored(attrs),
+         :ok <- validate_window(hist) do
+      # 窗口稠密性已复检，cursor 必在册；直接走 materialize（state_at 的
+      # 契约要求 present 已就位，restore 期间尚未填充）。
+      {:ok, %{hist | present: materialize(hist, hist.cursor)}}
+    end
+  end
+
+  def restore(other), do: {:error, {:invalid_history_attrs, other}}
+
+  defp build_restored(attrs) do
+    with {:ok, nodes} <- fetch_field(attrs, :nodes),
+         {:ok, cursor} <- fetch_field(attrs, :cursor),
+         {:ok, seq} <- fetch_field(attrs, :seq),
+         {:ok, base_seq} <- fetch_field(attrs, :base_seq),
+         {:ok, interval} <- fetch_field(attrs, :checkpoint_interval),
+         {:ok, max_edges} <- fetch_field(attrs, :max_edges),
+         true <- is_map(nodes) and Enum.all?(nodes, fn {k, v} -> is_integer(k) and is_map(v) end),
+         true <- Enum.all?([cursor, seq, base_seq], &(is_integer(&1) and &1 >= 0)),
+         true <- is_integer(interval) and interval > 0,
+         true <- is_integer(max_edges) and max_edges > 0 do
+      {:ok,
+       %__MODULE__{
+         nodes: nodes,
+         cursor: cursor,
+         seq: seq,
+         base_seq: base_seq,
+         present: nil,
+         checkpoint_interval: interval,
+         max_edges: max_edges
+       }}
+    else
+      _ -> {:error, {:invalid_history_attrs, attrs}}
+    end
+  end
+
+  defp fetch_field(attrs, key) do
+    case Map.fetch(attrs, key) do
+      {:ok, value} -> {:ok, value}
+      :error -> {:error, {:missing_history_field, key}}
+    end
+  end
+
+  defp validate_window(hist) do
+    expected = MapSet.new(hist.base_seq..hist.seq)
+    actual = MapSet.new(Map.keys(hist.nodes))
+
+    cond do
+      not (hist.base_seq <= hist.cursor and hist.cursor <= hist.seq) ->
+        {:error, {:invalid_history_window, {hist.base_seq, hist.cursor, hist.seq}}}
+
+      not MapSet.equal?(expected, actual) ->
+        {:error, {:non_dense_history_window, {hist.base_seq, hist.seq}}}
+
+      is_nil(Map.fetch!(hist.nodes, hist.base_seq).checkpoint) ->
+        {:error, {:missing_root_checkpoint, hist.base_seq}}
+
+      true ->
+        :ok
     end
   end
 

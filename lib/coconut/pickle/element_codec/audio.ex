@@ -10,6 +10,9 @@ defmodule Coconut.Pickle.ElementCodec.Audio do
   alias Coconut.Edit.Track.Audio.Clip
 
   @impl true
+  def element_module, do: Clip
+
+  @impl true
   def dump_element(%Clip{} = clip) do
     {:ok,
      %{

@@ -41,7 +41,10 @@ defmodule Coconut do
   - `:engine` - a `Coconut.Render.Engine` module or `{module, config}`;
   - `:interventions` - base engine inputs merged below resolved patches;
   - `:globals` - engine-level values included in every request;
-  - `:history` - options forwarded to `Coconut.Edit.History.new/2`.
+  - `:history` - options forwarded to `Coconut.Edit.History.new/2`, or a
+    restored `Coconut.Edit.History` struct (e.g. from
+    `Coconut.Pickle.File.read_with_history/2`) mounted as-is — its
+    `present.edit_version` must match the workspace's.
   """
   @spec new(source(), keyword()) :: {:ok, Session.t()} | {:error, term()}
   def new(source, opts \\ [])
@@ -68,15 +71,16 @@ defmodule Coconut do
     globals = Keyword.get(opts, :globals, %{})
     engine = Keyword.get(opts, :engine)
 
-    with :ok <- validate_keyword_option(:history, Keyword.get(opts, :history, [])),
+    with :ok <- validate_history_option(Keyword.get(opts, :history, [])),
          :ok <- validate_map_option(:channels, channels),
          :ok <- validate_channels(channels),
          :ok <- validate_engine(engine),
          :ok <- validate_map_option(:interventions, interventions),
-         :ok <- validate_map_option(:globals, globals) do
+         :ok <- validate_map_option(:globals, globals),
+         {:ok, history} <- resolve_history(workspace, Keyword.get(opts, :history, [])) do
       {:ok,
        %Session{
-         history: History.new(workspace, Keyword.get(opts, :history, [])),
+         history: history,
          channels: channels,
          engine: engine,
          interventions: interventions,
@@ -84,6 +88,21 @@ defmodule Coconut do
        }}
     end
   end
+
+  # 恢复的历史直接挂载：present 是 session workspace 的事实来源
+  # （`workspace/1` = `history.present`），这里只做 edit_version 对齐的
+  # 健全性检查——存档两侧是同一份会话状态的两次投影，错位即文件损坏。
+  defp resolve_history(workspace, %History{} = history) do
+    if history.present.edit_version == workspace.edit_version do
+      {:ok, history}
+    else
+      {:error,
+       {:history_workspace_mismatch, history.present.edit_version, workspace.edit_version}}
+    end
+  end
+
+  defp resolve_history(workspace, opts) when is_list(opts),
+    do: {:ok, History.new(workspace, opts)}
 
   @doc "Returns the current workspace."
   @spec workspace(Session.t()) :: Workspace.t()
@@ -376,6 +395,11 @@ defmodule Coconut do
     end
   end
 
+  # :history 接受 `History.new/2` 的 opts（list）或恢复的历史 struct。
+  defp validate_history_option(%History{}), do: :ok
+  defp validate_history_option(opts) when is_list(opts), do: :ok
+  defp validate_history_option(other), do: {:error, {:invalid_option, :history, other}}
+
   defp validate_map_option(_name, value) when is_map(value), do: :ok
   defp validate_map_option(name, value), do: {:error, {:invalid_option, name, value}}
 
@@ -408,9 +432,6 @@ defmodule Coconut do
       {:error, {:invalid_engine, module}}
     end
   end
-
-  defp validate_keyword_option(_name, value) when is_list(value), do: :ok
-  defp validate_keyword_option(name, value), do: {:error, {:invalid_option, name, value}}
 
   defp merge_option(base, opts, name) do
     override = Keyword.get(opts, name, %{})

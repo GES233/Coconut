@@ -17,12 +17,81 @@ defmodule Coconut.Pickle.FileTest do
 
     assert {:ok, ^path} = PickleFile.write(project, registry, path)
 
-    # 信封形状抽查：format 标签 + version + project 载荷
+    # 信封形状抽查：format 标签 + version + project 载荷（无历史时 history 为 nil）
     envelope = path |> File.read!() |> :erlang.binary_to_term()
-    assert %{format: :coconut_project, version: 1, project: dumped} = envelope
+    assert %{format: :coconut_project, version: 2, project: dumped, history: nil} = envelope
     assert dumped.id == project.id
 
     assert {:ok, loaded} = PickleFile.read(path, registry)
+    assert loaded == project
+  end
+
+  @tag tmp_dir: "pickle_file"
+  test "write/4 with :history + read_with_history/2 restores the undo tree", %{
+    tmp_dir: tmp_dir
+  } do
+    project = build_project()
+    registry = PickleTrack.default_registry()
+
+    # 用工程 workspace 起一段真实历史：两条边（插音符 + extras 旋钮）。
+    history = Coconut.Edit.History.new(project.workspace)
+
+    {:ok, history} =
+      Coconut.Edit.History.apply(history, %Coconut.Edit.Operations.InsertNote{
+        track_id: "vocal",
+        note_id: "n2",
+        after_id: "n1",
+        span: {480, 960},
+        attrs: %{pitch: 65}
+      })
+
+    {:ok, history} =
+      Coconut.Edit.History.run(
+        history,
+        Coconut.Edit.Command.put_track_extras("vocal", %{neume: %{globals: %{energy: 1.5}}})
+      )
+
+    # 存档两侧必须是同一份会话状态：project 投影自 history.present。
+    {:ok, project} =
+      Coconut.Project.new(%{
+        id: project.id,
+        workspace: history.present,
+        voicebank: project.voicebank,
+        metadata: project.metadata
+      })
+
+    path = Path.join(tmp_dir, "with_history.coconut")
+    assert {:ok, ^path} = PickleFile.write(project, registry, path, history: history)
+
+    assert {:ok, loaded, restored} = PickleFile.read_with_history(path, registry)
+    assert loaded == project
+    assert %Coconut.Edit.History{} = restored
+    assert restored.present == history.present
+
+    # 恢复的历史可以继续 undo：第一步撤销 extras，第二步撤销音符。
+    assert {:ok, restored} = Coconut.Edit.History.undo(restored)
+
+    assert Map.fetch!(restored.present.tracks, "vocal").extras == %{}
+
+    assert {:ok, restored} = Coconut.Edit.History.undo(restored)
+    track = Map.fetch!(restored.present.tracks, "vocal")
+    assert Map.has_key?(track.elements_by_id, "n2") == false
+  end
+
+  @tag tmp_dir: "pickle_file"
+  test "read_with_history/2 on a v1 envelope yields a nil history", %{tmp_dir: tmp_dir} do
+    project = build_project()
+    registry = PickleTrack.default_registry()
+    {:ok, dumped} = Coconut.Pickle.Project.dump(project, registry)
+
+    path = Path.join(tmp_dir, "v1.coconut")
+
+    File.write!(
+      path,
+      :erlang.term_to_binary(%{format: :coconut_project, version: 1, project: dumped})
+    )
+
+    assert {:ok, loaded, nil} = PickleFile.read_with_history(path, registry)
     assert loaded == project
   end
 
@@ -36,10 +105,10 @@ defmodule Coconut.Pickle.FileTest do
 
     File.write!(
       path,
-      :erlang.term_to_binary(%{format: :coconut_project, version: 2, project: dumped})
+      :erlang.term_to_binary(%{format: :coconut_project, version: 3, project: dumped})
     )
 
-    assert {:error, {:unsupported_format_version, 2}} = PickleFile.read(path, registry)
+    assert {:error, {:unsupported_format_version, 3}} = PickleFile.read(path, registry)
   end
 
   @tag tmp_dir: "pickle_file"
