@@ -181,6 +181,15 @@ defmodule Coconut do
   `refs` is one element id or a list of ids. The facade captures the track
   version, digests the current projection, creates the Tamale patch, and
   records the attachment in history.
+
+  Options:
+
+  - `:base` — an explicit canonical base term signed instead of the
+    channel's workspace projection. Required for `:probe`-stage channels
+    (identity/output bases materialize at the engine probe, so the caller
+    signs the probe-time value); rejected for `:static` channels, where
+    the projection is the only sanctioned base source.
+  - `:pin` — forwarded to `Coconut.Edit.History.run/3` (stale-write pin).
   """
   @spec mount(Session.t(), Track.track_id(), term() | [term()], atom(), term(), keyword()) ::
           {:ok, Session.t(), Patch.t()} | {:error, term()}
@@ -191,7 +200,7 @@ defmodule Coconut do
          {:ok, track} <- Workspace.fetch_track(ws, track_id),
          anchor <- %Tamale.Anchor.Ordinal{refs: List.wrap(refs), at_version: track.space.version},
          probe <- %Patch{track_id: track_id, anchor: anchor, channel: channel},
-         {:ok, base} <- channel_module.projection(ws, probe),
+         {:ok, base} <- mount_base(channel_module, ws, probe, opts),
          {:ok, tamale_patch} <- Tamale.Patch.new(base, payload),
          {:ok, patch} <-
            Patch.new(%{
@@ -204,6 +213,21 @@ defmodule Coconut do
          {:ok, session} <-
            run(session, Command.attach_patches([patch]), Keyword.take(opts, [:pin])) do
       {:ok, session, patch}
+    end
+  end
+
+  # probe 期 channel 的底料在 workspace 之外物化（引擎 probe），必须由
+  # 调用方显式签名；静态 channel 的底料只能来自纯 workspace projection。
+  defp mount_base(channel_module, ws, probe, opts) do
+    probe_stage? =
+      function_exported?(channel_module, :resolve_stage, 0) and
+        channel_module.resolve_stage() == :probe
+
+    case {probe_stage?, Keyword.fetch(opts, :base)} do
+      {true, :error} -> {:error, {:probe_stage_requires_base, probe.channel}}
+      {false, {:ok, base}} -> {:error, {:static_channel_rejects_base, probe.channel, base}}
+      {true, {:ok, base}} -> {:ok, base}
+      {false, :error} -> channel_module.projection(ws, probe)
     end
   end
 

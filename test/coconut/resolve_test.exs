@@ -30,6 +30,25 @@ defmodule Coconut.ResolveTest do
     end
   end
 
+  defmodule ProbeChannel do
+    @moduledoc """
+    probe 期 channel（§6.6 身份底料）：静态 check 不裁决 digest，
+    payload 原样 fold；projection 永远不会被 Resolve 调用。
+    """
+
+    @behaviour Coconut.Render.Channel
+
+    @impl true
+    def projection(_ws, _patch), do: {:error, :probe_stage_channel}
+
+    @impl true
+    def target(%Patch{anchor: %Tamale.Anchor.Ordinal{refs: [id | _]}}),
+      do: {:port, id, :probe_pin}
+
+    @impl true
+    def resolve_stage, do: :probe
+  end
+
   setup do
     {:ok, track} = Track.new(%{id: @track, module: Track.Vocal})
 
@@ -223,6 +242,62 @@ defmodule Coconut.ResolveTest do
              Resolve.run_check(ws, %{duration: Coconut.Render.Channels.Duration})
 
     assert interventions == %{{:port, "n1", :duration} => %{input: [[0, 96], [1, 384]]}}
+  end
+
+  test "probe-stage channel skips static digest adjudication", %{ws: ws} do
+    ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60, lyric: "ら"})
+
+    # probe 期 channel 的底料在 workspace 之外物化：静态 check 不做 digest
+    # 裁决，payload 原样 fold（引擎 probe 重新裁决）。
+    {:ok, tp} = Tamale.Patch.new([["zh", "l"], ["zh", "a"]], [[0, 96]])
+
+    {:ok, cp} =
+      Patch.new(%{
+        track_id: @track,
+        channel: :probe_pin,
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].space.version},
+        patch: tp
+      })
+
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
+
+    assert {:ok, %{passed: true, interventions: interventions, survivors: [_]}} =
+             Resolve.run_check(ws, %{probe_pin: ProbeChannel})
+
+    assert interventions == %{{:port, "n1", :probe_pin} => %{input: [[0, 96]]}}
+
+    # 音符内容漂移不会触发静态 veto（身份裁决归引擎 probe）；但锚 transport
+    # 仍是静态的——删音符照旧杀 patch。
+    ws = rewrite_note(ws, "n1", %{pitch: 61, lyric: "り"})
+    assert {:ok, %{passed: true}} = Resolve.run_check(ws, %{probe_pin: ProbeChannel})
+  end
+
+  test "probe-stage channel still dies at transport when the anchor dies", %{ws: ws} do
+    ws = insert_note(ws, "n1", :head, {0, 480}, %{pitch: 60})
+
+    {:ok, tp} = Tamale.Patch.new([["zh", "a"]], [[0, 96]])
+
+    {:ok, cp} =
+      Patch.new(%{
+        track_id: @track,
+        channel: :probe_pin,
+        anchor: %Tamale.Anchor.Ordinal{refs: ["n1"], at_version: ws.tracks[@track].space.version},
+        patch: tp
+      })
+
+    {:ok, ws, _minted} = Workspace.attach_patch(ws, cp)
+
+    {:ok, ops, changes} =
+      Operation.lower(
+        %Coconut.Edit.Operations.DeleteNote{track_id: @track, note_id: "n1"},
+        ws,
+        %Operation.Config{}
+      )
+
+    {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)
+
+    assert ws.tracks[@track].patches == []
+    assert [{_cp, {:undefined, {:deleted, "n1"}}}] = ws.tracks[@track].dead_patches
   end
 
   test "function target fans a payload out to multiple ports", %{ws: ws} do

@@ -350,6 +350,13 @@ land 语义本就覆盖此情形；进一步按 **payload 是否引用模型输�
   连接的小图钉**指回其 base 来源（stage 输出 / score 内容）。此表示随
   Phase 3 可视化一并评估，不影响内核契约。
 
+> 落地状态（2026-09-04，neume 侧首发）：channel 可选回调
+> `resolve_stage/0`（`:probe` 时 Resolve 跳过静态 digest 裁决、payload
+> 原样 fold，锚 transport 仍静态）；`Coconut.mount` 的 `:base` 选项做
+> probe 底料的显式签名（`:probe` channel 缺 `:base` 即 loud error）；
+> 批量重挂是 `Command.repatch_patches`（discard+attach 一条历史边）。
+> neume 的 duration/pitch pin 即身份底料的首对消费者。
+
 ## 7. 暂不做的
 
 - port_ref DTO 化（§11.4）：推迟，边界转换即可，内核内部形状自由演进。

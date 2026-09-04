@@ -18,6 +18,15 @@ defmodule Coconut.Render.Channel do
     `[{port_ref, value}]` pairs. `target/1` additionally receives the
     patch, for ports derived from the anchor (e.g. per-note ports like
     `{:port, note_id, :pitch}`). At least one of the two must be exported.
+  - `resolve_stage/0` (optional, default `:static`) — `:probe` declares
+    that the channel's base materializes outside the workspace (engine
+    probe, e.g. post-G2P phoneme sequences; design doc
+    `design-2026-08-orchid-intervention.md` §6.6 identity/output bases).
+    `Resolve` then skips the digest adjudication and folds the payload
+    as-is; the engine probe re-runs `Tamale.Patch.resolve/2` against the
+    materialized base. Transport (anchor survival) is always static.
+    Probe-stage patches must be mounted with an explicit `:base`
+    (`Coconut.mount/6`), since `projection/2` stays pure-workspace.
   """
 
   alias Coconut.Edit.{Patch, Workspace}
@@ -30,5 +39,7 @@ defmodule Coconut.Render.Channel do
   @callback target(Patch.t()) ::
               Resolve.port_ref() | (term() -> [{Resolve.port_ref(), term()}])
 
-  @optional_callbacks target: 0, target: 1
+  @callback resolve_stage() :: :static | :probe
+
+  @optional_callbacks target: 0, target: 1, resolve_stage: 0
 end

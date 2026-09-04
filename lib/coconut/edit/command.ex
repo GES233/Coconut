@@ -18,6 +18,11 @@ defmodule Coconut.Edit.Command do
     resolved command can differ from the input one;
   - `:discard_patches` — `[{track_id, patch_id, reason}]`; active patches
     move to their tracks' graveyards;
+  - `:repatch_patches` — `{discards, [Patch.t()]}`: the batch re-mount
+    gesture (design doc `design-2026-08-orchid-intervention.md` §6.6).
+    Discards execute before attachments in a single history edge, so one
+    undo restores the whole batch; attachment ids are minted at execution
+    (same discipline as `:attach_patches`);
   - `:add_track` — a fully constructed `Coconut.Edit.Track.t()`;
   - `:remove_track` — `track_id`;
   - `:rename_track` — `{track_id, name}`;
@@ -34,6 +39,7 @@ defmodule Coconut.Edit.Command do
           :batch
           | :attach_patches
           | :discard_patches
+          | :repatch_patches
           | :add_track
           | :remove_track
           | :rename_track
@@ -73,6 +79,14 @@ defmodule Coconut.Edit.Command do
   @spec discard_patches([{Track.track_id(), ID.t(), term()}]) :: t()
   def discard_patches(entries) when is_list(entries),
     do: %__MODULE__{op: :discard_patches, payload: entries, label: "DiscardPatches"}
+
+  @doc """
+  Batch re-mount gesture: discard the drifted patches and attach their
+  re-signed replacements as one history edge (`§6.6` re-patch).
+  """
+  @spec repatch_patches([{Track.track_id(), ID.t(), term()}], [Patch.t()]) :: t()
+  def repatch_patches(discards, patches) when is_list(discards) and is_list(patches),
+    do: %__MODULE__{op: :repatch_patches, payload: {discards, patches}, label: "RepatchPatches"}
 
   @doc """
   Build an add-track command from `Track.new/1` attrs; `:id` is minted
@@ -115,8 +129,8 @@ defmodule Coconut.Edit.Command do
 
   Returns `{:ok, new_workspace, resolved}` where `resolved` is the
   recordable form — identical to the input for every op except
-  `:attach_patches` (patch ids minted) and `:consume_dead` (payload
-  filled with the drained tuples).
+  `:attach_patches` / `:repatch_patches` (patch ids minted) and
+  `:consume_dead` (payload filled with the drained tuples).
 
   Options: `:expected_version` — the aggregate optimistic lock for
   `:batch`, defaulting to the workspace's own version (replay is
@@ -140,6 +154,17 @@ defmodule Coconut.Edit.Command do
 
   def execute(ws, %__MODULE__{op: :discard_patches, payload: entries} = command, _opts),
     do: run(command, fn -> Workspace.discard_patches(ws, entries) end)
+
+  def execute(
+        ws,
+        %__MODULE__{op: :repatch_patches, payload: {discards, patches}} = command,
+        _opts
+      ) do
+    with {:ok, ws} <- Workspace.discard_patches(ws, discards),
+         {:ok, ws, minted} <- Workspace.attach_patches(ws, patches) do
+      {:ok, ws, %{command | payload: {discards, minted}}}
+    end
+  end
 
   def execute(ws, %__MODULE__{op: :add_track, payload: %Track{} = track} = command, _opts),
     do: run(command, fn -> Workspace.add_track(ws, track) end)

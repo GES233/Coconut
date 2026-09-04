@@ -10,6 +10,22 @@ defmodule Coconut.FacadeTest do
 
   @track "vocal"
 
+  defmodule ProbeChannel do
+    @moduledoc false
+    @behaviour Coconut.Render.Channel
+
+    alias Coconut.Edit.Patch
+
+    @impl true
+    def projection(_ws, _patch), do: {:error, :probe_stage_channel}
+
+    @impl true
+    def target(%Patch{anchor: %Tamale.Anchor.Ordinal{refs: [id | _]}}), do: {:port, id, :pin}
+
+    @impl true
+    def resolve_stage, do: :probe
+  end
+
   defp session(opts \\ []) do
     defaults = [channels: %{lyric: Lyric}, engine: Mock]
     {:ok, session} = Coconut.new(Scenario.base_workspace(), Keyword.merge(defaults, opts))
@@ -170,5 +186,67 @@ defmodule Coconut.FacadeTest do
 
     assert {:error, :workspace_session} = Coconut.project(session)
     assert {:error, {:invalid_option, :globals, :bad}} = Coconut.request(session, globals: :bad)
+  end
+
+  test "probe-stage mount requires an explicit base; static channels reject one" do
+    session = session(channels: %{lyric: Lyric, pin: ProbeChannel})
+    assert {:ok, session} = insert(session)
+
+    assert {:error, {:probe_stage_requires_base, :pin}} =
+             Coconut.mount(session, @track, "n1", :pin, [[0, 96]])
+
+    assert {:error, {:static_channel_rejects_base, :lyric, _base}} =
+             Coconut.mount(session, @track, "n1", :lyric, :payload, base: ["x"])
+
+    # 显式底料签名：静态 check 不裁决 digest，payload 原样 fold。
+    assert {:ok, session, patch} =
+             Coconut.mount(session, @track, "n1", :pin, [[0, 96]], base: [["zh", "a"]])
+
+    assert {:ok, %{interventions: interventions, survivors: [survivor]}} =
+             Coconut.resolve(session)
+
+    assert survivor.id == patch.id
+    assert interventions == %{{:port, "n1", :pin} => %{input: [[0, 96]]}}
+  end
+
+  test "repatch_patches discards drifted patches and attaches re-signed ones in one edge" do
+    session = session(channels: %{pin: ProbeChannel})
+    assert {:ok, session} = insert(session)
+
+    assert {:ok, session, old} =
+             Coconut.mount(session, @track, "n1", :pin, [[0, 96]], base: [["zh", "a"]])
+
+    # 底料漂移后重签：新 digest、新 id、payload 保留。
+    {:ok, resigned} = Tamale.Patch.new([["zh", "l"], ["zh", "a"]], [[0, 96]])
+
+    {:ok, replacement} =
+      Coconut.Edit.Patch.new(%{
+        track_id: @track,
+        channel: :pin,
+        anchor: %Tamale.Anchor.Ordinal{
+          refs: ["n1"],
+          at_version: Coconut.workspace(session).tracks[@track].space.version
+        },
+        patch: resigned
+      })
+
+    assert {:ok, session} =
+             Coconut.run(
+               session,
+               Command.repatch_patches([{@track, old.id, :base_changed}], [replacement])
+             )
+
+    assert [%{id: new_id, patch: ^resigned}] =
+             Coconut.workspace(session).tracks[@track].patches
+
+    refute new_id == old.id
+    assert [{discarded, :base_changed}] = Coconut.workspace(session).tracks[@track].dead_patches
+    assert discarded.id == old.id
+
+    # 一条历史边：undo 一次整批还原（旧 patch 回活，新 patch 消失）。
+    assert {:ok, session} = Coconut.undo(session)
+    assert [%{id: restored_id}] = Coconut.workspace(session).tracks[@track].patches
+    assert restored_id == old.id
+    assert Coconut.workspace(session).tracks[@track].dead_patches == []
   end
 end

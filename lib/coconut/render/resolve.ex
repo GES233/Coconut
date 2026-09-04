@@ -155,6 +155,21 @@ defmodule Coconut.Render.Resolve do
   end
 
   defp resolve_one(ws, %Patch{} = patch, spec) do
+    # probe 期 channel（§6.6 身份/输出底料）：底料在 workspace 之外物化，
+    # 静态 check 跳过 digest 裁决，直接放行 payload；引擎 probe 用
+    # `Tamale.Patch.resolve/2` 对新底料重新裁决。
+    if probe_stage?(spec) do
+      {:ok, patch.patch.payload}
+    else
+      static_resolve(ws, patch, spec)
+    end
+  end
+
+  defp probe_stage?(spec) do
+    function_exported?(spec, :resolve_stage, 0) and spec.resolve_stage() == :probe
+  end
+
+  defp static_resolve(ws, %Patch{} = patch, spec) do
     with {:ok, fresh_base} <- spec.projection(ws, patch),
          {:ok, payload} <- Tamale.Patch.resolve(patch.patch, fresh_base) do
       {:ok, payload}
