@@ -200,6 +200,37 @@ defmodule Coconut.Edit.HistoryTest do
       assert track(h).name == "主唱"
     end
 
+    test "metadata/extras 经 History 往返，只有 extras 递增 edit_version" do
+      h = base_history()
+      v = h.present.edit_version
+
+      {:ok, h} =
+        History.run(h, Command.put_track_metadata(@track, %{"color" => "蓝", role: :lead}))
+
+      assert track(h).metadata == %{"color" => "蓝", role: :lead}
+      assert h.present.edit_version == v
+
+      {:ok, h} =
+        History.run(h, Command.put_track_extras(@track, %{neume: %{automation: [:pitch]}}))
+
+      assert track(h).extras == %{neume: %{automation: [:pitch]}}
+      assert h.present.edit_version == v + 1
+
+      h = undo!(h)
+      assert track(h).extras == %{}
+      assert track(h).metadata == %{"color" => "蓝", role: :lead}
+
+      h = undo!(h)
+      assert track(h).metadata == %{}
+
+      h = redo!(h) |> redo!()
+      assert track(h).metadata == %{"color" => "蓝", role: :lead}
+      assert track(h).extras == %{neume: %{automation: [:pitch]}}
+
+      assert {:error, {:unknown_track, "nope"}} =
+               History.run(h, Command.put_track_metadata("nope", %{}))
+    end
+
     test "set_time_sigs round-trips, malformed rejected" do
       h = base_history()
 

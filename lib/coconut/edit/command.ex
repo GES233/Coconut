@@ -26,6 +26,7 @@ defmodule Coconut.Edit.Command do
   - `:add_track` — a fully constructed `Coconut.Edit.Track.t()`;
   - `:remove_track` — `track_id`;
   - `:rename_track` — `{track_id, name}`;
+  - `:put_track_metadata` / `:put_track_extras` — `{track_id, full_map}`；
   - `:set_time_sigs` — `[time_sig_event]`;
   - `:consume_dead` — execution drains the graveyards and fills the
     payload with the drained `{patch, reason}` tuples (replay re-drains,
@@ -43,6 +44,8 @@ defmodule Coconut.Edit.Command do
           | :add_track
           | :remove_track
           | :rename_track
+          | :put_track_metadata
+          | :put_track_extras
           | :set_time_sigs
           | :consume_dead
 
@@ -113,6 +116,20 @@ defmodule Coconut.Edit.Command do
   def rename_track(track_id, name),
     do: %__MODULE__{op: :rename_track, payload: {track_id, name}, label: "RenameTrack"}
 
+  @doc "整体替换轨道展示 metadata，作为一条可撤销历史边。"
+  @spec put_track_metadata(Track.track_id(), map()) :: t()
+  def put_track_metadata(track_id, metadata) when is_map(metadata),
+    do: %__MODULE__{
+      op: :put_track_metadata,
+      payload: {track_id, metadata},
+      label: "PutTrackMetadata"
+    }
+
+  @doc "整体替换轨道宿主 extras，作为一条可撤销历史边。"
+  @spec put_track_extras(Track.track_id(), map()) :: t()
+  def put_track_extras(track_id, extras) when is_map(extras),
+    do: %__MODULE__{op: :put_track_extras, payload: {track_id, extras}, label: "PutTrackExtras"}
+
   @doc "Replace the time signature events (a light field edge, §6)."
   @spec set_time_sigs([Coconut.Score.TimeSig.time_sig_event()]) :: t()
   def set_time_sigs(events),
@@ -174,6 +191,20 @@ defmodule Coconut.Edit.Command do
 
   def execute(ws, %__MODULE__{op: :rename_track, payload: {track_id, name}} = command, _opts),
     do: run(command, fn -> Workspace.rename_track(ws, track_id, name) end)
+
+  def execute(
+        ws,
+        %__MODULE__{op: :put_track_metadata, payload: {track_id, metadata}} = command,
+        _opts
+      ),
+      do: run(command, fn -> Workspace.put_track_metadata(ws, track_id, metadata) end)
+
+  def execute(
+        ws,
+        %__MODULE__{op: :put_track_extras, payload: {track_id, extras}} = command,
+        _opts
+      ),
+      do: run(command, fn -> Workspace.put_track_extras(ws, track_id, extras) end)
 
   def execute(ws, %__MODULE__{op: :set_time_sigs, payload: events} = command, _opts),
     do: run(command, fn -> Workspace.set_time_sigs(ws, events) end)

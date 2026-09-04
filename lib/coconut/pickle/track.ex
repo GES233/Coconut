@@ -9,6 +9,8 @@ defmodule Coconut.Pickle.Track do
 
   - `id` 原样直出；
   - `name` 原样直出（可选字段：load 时缺失默认 `nil`，旧档天然兼容）；
+  - `metadata` / `extras` 是满足 `Coconut.Pickle` 约定的 plain map，缺失时
+    默认 `%{}`，因此旧档兼容；
   - `version_clock`（space version → edit_version 的 int→int map）原样
     直出（同为可选字段：旧档缺失 load 为 `%{}`——读档后锚都在 head，
     无历史 fold，新批次会记新 clock）；
@@ -60,7 +62,9 @@ defmodule Coconut.Pickle.Track do
   @doc "把 `Coconut.Edit.Track` 摊平为仅含允许类型的 plain map。"
   @spec dump(Track.t(), Registry.t()) :: {:ok, map()} | {:error, term()}
   def dump(%Track{} = track, %Registry{} = registry) do
-    with {:ok, name} <- Registry.to_name(registry, track.module),
+    with :ok <- check_plain_map(:metadata, track.metadata),
+         :ok <- check_plain_map(:extras, track.extras),
+         {:ok, name} <- Registry.to_name(registry, track.module),
          {:ok, space} <- Space.dump(track.space),
          {:ok, elements} <- dump_elements(track, registry),
          {:ok, patches} <- dump_patches(track.patches),
@@ -69,6 +73,8 @@ defmodule Coconut.Pickle.Track do
        %{
          id: track.id,
          name: track.name,
+         metadata: track.metadata,
+         extras: track.extras,
          module: name,
          space: space,
          spans_by_version: dump_spans(track.spans_by_version),
@@ -94,6 +100,8 @@ defmodule Coconut.Pickle.Track do
       Track.new(%{
         id: Map.get(data, :id),
         name: Map.get(data, :name),
+        metadata: Map.get(data, :metadata) || %{},
+        extras: Map.get(data, :extras) || %{},
         module: module,
         space: space,
         spans_by_version: spans,
@@ -242,6 +250,17 @@ defmodule Coconut.Pickle.Track do
   end
 
   defp load_dead(other), do: {:error, {:invalid_dead_patches_dump, other}}
+
+  defp check_plain_map(:metadata, value) when is_map(value) do
+    if pickle_conform?(value), do: :ok, else: {:error, {:non_conform_metadata, value}}
+  end
+
+  defp check_plain_map(:extras, value) when is_map(value) do
+    if pickle_conform?(value), do: :ok, else: {:error, {:non_conform_extras, value}}
+  end
+
+  defp check_plain_map(:metadata, value), do: {:error, {:invalid_metadata, value}}
+  defp check_plain_map(:extras, value), do: {:error, {:invalid_extras, value}}
 
   # dead reason 原样透传，但 dump 产物必须满足 Coconut.Pickle 的允许类型约定
   defp check_conform_reason(reason) do

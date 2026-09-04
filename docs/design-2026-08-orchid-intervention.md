@@ -326,6 +326,13 @@ land 语义本就覆盖此情形；进一步按 **payload 是否引用模型输�
   数值无关；钉预测值只会让邻居编辑造成的数值漂移误伤 pin（veto 疲劳）。
   身份底料把爆炸半径缩到"词内音素序列变了才炸"——晋升/断组/改词会炸
   （正是要抓的漂移），改音高、改邻居音符不会。
+- **连续表现曲线可采用仅结构裁决**：energy / breathiness / voicing 等曲线
+  仍可作为 intervention 进入 track Patch，从而获得 anchor transport、History
+  与结构冲突；但 channel 可以有意不把谱表内容或模型预测值纳入语义 base，
+  因而结构仍存活时不产生 semantic conflict。严格说谱表变化可能令曲线原
+  意发生语义漂移，但若一律零容忍 veto，普通改谱就会造成严重的冲突疲劳；
+  这是明确的使用体验取舍。只有 payload 明确引用旧输出（例如 preserve、
+  相对旧值增减或“抹平旧颤音”）时，才升级为 output base 并执行语义裁决。
 - **排序纪律：不检测、不预防，冲突兜底**。阶段顺序由渲染 DAG 固定
   （duration → pitch → …），patch 之间不做依赖分析；上游依赖下游数据
   这类极端形状（如 pitch pin 钉 duration 输出）由 digest 失配自然浮出

@@ -51,6 +51,28 @@ defmodule Coconut.Pickle.TrackTest do
       assert loaded == track
     end
 
+    test "metadata/extras round-trip，旧档缺字段时回落空 map" do
+      {:ok, track} =
+        Track.new(%{
+          id: "rich",
+          module: Track.Vocal,
+          metadata: %{"color" => "蓝", role: :lead},
+          extras: %{neume: %{version: 1, gains: [1.0, nil]}}
+        })
+
+      registry = PickleTrack.default_registry()
+      assert {:ok, dumped} = PickleTrack.dump(track, registry)
+      assert dumped.metadata == track.metadata
+      assert dumped.extras == track.extras
+      assert_pickle_conform(dumped)
+      assert {:ok, ^track} = PickleTrack.load(dumped, registry)
+
+      legacy = dumped |> Map.delete(:metadata) |> Map.delete(:extras)
+      assert {:ok, loaded} = PickleTrack.load(legacy, registry)
+      assert loaded.metadata == %{}
+      assert loaded.extras == %{}
+    end
+
     test "name is optional: dumped through, absent loads as nil" do
       {:ok, named} = Track.new(%{id: "v2", module: Track.Vocal, name: "主唱"})
       {:ok, plain} = Track.new(%{id: "v3", module: Track.Vocal})
@@ -167,6 +189,13 @@ defmodule Coconut.Pickle.TrackTest do
       {:ok, registry} = Coconut.Pickle.Registry.new(%{"fake" => String})
 
       assert {:error, {:missing_element_codec, String}} = PickleTrack.dump(track, registry)
+    end
+
+    test "dump 边界拒绝绕过 constructor 注入的非 conform 自由字段" do
+      registry = PickleTrack.default_registry()
+      track = %{vocal_track() | extras: %{runtime: self()}}
+
+      assert {:error, {:non_conform_extras, _}} = PickleTrack.dump(track, registry)
     end
 
     test "non-conform dead reason is an error" do

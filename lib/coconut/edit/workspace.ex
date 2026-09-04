@@ -173,6 +173,32 @@ defmodule Coconut.Edit.Workspace do
     end
   end
 
+  @doc """
+  整体替换轨道展示 metadata。该字段不影响渲染，不递增 `edit_version`；调用方
+  需要 merge 时应先显式构造完整新 map，使 History record 保持确定的完整值。
+  """
+  @spec put_track_metadata(t(), Track.track_id(), map()) :: {:ok, t()} | {:error, term()}
+  def put_track_metadata(ws, track_id, metadata) do
+    with {:ok, track} <- fetch_track(ws, track_id),
+         updated = %{track | metadata: metadata},
+         :ok <- Track.validate_state(updated) do
+      {:ok, put_track(ws, updated)}
+    end
+  end
+
+  @doc """
+  整体替换轨道宿主扩展 extras。extras 可能被宿主投影为合成输入，因此递增
+  `edit_version`，使已检查请求和渲染缓存不会继续复用旧工程事实。
+  """
+  @spec put_track_extras(t(), Track.track_id(), map()) :: {:ok, t()} | {:error, term()}
+  def put_track_extras(ws, track_id, extras) do
+    with {:ok, track} <- fetch_track(ws, track_id),
+         updated = %{track | extras: extras},
+         :ok <- Track.validate_state(updated) do
+      {:ok, put_track(%{ws | edit_version: ws.edit_version + 1}, updated)}
+    end
+  end
+
   # ---- Tracks ----
 
   defp global_id?(track_id),

@@ -19,6 +19,25 @@ defmodule Coconut.TrackTest do
     {:ok, ws: ws}
   end
 
+  test "metadata/extras 只接受 conform plain map，默认空 map" do
+    assert {:ok, track} =
+             Track.new(%{
+               id: "rich",
+               module: Track.Vocal,
+               metadata: %{"color" => "#88aaff", role: :lead},
+               extras: %{neume: %{version: 1, automation: [:pitch, nil]}}
+             })
+
+    assert track.metadata.role == :lead
+    assert track.extras.neume.version == 1
+
+    assert {:error, {:invalid_metadata, []}} =
+             Track.new(%{id: "bad-meta", module: Track.Vocal, metadata: []})
+
+    assert {:error, {:non_conform_extras, _}} =
+             Track.new(%{id: "bad-extra", module: Track.Vocal, extras: %{runtime: self()}})
+  end
+
   defp apply_request(ws, request) do
     {:ok, ops, changes} = Operation.lower(request, ws, %Operation.Config{})
     {:ok, ws} = Workspace.apply_batch(ws, @track, ws.edit_version, ops, changes)

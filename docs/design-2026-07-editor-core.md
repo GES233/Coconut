@@ -402,8 +402,11 @@ GenServer 壳。
 曾属于 workspace 侧表抽屉的东西——版本化 span 表（timing 权威，§11.2）、
 元素载荷、per-track patches（干预按轨 transport、按轨存放）。
 
-- `%Track{id, name, module, space, spans_by_version, version_clock,
-  elements_by_id, patches, dead_patches}`；Workspace =
+- `%Track{id, name, metadata, extras, module, space, spans_by_version,
+  version_clock, elements_by_id, patches, dead_patches}`；`metadata` 是展示注释，
+  `extras` 是宿主命名空间下的工程扩展事实；两者默认 `%{}`，只允许
+  `Coconut.Pickle.pickle_conform?/1` 的 plain 数据，不能承载运行时对象。
+  Workspace =
   `id/edit_version/tracks/globals` + 工程级 `tpqn/frame_rate/time_sigs`
   （§6）。`frame_rate` 是引擎帧网格声明（正整数或正有理数，nil = 未
   声明）——工程 metadata 先例同 tpqn：内核存而不解释，仅帧 warp 换算
@@ -414,7 +417,8 @@ GenServer 壳。
   格式契约），判型永远按能力、绝不按 name。rename 是 mutation，入史为
   `rename_track` 命令边（§12.4）。Pickle：`name` 作可选
   字段进 dump，旧档缺失 load 为 `nil`——首个可选字段先例：格式兼容走
-  "容忍缺失"档，而非版本号。
+  "容忍缺失"档，而非版本号。`metadata`/`extras` 同样作为可选字段落盘，
+  旧档缺失均回落 `%{}`；Pickle dump/load 两侧都复核 conform。
 - behaviour 回调（7 个）：`coord_domain/0`、`cast_element/3`、
   `edit_element/2`（内容编辑的合并+重铸，`edit_note` lowering 经它一步
   写回）、`validate_gesture/3`（轨型政策挂载点：tempo 首元素保护、
@@ -579,10 +583,12 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
      恢复其 elements / patches / 坟场（DAW 惯例，无重挂语义）。
      增删轨 bump `edit_version`（渲染产物随之变；规则表述：乐谱
      结构变化 bump，干预挂载不 bump）。
-   - **轻量字段边**：`:rename_track` 与 `:set_time_sigs`——无
-     Space 机器，边存全量新值，replay = 调对应纯函数。轨道名是
-     annotation（§11.8，rename 可撤销是 DAW 惯例），中途变拍是
-     乐谱手势（§6，不可撤销是真实的洞）：二者入史。
+   - **轻量/扩展字段边**：`:rename_track`、`:put_track_metadata`、
+     `:put_track_extras` 与 `:set_time_sigs`——无 Space 机器，边存全量新值，
+     replay = 调对应纯函数。轨道名与 metadata 是 annotation，不 bump
+     `edit_version`；extras 可能被宿主投影为合成输入，故每次整体替换 bump
+     `edit_version`，防止旧 check/render 复用。中途变拍是乐谱手势（§6，
+     不可撤销是真实的洞）；四者都入史。
    - resolve-time 冲突由策略决定是否丢弃；显式丢弃通过
      `:discard_patches` 边，把 `{track_id, patch_id, reason}` 指定的
      active patch 移入所属轨道坟场。不得由宿主直接改 Track struct。
@@ -603,7 +609,8 @@ drag 拒绝（`:drag` 会诊报 `{:audio_stretch_rejected, _}`——span 长度�
 3. **重放与实况共用同一 apply**：replay 与实况写都调
    `Command.execute/3` 这唯一分发表（内部分派到
    `Workspace.apply_batch` / `attach_patches` / `discard_patches` / `add_track` /
-   `remove_track` / `rename_track` / `set_time_sigs` 等纯函数），
+   `remove_track` / `rename_track` / `put_track_metadata` / `put_track_extras` /
+   `set_time_sigs` 等纯函数），
    禁止 replay 专用分支（第二种实现 = 发散源）。
 
 ### 12.5 API 形状

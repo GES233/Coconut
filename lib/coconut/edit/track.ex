@@ -50,6 +50,7 @@ defmodule Coconut.Edit.Track do
   (returns the element unchanged).
   """
 
+  alias Coconut.Pickle
   alias Coconut.Score.Tick
   alias Coconut.Util.ID
 
@@ -63,11 +64,15 @@ defmodule Coconut.Edit.Track do
 
   @type track_id :: ID.t(__MODULE__)
 
-  # `name` is a display annotation (design doc §11.8): mutable, non-unique,
-  # nilable — never an identity. Routing, anchors and version pins use `id`.
+  # `name` / `metadata` 是展示注释，不参与身份；`extras` 是宿主命名空间下的
+  # 工程扩展事实。三者都不能承载运行时对象，路由、anchor 与版本 pin 只用 `id`。
+  @type plain_data :: map() | list() | number() | atom() | binary() | nil
+
   @type t :: %__MODULE__{
           id: track_id(),
           name: String.t() | nil,
+          metadata: map(),
+          extras: map(),
           module: module(),
           space: Tamale.Space.t(),
           spans_by_version: %{Tamale.version() => %{Tamale.id() => span()}},
@@ -82,6 +87,8 @@ defmodule Coconut.Edit.Track do
     :id,
     :module,
     name: nil,
+    metadata: %{},
+    extras: %{},
     space: %Tamale.Space{},
     spans_by_version: %{},
     version_clock: %{},
@@ -94,13 +101,30 @@ defmodule Coconut.Edit.Track do
   @doc "Create a new track based on the attributes. `:id` must be provided explicitly."
   @spec new(map() | keyword()) :: {:ok, t()} | {:error, term()}
   def new(attrs) do
-    with {:ok, normalized} <- normalize_attrs(attrs, @keys) do
+    with {:ok, normalized} <- normalize_attrs(attrs, @keys),
+         :ok <- validate_plain_map(:metadata, Map.get(normalized, :metadata, %{})),
+         :ok <- validate_plain_map(:extras, Map.get(normalized, :extras, %{})) do
       case Map.fetch(normalized, :id) do
         :error -> {:error, {:missing_id, "Track_"}}
         {:ok, id} -> {:ok, struct(__MODULE__, Map.put(normalized, :id, id))}
       end
     end
   end
+
+  defp validate_plain_map(:metadata, value) when is_map(value) do
+    if Pickle.pickle_conform?(value),
+      do: :ok,
+      else: {:error, {:non_conform_metadata, value}}
+  end
+
+  defp validate_plain_map(:extras, value) when is_map(value) do
+    if Pickle.pickle_conform?(value),
+      do: :ok,
+      else: {:error, {:non_conform_extras, value}}
+  end
+
+  defp validate_plain_map(:metadata, value), do: {:error, {:invalid_metadata, value}}
+  defp validate_plain_map(:extras, value), do: {:error, {:invalid_extras, value}}
 
   # ---- Behaviour ----
 
@@ -229,7 +253,9 @@ defmodule Coconut.Edit.Track do
   @doc "Validate the track module's whole-state invariants."
   @spec validate_state(t()) :: :ok | {:error, term()}
   def validate_state(%__MODULE__{module: module} = track) do
-    with :ok <- validate_live_tables(track),
+    with :ok <- validate_plain_map(:metadata, track.metadata),
+         :ok <- validate_plain_map(:extras, track.extras),
+         :ok <- validate_live_tables(track),
          :ok <- validate_spans(track),
          {:module, _module} <- Code.ensure_loaded(module) do
       if function_exported?(module, :validate_state, 1),
